@@ -78,12 +78,15 @@ struct MANTLERUNTIME_API FMantleConstraints
 	static constexpr double MotorPositionResponseHz = 2.0;
 	static constexpr double MotorSpeedResponse = 20.0;
 
+	/** The share of a position motor's MaxForce its spring uses to follow a setpoint at the default top speed (MotorDefaultSpeed). */
+	static constexpr double MotorDefaultSpeedShare = 0.25;
+
 	/**
 	 * A position motor's top speed when its MaxSpeed is unset, degrees or cm a second: the speed at which its
-	 * damper pushes with the whole MaxForce (newtons or newton-meters) on Inertia (as MotorGains takes it), so
-	 * following a setpoint at it, and stopping, stay well under MaxForce. Chaos caps a drive's whole push, the
-	 * spring's and the damper's together (FPBDJointCachedSolver::ApplyAxisPositionDrive, ApplyMaxLambda), so a
-	 * capped spring cannot brake in time; a setpoint moving at this speed never asks it to.
+	 * spring, following the setpoint, pushes with MotorDefaultSpeedShare of MaxForce (newtons or newton-meters)
+	 * on Inertia (as MotorGains takes it). Chaos caps the spring's push before the damper brakes
+	 * (FPBDJointCachedSolver::ApplyAxisPositionDrive, ApplyMaxLambda), so a spring at its cap cannot brake in
+	 * time; one following a setpoint at this speed keeps room to.
 	 */
 	static double MotorDefaultSpeed(EMantleConstraintType Type, double MaxForce, double Inertia);
 

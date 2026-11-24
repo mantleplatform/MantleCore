@@ -314,12 +314,13 @@ bool FMantleConstraintValuesTest::RunTest(const FString& Parameters)
 		1000.0 * FMantleConstraints::MotorSpeedResponse / Chaos::ConstraintSettings::AngularDriveDampingScale(), 1e-3);
 	TestTrue(TEXT("nothing to move still drives"), FMantleConstraints::MotorGains(EMantleConstraintType::Slider, EMantleMotorMode::Position, 0.0).Stiffness > 0.0);
 
-	// The top speed when none is given: the speed at which the (unscaled) damper pushes with the whole max force.
-	// The play test's door: 500 N*m on about 100250 kg*cm^2 about its hinge line, which is about 114 degrees a second.
+	// The top speed when none is given: the speed at which the spring, following the setpoint, uses the default share of
+	// the max force. The play test's door: 500 N*m on about 100250 kg*cm^2 about its hinge line, about 28 degrees a second.
+	const double Share = FMantleConstraints::MotorDefaultSpeedShare;
 	TestEqual(TEXT("the door's top speed"), FMantleConstraints::MotorDefaultSpeed(EMantleConstraintType::Hinge, 500.0, 100250.0),
-		FMath::RadiansToDegrees(500.0 * FMantleConstraints::UnrealTorquePerNewtonMeter / (2.0 * 100250.0 * Omega)), 1e-6);
+		FMath::RadiansToDegrees(Share * 500.0 * FMantleConstraints::UnrealTorquePerNewtonMeter / (2.0 * 100250.0 * Omega)), 1e-6);
 	TestEqual(TEXT("a 50 kg lift's at 5000 N"), FMantleConstraints::MotorDefaultSpeed(EMantleConstraintType::Slider, 5000.0, 50.0),
-		5000.0 * FMantleConstraints::UnrealForcePerNewton / (2.0 * 50.0 * Omega), 1e-6);
+		Share * 5000.0 * FMantleConstraints::UnrealForcePerNewton / (2.0 * 50.0 * Omega), 1e-6);
 	TestEqual(TEXT("never above a slider's top speed"), FMantleConstraints::MotorDefaultSpeed(EMantleConstraintType::Slider, 10000000.0, 1.0),
 		FMantlePlaceLimits::MaxMotorLinearSpeed);
 	FMantleConstraintMotor Paced{ EMantleMotorMode::Position, 10.0, 1.0 };

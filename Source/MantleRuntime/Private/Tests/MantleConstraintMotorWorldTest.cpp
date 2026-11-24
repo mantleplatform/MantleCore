@@ -215,7 +215,8 @@ bool FMantleConstraintMotorWorldTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("the drawer stops at its upper limit, 40"), PositionOf(DrawerSlide), 40.0, 2.0);
 	Drawer->SetPhysicsLinearVelocity(FVector(-300.0, 0.0, 0.0));
 
-	for (int32 Step = 0; Step < 120; ++Step)
+	// At their default top speeds the door (about 28 degrees a second) and the lift (about 100 cm a second) take 3 to 5 s.
+	for (int32 Step = 0; Step < 360; ++Step)
 	{
 		Physics.Run(StepSeconds);
 		Follow();
@@ -250,7 +251,7 @@ bool FMantleConstraintMotorWorldTest::RunTest(const FString& Parameters)
 	FString Error;
 	TestTrue(TEXT("the gate takes a new target"), GateHinge->SetMotor(FMantleConstraintMotor{ EMantleMotorMode::Position, -45.0, 300.0 }, Error));
 	double GateLeast = TNumericLimits<double>::Max();
-	for (int32 Step = 0; Step < 120; ++Step)
+	for (int32 Step = 0; Step < 180; ++Step)
 	{
 		Physics.Run(StepSeconds);
 		GateLeast = FMath::Min(GateLeast, PositionOf(GateHinge));

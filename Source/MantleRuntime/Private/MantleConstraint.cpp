@@ -312,14 +312,17 @@ FMantleMotorGains FMantleConstraints::MotorGains(EMantleConstraintType Type, EMa
 
 double FMantleConstraints::MotorDefaultSpeed(EMantleConstraintType Type, double MaxForce, double Inertia)
 {
-	// The damper of a position motor (MotorGains, before Chaos's scale) at this speed pushes with the whole
-	// MaxForce. A setpoint moving at that speed is followed with the spring and the damper cancelling, and
-	// stopping it takes about a fifth of MaxForce, so the motor never meets its cap and never swings past.
+	// A setpoint moving at speed v is followed v * 2 / omega behind, where the spring pushes D * v (MotorGains'
+	// damper, before Chaos's scale) and the damper takes it back. Chaos caps the spring's push on its own, in
+	// the position phase, before the damper acts in the velocity phase (FPBDJointCachedSolver::
+	// ApplyAxisPositionDrive, then ApplyAxisPositionVelocityDrive; both clamp one lambda, FAxisConstraintDatas::
+	// ApplyMaxLambda), so the spring must stay under MaxForce with room to speed up, brake and hold a load:
+	// MotorDefaultSpeedShare of it. At the whole of it the joints world test still swung past (2026-11-23).
 	const bool bHinge = IsAngularMotorType(Type);
 	const double Moved = Inertia > 0.0 ? Inertia : 1.0;
 	const double Damping = 2.0 * Moved * 2.0 * UE_DOUBLE_PI * MotorPositionResponseHz;
 	const double Force = MaxForce * (bHinge ? UnrealTorquePerNewtonMeter : UnrealForcePerNewton);
-	const double Speed = Force / Damping;
+	const double Speed = MotorDefaultSpeedShare * Force / Damping;
 	return FMath::Clamp(bHinge ? FMath::RadiansToDegrees(Speed) : Speed, 1.0, MotorTargetMost(Type, EMantleMotorMode::Speed));
 }
 
