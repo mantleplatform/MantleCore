@@ -733,7 +733,8 @@ bool MantleCosmetic::ParseItemBatch(const FString& Json, TArray<FMantleCosmeticI
                 || (Item.Slot != TEXT("hair") && Item.Slot != TEXT("eyebrows") && Item.Slot != TEXT("eyelashes") && Item.Slot != TEXT("facial_hair"))))
             { OutWhyNot = Where + TEXT("nativeHair only belongs to one of the four skinned hair slots"); return false; }
 			// Clothing, and a rigid item in an accessory slot (acc_hat, acc_face, ...), as the API accepts them.
-			const bool bClothingColors = Item.Kind == EMantleCosmeticKind::Skinned && (Item.Slot == TEXT("top") || Item.Slot == TEXT("bottom") || Item.Slot == TEXT("footwear"));
+			const bool bClothingColors = Item.Kind == EMantleCosmeticKind::Skinned && (Item.Slot == TEXT("top") || Item.Slot == TEXT("bottom") || Item.Slot == TEXT("footwear")
+				|| Item.Slot == TEXT("socks") || Item.Slot == TEXT("legwear") || Item.Slot == TEXT("outerwear") || Item.Slot == TEXT("gloves"));
 			const bool bAccessoryColors = Item.Kind == EMantleCosmeticKind::Rigid && Item.Slot.StartsWith(TEXT("acc_"));
 			if (!Material.ColorRegions.IsEmpty() && !bClothingColors && !bAccessoryColors)
 			{ OutWhyNot = Where + TEXT("only clothing and accessory items declare color regions"); return false; }
@@ -842,6 +843,8 @@ bool MantleCosmetic::ParseItemBatch(const FString& Json, TArray<FMantleCosmeticI
 		{
 			Item.SecondaryMotion.Reset();
 		}
+		// #65, #136, #389: tuckable, tallBoots, hairRule and pairId, each the contract's default when unset.
+		MantleCosmetic::ReadItemSettings(Object, Item.bTuckable, Item.bTallBoots, Item.HairRule, Item.PairId);
 		Items.Add(MoveTemp(Item));
 	}
 	TArray<FString> Missing;
@@ -897,6 +900,41 @@ bool MantleCosmetic::ReadClothingColorRegions(const TSharedPtr<FJsonObject>& Obj
 		}
 	if (Out.Num() > MantleClothingColor::MaxColorsPerItem) { OutWhyNot = TEXT("more than eight clothing color controls"); return false; }
 	return true;
+}
+
+void MantleCosmetic::ReadItemSettings(const TSharedPtr<FJsonObject>& Object, bool& bInOutTuckable, bool& bInOutTallBoots,
+	FString& InOutHairRule, FString& InOutPairId)
+{
+	if (!Object.IsValid())
+	{
+		return;
+	}
+	const auto ReadBool = [&Object](const TCHAR* Name, bool& Out)
+	{
+		const TSharedPtr<FJsonValue> Value = Object->TryGetField(Name);
+		if (Value.IsValid() && Value->Type == EJson::Boolean)
+		{
+			Out = Value->AsBool();
+		}
+	};
+	ReadBool(TEXT("tuckable"), bInOutTuckable);
+	ReadBool(TEXT("tallBoots"), bInOutTallBoots);
+	const TSharedPtr<FJsonValue> Rule = Object->TryGetField(TEXT("hairRule"));
+	if (Rule.IsValid() && Rule->Type == EJson::String)
+	{
+		// Case-sensitive: FString's == ignores case, and the rules are camelCase words.
+		const FString Text = Rule->AsString();
+		if (Text.Equals(TEXT("underIt"), ESearchCase::CaseSensitive) || Text.Equals(TEXT("hideAll"), ESearchCase::CaseSensitive)
+			|| Text.Equals(TEXT("leaveAlone"), ESearchCase::CaseSensitive))
+		{
+			InOutHairRule = Text;
+		}
+	}
+	const TSharedPtr<FJsonValue> Pair = Object->TryGetField(TEXT("pairId"));
+	if (Pair.IsValid() && Pair->Type == EJson::String)
+	{
+		InOutPairId = Pair->AsString();
+	}
 }
 
 bool MantleCosmetic::ReadBodyMetrics(const TSharedPtr<FJsonValue>& Value, const FString& Where,

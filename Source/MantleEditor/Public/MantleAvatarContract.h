@@ -65,15 +65,62 @@ struct MANTLEEDITOR_API FMantleContractClass
 	TArray<FString> Skeletons;
 };
 
+/** #136: one finger a ring may be worn on (limits.json acc_ring's fingerBones): the ring hangs straight from Bone, at identity. */
+struct MANTLEEDITOR_API FMantleContractFingerBone
+{
+	/** The worn entry's finger: thumb_l .. pinky_r. */
+	FString Finger;
+	/** The body bone: index_01_l ..., thumb_02_l for the thumbs (thumb_01 is in the palm). */
+	FString Bone;
+};
+
 /** One slot of limits.json's slot table. */
 struct MANTLEEDITOR_API FMantleContractSlot
 {
 	FString Id;
 	FString Group;
 	FString ItemClass;
+	/**
+	 * The socket the item hangs from (limits.json "socket"): the older slots (acc_hat ... acc_waist), whose sockets sit at
+	 * identity on SocketBone and which an avatar may override. Empty for the #136 slots ("mechanism": "bone"), which hang
+	 * straight from a bone and have no socket.
+	 */
 	FString Socket;
+	/**
+	 * The bone the item hangs from: limits.json "socketBone" for a socket slot, "bone" for a bone slot. A slot with
+	 * FingerBones (acc_ring) has none of its own: this is then the preview finger's (FMantleAvatarContract::PreviewFinger),
+	 * so placing, previewing and rendering a ring use that finger. The worn entry picks the finger in the game.
+	 */
 	FString SocketBone;
+	/**
+	 * #136: which mesh SocketBone is on: "body" (the default) or "face" (ears, eyes and nose hang from the MetaHuman face
+	 * skeleton's FACIAL_* bones, on the face mesh). Items sit at identity on the bone either way.
+	 */
+	FString Mesh = TEXT("body");
+	bool IsOnFace() const { return Mesh == TEXT("face"); }
 	int32 Cap = 1;
+	/** #136: the fingers a ring may be worn on and their bones, in limits.json's order; empty for every other slot. */
+	TArray<FMantleContractFingerBone> FingerBones;
+};
+
+/**
+ * #65, #136, #389: one creator-set item setting (limits.json itemSettings): a plain top-level field of the item,
+ * allowed only on Slots (the backend refuses it elsewhere with field_not_allowed).
+ */
+struct MANTLEEDITOR_API FMantleContractItemSetting
+{
+	/** The item field: tuckable, tallBoots, hairRule, pairId. */
+	FString Name;
+	/** bool, enum or string. */
+	FString Type;
+	bool bDefault = false;
+	/** An enum's default value (hairRule: underIt). */
+	FString DefaultValue;
+	/** An enum's values, in limits.json's order. */
+	TArray<FString> Values;
+	/** A string's pattern as limits.json spells it (pairId). */
+	FString Pattern;
+	TArray<FString> Slots;
 };
 
 /**
@@ -114,6 +161,42 @@ public:
 	/** limits.json toolSockets, in its order (#585). */
 	TArray<FMantleContractToolSocket> ToolSockets;
 	TMap<FString, FMantleContractAccessoryBounds> AccessoryBounds;
+	/** #136, rigid_accessory.maxTrianglesPerSlot: the small accessory slots' own triangle caps; others use RigidAccessory.MaxTriangles. */
+	TMap<FString, int32> AccessoryMaxTrianglesPerSlot;
+	/** Triangle cap for an accessory slot: its own (maxTrianglesPerSlot) or the shared accessory cap. */
+	int32 AccessoryMaxTriangles(const FString& Slot) const;
+	/** RigidAccessory with MaxTriangles set to Slot's cap: what an accessory in Slot is reduced to. */
+	FMantleContractClass AccessoryClassFor(const FString& Slot) const;
+
+	/** #65, limits.json garmentLayers.order: the clothing layer slots from the body outward. */
+	TArray<FString> GarmentLayerOrder = { TEXT("footwear"), TEXT("bottom"), TEXT("top") };
+	/** #65, garmentLayers.gloves.slot: the clothing slot outside the order, always under the sleeves. Empty in an older copy. */
+	FString GlovesSlot;
+	/**
+	 * #65: Slot is a clothing slot (garmentLayers.order or the gloves slot): fitted to the wearer, with color areas,
+	 * unlike hair, eyebrows, eyelashes, facial hair and nails.
+	 */
+	bool IsClothingSlot(const FString& Slot) const;
+	/** Clothing slots in wearing order (GarmentLayerOrder), then the gloves slot. */
+	TArray<FString> ClothingSlots() const;
+	/** Slot's place in ClothingSlots(); INDEX_NONE when it is not a clothing slot. */
+	int32 ClothingRank(const FString& Slot) const;
+	/**
+	 * The same three questions from the plugin's contract, or from the old top, bottom and footwear when the contract cannot be read.
+	 * For helpers that have no contract in hand.
+	 */
+	static bool IsClothingSlotOrDefault(const FString& Slot);
+	static int32 ClothingRankOrDefault(const FString& Slot);
+	static TArray<FString> ClothingSlotsOrDefault();
+
+	/** #65, #136, #389, limits.json itemSettings, in its order. */
+	TArray<FMantleContractItemSetting> ItemSettings;
+	const FMantleContractItemSetting* FindItemSetting(const FString& Name) const;
+	/** Setting Name is allowed on Slot. */
+	bool SettingAllowed(const FString& Name, const FString& Slot) const;
+
+	/** #136: the finger a ring is placed, previewed and rendered on in the editor (Joshua's pick: the left ring finger). */
+	static const TCHAR* PreviewFinger() { return TEXT("ring_l"); }
 
 	/** By contract id; a fixture the plugin does not ship yet (ue5mannequin before A2.5) is absent. */
 	TMap<FString, FMantleContractSkeleton> Skeletons;
@@ -235,10 +318,13 @@ public:
 	TArray<FString> SlotsOfClass(const FString& ItemClass) const;
 
 	/**
-	 * The accessory sockets (limits.json slots[].socket), each once, in the slot table's order: the
-	 * names an avatar's "sockets" overrides may use (the API's avatar.Contract.IsSocket).
+	 * The accessory sockets (limits.json slots[].socket; the #136 bone slots and ring fingers have none), each once, in the slot table's
+	 * order: the names an avatar's "sockets" overrides may use (the API's avatar.Contract.IsSocket).
 	 */
 	TArray<FString> AccessorySockets() const;
+
+	/** The bone an accessory socket (a slot's socket) hangs from; empty for an unknown socket. */
+	FString AccessorySocketBone(const FString& Socket) const;
 
 	/** A tool socket an avatar may also override (limits.json toolSockets, #585), or null. */
 	const FMantleContractToolSocket* FindToolSocket(const FString& Socket) const;

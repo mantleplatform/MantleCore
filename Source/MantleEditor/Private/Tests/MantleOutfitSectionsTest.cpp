@@ -58,7 +58,7 @@ bool FMantleOutfitSectionsSlotBeatsMaterialTest::RunTest(const FString& Paramete
 		FString(TEXT("skin")));
 
 	// Not skin, as before: clothing, eyes, accessories, and slots whose names say nothing about skin.
-	Expect(TEXT("M01_cloth"), TEXT("M_TwinBlast_Coat"), EMantleOutfitPiece::Top, false);
+	Expect(TEXT("M01_cloth"), TEXT("M_TwinBlast_Coat"), EMantleOutfitPiece::Outerwear, false);
 	Expect(TEXT("M_DG_bodyShape1_Shirt"), TEXT("MI_Shirt"), EMantleOutfitPiece::Top, false);
 	Expect(TEXT("Material0"), TEXT("MI_Suit_Pants"), EMantleOutfitPiece::Bottom, false);
 	Expect(TEXT("HeadWear"), TEXT("MI_Head"), EMantleOutfitPiece::Unknown, false);
@@ -81,6 +81,36 @@ bool FMantleOutfitSectionsSlotBeatsMaterialTest::RunTest(const FString& Paramete
 
 	// The slot reads as skin, but eye and teeth words still keep it off the bare body.
 	TestFalse(TEXT("a face slot whose material is the eyes' is not bare skin"), FMantleAvatarStrip::LooksLikeSkin(TEXT("Face_Eyes"), TEXT("MI_Eye"), FString()));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleOutfitSectionsClothingSlotsTest,
+	"Mantle.Editor.OutfitSections.ClothingSlotWords",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleOutfitSectionsClothingSlotsTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleOutfitSectionsTestPrivate;
+	auto SlotOf = [](const TCHAR* Slot)
+	{
+		return FMantleOutfitSections::PieceSlot(OutfitTestClassify(Slot, TEXT("")));
+	};
+	TestEqual(TEXT("socks"), SlotOf(TEXT("SK_Socks")), FString(TEXT("socks")));
+	TestEqual(TEXT("a stocking is socks"), SlotOf(TEXT("M_Stockings")), FString(TEXT("socks")));
+	TestEqual(TEXT("tights"), SlotOf(TEXT("SK_Tights")), FString(TEXT("legwear")));
+	TestEqual(TEXT("leggings moved from bottom to legwear"), SlotOf(TEXT("M_Leggings")), FString(TEXT("legwear")));
+	TestEqual(TEXT("pantyhose"), SlotOf(TEXT("M_Pantyhose")), FString(TEXT("legwear")));
+	TestEqual(TEXT("a jacket"), SlotOf(TEXT("SK_Jacket")), FString(TEXT("outerwear")));
+	TestEqual(TEXT("a raincoat"), SlotOf(TEXT("M_Raincoat")), FString(TEXT("outerwear")));
+	TestEqual(TEXT("a vest"), SlotOf(TEXT("M_Vest")), FString(TEXT("outerwear")));
+	TestEqual(TEXT("a hoodie stays a top"), SlotOf(TEXT("SK_Hoodie")), FString(TEXT("top")));
+	TestEqual(TEXT("a sweater stays a top"), SlotOf(TEXT("SK_Sweater")), FString(TEXT("top")));
+	TestEqual(TEXT("gloves"), SlotOf(TEXT("SK_Gloves")), FString(TEXT("gloves")));
+	TestEqual(TEXT("mittens"), SlotOf(TEXT("M_Mittens")), FString(TEXT("gloves")));
+	TestEqual(TEXT("shoes stay footwear"), SlotOf(TEXT("SK_Shoes")), FString(TEXT("footwear")));
+	TestEqual(TEXT("a hat is still no garment slot"), SlotOf(TEXT("SK_Hat")), FString());
+	TestEqual(TEXT("two pieces in one name stay unknown"), SlotOf(TEXT("SK_Jacket_Gloves")), FString());
 	return true;
 }
 

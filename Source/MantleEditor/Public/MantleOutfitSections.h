@@ -10,6 +10,10 @@ enum class EMantleOutfitPiece : uint8
 	Top,
 	Bottom,
 	Footwear,
+	Socks,
+	Legwear,
+	Outerwear,
+	Gloves,
 	/** The source character's own skin (a MetaHuman Creator outfit can carry the body under it). Never uploaded. */
 	Skin,
 	/** Anything else (gems, buttons, "Other1"), or a name that says two pieces: the creator decides. */

@@ -50,9 +50,10 @@ class FMantleAvatarContract;
 /**
  * The slots the upload panel offers for Class, in limits.json's order: Hair gets the hair slots
  * (hair, eyebrows, eyelashes, facial_hair), Clothing every other skinned-garment slot, the
- * rest every slot of their item class.
+ * rest every slot of their item class. With a contract SkeletonId ("metahuman", "ue5mannequin" ...), only the slots that exist
+ * on avatars of that skeleton (#136, FMantleAccessorySettings::SlotOffered): the ear, eye and nose slots need a MetaHuman face.
  */
-MANTLEEDITOR_API TArray<FString> CosmeticSlotOptions(const FMantleAvatarContract& Contract, EMantleCosmeticClass Class);
+MANTLEEDITOR_API TArray<FString> CosmeticSlotOptions(const FMantleAvatarContract& Contract, EMantleCosmeticClass Class, const FString& SkeletonId = FString());
 
 /** One file the plugin uploads for an item. */
 struct MANTLEEDITOR_API FMantleCosmeticUploadAsset
@@ -217,6 +218,16 @@ struct MANTLEEDITOR_API FMantleCosmeticPackage
 	FVector3f AttachLocation = FVector3f::ZeroVector;
 	FVector3f AttachRotation = FVector3f::ZeroVector;
 	FVector3f AttachScale = FVector3f::OneVector;
+
+	/**
+	 * #65, #136, #389, creator-set item settings (limits.json itemSettings), each sent as a plain top-level item field only on
+	 * the slots the contract allows it on: tuckable (top), tallBoots (footwear), hairRule (acc_hat, acc_face, outerwear),
+	 * pairId (acc_ear_l, acc_ear_r).
+	 */
+	bool bTuckable = true;
+	bool bTallBoots = false;
+	FString HairRule = TEXT("underIt");
+	FString PairId;
 
 	/**
 	 * Avatars: the body's standing height as the cook will measure it (FMantleCosmeticChecks::AvatarStandingHeightCm:

@@ -1,8 +1,10 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleCosmeticPackage.h"
 #include "MantleCosmeticItem.h"
+#include "MantleAccessorySettings.h"
 #include "MantleAvatarContract.h"
 #include "MantleHairColor.h"
+#include "MantleItemSettings.h"
 #include "MantleOverlayChecks.h"
 #include "MantleSha256.h"
 
@@ -41,7 +43,7 @@ const TCHAR* ContractItemClass(EMantleCosmeticClass Class)
 	}
 }
 
-TArray<FString> CosmeticSlotOptions(const FMantleAvatarContract& Contract, EMantleCosmeticClass Class)
+TArray<FString> CosmeticSlotOptions(const FMantleAvatarContract& Contract, EMantleCosmeticClass Class, const FString& SkeletonId)
 {
 	TArray<FString> Options;
 	if (Class == EMantleCosmeticClass::Overlay)
@@ -54,6 +56,12 @@ TArray<FString> CosmeticSlotOptions(const FMantleAvatarContract& Contract, EMant
 		// Hair items take the hair slots only; garments every other skinned slot.
 		const bool bHairSlot = Contract.HairSlots.Contains(Slot);
 		if (ItemClass == TEXT("skinned_garment") && bHairSlot != (Class == EMantleCosmeticClass::Hair))
+		{
+			continue;
+		}
+		// #136: a slot whose bone the skeleton (or, for ears, eyes and nose, its MetaHuman face) lacks does not exist on it.
+		const FMantleContractSlot* Entry = SkeletonId.IsEmpty() ? nullptr : Contract.FindSlot(Slot);
+		if (Entry && !FMantleAccessorySettings::SlotOffered(Contract, *Entry, SkeletonId))
 		{
 			continue;
 		}
@@ -249,8 +257,8 @@ bool FMantleCosmeticPackage::MakeItemJson(const TMap<FString, FString>& IdsByKey
 		{
 			if (!ValidateNativeHairRef(Ref, Class, &Refs == &FaceMaterials, OutError)) return false;
 			if (Ref.ColorRegions.IsEmpty() && Ref.ColorMaskKey.IsEmpty()) continue;
-			// Clothing (top, bottom, footwear) and rigid accessories (a hat) carry color areas.
-			const bool bColorClass = (Class == EMantleCosmeticClass::Garment && (Slot == TEXT("top") || Slot == TEXT("bottom") || Slot == TEXT("footwear")))
+			// Clothing (every clothing slot) and rigid accessories (a hat) carry color areas.
+			const bool bColorClass = (Class == EMantleCosmeticClass::Garment && FMantleAvatarContract::IsClothingSlotOrDefault(Slot))
 				|| Class == EMantleCosmeticClass::Accessory;
 			if (!bColorClass || Ref.ColorMaskKey.IsEmpty() || Ref.ColorRegions.IsEmpty() || !MantleClothingColor::ValidateRegions(Ref.ColorRegions, OutError))
 			{ OutError = TEXT("Color declarations need a clothing or accessory material, mask and measured regions."); return false; }
@@ -524,6 +532,40 @@ bool FMantleCosmeticPackage::MakeItemJson(const TMap<FString, FString>& IdsByKey
 		break;
 	}
 
+	// #65, #136, #389: the creator's item settings, each a plain top-level field written explicitly (also at its default), and only
+	// where the contract allows it: the server refuses a setting on any other slot (field_not_allowed).
+	if (const FMantleAvatarContract* SettingsContract = FMantleAvatarContract::Get())
+	{
+		if (SettingsContract->SettingAllowed(FMantleItemSettings::Tuckable(), Slot))
+		{
+			Item->SetBoolField(FMantleItemSettings::Tuckable(), bTuckable);
+		}
+		if (SettingsContract->SettingAllowed(FMantleItemSettings::TallBoots(), Slot))
+		{
+			Item->SetBoolField(FMantleItemSettings::TallBoots(), bTallBoots);
+		}
+		if (SettingsContract->SettingAllowed(FMantleItemSettings::HairRule(), Slot))
+		{
+			const FMantleContractItemSetting* Rule = SettingsContract->FindItemSetting(FMantleItemSettings::HairRule());
+			if (!Rule || !Rule->Values.Contains(HairRule))
+			{
+				OutError = FString::Printf(TEXT("The hair setting \"%s\" is not one of: %s."), *HairRule,
+					Rule ? *FString::Join(Rule->Values, TEXT(", ")) : TEXT(""));
+				return false;
+			}
+			Item->SetStringField(FMantleItemSettings::HairRule(), HairRule);
+		}
+		if (SettingsContract->SettingAllowed(FMantleItemSettings::PairIdField(), Slot) && !PairId.IsEmpty())
+		{
+			if (!FMantleItemSettings::IsValidPairId(PairId))
+			{
+				OutError = FString::Printf(TEXT("The earring pair id \"%s\" must be 1 to 64 letters, digits, dashes or underscores."), *PairId);
+				return false;
+			}
+			Item->SetStringField(FMantleItemSettings::PairIdField(), PairId);
+		}
+	}
+
 	if (Class == EMantleCosmeticClass::Garment && !GarmentVariants.IsEmpty())
 	{
 		TSharedRef<FJsonObject> Manifest = MakeShared<FJsonObject>();
@@ -609,6 +651,12 @@ bool FMantleCosmeticPackage::MakeItemPatchJson(const TMap<FString, FString>& Ids
 			Item->SetObjectField(Field, MakeShared<FJsonObject>());
 		}
 	};
+	// #136: a pair id the new version leaves out (a paired earring updated as a single one) is cleared: the backend's
+	// ItemPatch clears pairId on "" (backend avatar/items.go).
+	if (const FMantleAvatarContract* SettingsContract = FMantleAvatarContract::Get(); SettingsContract && SettingsContract->SettingAllowed(FMantleItemSettings::PairIdField(), Slot))
+	{
+		ClearString(FMantleItemSettings::PairIdField());
+	}
 	switch (Class)
 	{
 	case EMantleCosmeticClass::Avatar:

@@ -52,6 +52,9 @@ struct FMantleThumbnailSubject
 	/** Draw the thumbnail scene's floor under a standing body (feet at z = 0). */
 	bool bFloor = false;
 
+	/** Extra scene captures taken (and flushed) before the picture itself, one per frame, so a pose or a moved camera settles. 0 for every catalog thumbnail; the dev pictures use 30. */
+	int32 SettleFrames = 0;
+
 	/** For the note and the log: "SKM_Ada with SKM_Ada_Face, headshot". */
 	FString Describe;
 

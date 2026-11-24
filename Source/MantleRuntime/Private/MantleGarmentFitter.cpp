@@ -526,49 +526,8 @@ namespace MantleGarmentFitterPrivate
 	 */
 	void SeamWeld(const FMantleSkinnedMeshLOD& LOD, TArray<int32>& OutSeams, FSeamWeldStats& Stats)
 	{
-		TArray<int32> Points;
-		const int32 NumPoints = MantleGarmentGeometry::WeldByPosition(LOD.Positions, Points);
-		TArray<int32> Sections;
-		MantleGarmentGeometry::VertexSections(LOD, Sections);
-		TArray<int32> PointSection;
-		PointSection.Init(INDEX_NONE, NumPoints);
-		TBitArray<> Across(false, NumPoints);
-		for (int32 Vertex = 0; Vertex < Points.Num(); ++Vertex)
-		{
-			const int32 Point = Points[Vertex];
-			const int32 Section = Sections[Vertex];
-			if (Section == INDEX_NONE)
-			{
-				continue;
-			}
-			if (PointSection[Point] == INDEX_NONE)
-			{
-				PointSection[Point] = Section;
-			}
-			else if (PointSection[Point] != Section)
-			{
-				Across[Point] = true;
-			}
-		}
-		TArray<int32> SeamOf;
-		SeamOf.Init(INDEX_NONE, NumPoints);
-		int32 NumSeams = 0;
-		OutSeams.Init(INDEX_NONE, Points.Num());
-		for (int32 Vertex = 0; Vertex < Points.Num(); ++Vertex)
-		{
-			const int32 Point = Points[Vertex];
-			if (!Across[Point])
-			{
-				continue;
-			}
-			if (SeamOf[Point] == INDEX_NONE)
-			{
-				SeamOf[Point] = NumSeams++;
-			}
-			OutSeams[Vertex] = SeamOf[Point];
-			++Stats.Copies;
-		}
-		Stats.Groups += NumSeams;
+		// The layer pass (FMantleLayerFit) finds the seams of a garment the same way.
+		MantleGarmentGeometry::SectionSeams(LOD, OutSeams, Stats.Groups, Stats.Copies);
 	}
 
 	/**

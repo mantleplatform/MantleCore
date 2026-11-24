@@ -126,10 +126,15 @@ struct MANTLERUNTIME_API FMantleGarmentCoverage
 	 * thick is the far side's garment, not this skin's; P16's shirt 3.5 cm inside a shoulder still covers it.
 	 *
 	 * EdgeTolerance: RayHitsTriangle's, for the garment hits (0, the default, is the exact test the earlier rule uses).
+	 *
+	 * bSameFacingOnly (#65, a garment over another: "BodyPositions" are then the under-garment's vertices): an outward hit
+	 * covers the vertex only when its triangle faces the way the vertex's normal does (the outer layer of the garment over it),
+	 * not either way as for skin, where the inside of a folded collar covers the neck. Without it the inner lining at a cuff
+	 * would count as covering what lies outside the cuff. The hits under the vertex already follow that rule. Off by default.
 	 */
 	static bool Compute(const FMantleGarmentSurface& Garment, TConstArrayView<FVector3f> BodyPositions, TConstArrayView<FVector3f> BodyNormals,
 		FMantleGarmentCoverage& Out, float ReachCm = DefaultMaxDistanceCm, FString* OutError = nullptr,
-		TConstArrayView<uint32> BodyIndices = TConstArrayView<uint32>(), float NearShare = 0.0f, float EdgeTolerance = 0.0f);
+		TConstArrayView<uint32> BodyIndices = TConstArrayView<uint32>(), float NearShare = 0.0f, float EdgeTolerance = 0.0f, bool bSameFacingOnly = false);
 
 	/** "covered 1486 of 8568 (under 120, facing away 300, across a gap 12), not hit 7082 (tight 40), mean hit 1.23 cm, 18822 tris, 3.10 ms". */
 	FString ToString() const;
@@ -219,10 +224,13 @@ struct FMantleBodySinkParams
  * outermost garment surface along its normal.
  *
  * Per rendered vertex (used by a kept triangle) a ray from BackCm inside the skin along its normal,
- * BackCm + UnderCm + ChainReachCm long, meets the garments' triangles; the garment's height t over the
- * skin is that of the OUTERMOST hit whose triangle faces outward (the way the skin does): skin between a
- * closed double surface's inner and outer layer, or under a layer chording through a convex part, is not
- * seen. A ray meeting only inward-facing surfaces gives no sink. The required sink is UnderCm - t where
+ * BackCm + UnderCm + ChainReachCm long, meets the garments' triangles. Each garment's height over the skin is that of
+ * ITS OUTERMOST hit whose triangle faces outward (the way the skin does): skin between a closed double surface's
+ * inner and outer layer, or under a layer chording through a convex part, is not seen. With several garments
+ * (a jacket over a tee) the skin sinks under the LOWEST of those heights, so skin near an inner layer's edge still
+ * sinks under that layer however far out the layer over it lies; with one garment that is its outermost hit, as
+ * before. The lowest garment whose hit is refused as another part's (AcrossBody, FarSide) is passed over for the next
+ * one up. A ray meeting only inward-facing surfaces gives no sink. The required sink is UnderCm - t where
  * t < UnderCm, clamped to MaxSinkCm. The field is smoothed over the kept triangles' adjacency (welded by
  * position; s' = max(required, 0.5 s + 0.5 neighbor mean)), and applied with FMantleBodySinkApply::Sink.
  *
@@ -264,14 +272,14 @@ struct MANTLERUNTIME_API FMantleBodySink
 	double Ms = 0.0;
 
 	/**
-	 * With AcrossBodyIndices: vertices whose outermost outward garment hit lay under the skin but
-	 * with a body surface between it and the vertex, i.e. another body part's garment seen through a thin part (a
+	 * With AcrossBodyIndices: vertices whose garment hits (each garment's outermost outward one) were all refused, the first
+	 * because it lay under the skin with a body surface between it and the vertex, i.e. another body part's garment seen through a thin part (a
 	 * hand hanging by the shorts: the 4 cm backward ray passes through the finger and meets the shorts on the thigh).
 	 * Not counted in Hit or Inside, no sink.
 	 */
 	int32 AcrossBody = 0;
 
-	/** The vertices whose outermost hit the near-half rule (Params.NearShare) refused beyond AcrossBody's. No sink. */
+	/** The vertices whose garment hits were all refused, the first by the near-half rule (Params.NearShare) and not AcrossBody's. No sink. */
 	int32 FarSide = 0;
 
 	/** A body triangle this close to either end of the tested stretch of the ray is the vertex's own skin (or the hit's), not a surface between. */

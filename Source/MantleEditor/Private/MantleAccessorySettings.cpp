@@ -45,7 +45,53 @@ bool FMantleAccessorySettings::Load(FMantleCosmeticDraft& Draft, const FString& 
 	return Saved.Contains(Section);
 }
 
-bool FMantleAccessorySettings::AlignToAvatarAxes(FMantleCosmeticDraft& Draft, const USkeletalMesh* Body, FString& OutError)
+FMantleAccessoryBone FMantleAccessorySettings::ResolveBone(const FMantleContractSlot& Slot, TFunctionRef<bool(FName)> FaceHasBone)
+{
+	FMantleAccessoryBone Out;
+	Out.Bone = FName(*Slot.SocketBone);
+	if (Slot.IsOnFace())
+	{
+		// No fallback: a face without the slot's bone does not have the slot.
+		Out.bOnFace = true;
+		Out.bAvailable = !Slot.SocketBone.IsEmpty() && FaceHasBone(Out.Bone);
+	}
+	return Out;
+}
+
+FMantleAccessoryBone FMantleAccessorySettings::ResolveBone(const FMantleContractSlot& Slot, const USkeletalMesh* Face)
+{
+	return ResolveBone(Slot, [Face](FName Bone) { return Face && Face->GetRefSkeleton().FindBoneIndex(Bone) != INDEX_NONE; });
+}
+
+bool FMantleAccessorySettings::SlotOffered(const FMantleAvatarContract& Contract, const FMantleContractSlot& Slot, const FString& SkeletonId)
+{
+	if (Slot.SocketBone.IsEmpty()) return true;
+	const FMantleContractSkeleton* Skeleton = Contract.FindSkeleton(SkeletonId);
+	if (!Skeleton) return true;
+	const FName Bone(*Slot.SocketBone);
+	if (!Slot.IsOnFace()) return Skeleton->Find(Bone) != INDEX_NONE;
+	// The face slots' bones are on the MetaHuman face, which only a MetaHuman avatar wears.
+	const FMantleContractSkeleton* Face = Contract.FindSkeleton(TEXT("metahuman_face"));
+	return SkeletonId == TEXT("metahuman") && Face && Face->Find(Bone) != INDEX_NONE;
+}
+
+bool FMantleAccessorySettings::BoneInComponent(const FMantleContractSlot& Slot, const USkeletalMesh* Body, const USkeletalMesh* Face, FTransform& Out,
+	FMantleAccessoryBone* OutResolved)
+{
+	const FMantleAccessoryBone Resolved = ResolveBone(Slot, Face);
+	if (OutResolved) *OutResolved = Resolved;
+	const USkeletalMesh* Mesh = Resolved.bOnFace ? Face : Body;
+	if (!Resolved.bAvailable || !Mesh) return false;
+	const FReferenceSkeleton& Reference = Mesh->GetRefSkeleton();
+	const TArray<FTransform>& Pose = Reference.GetRefBonePose();
+	int32 Bone = Reference.FindBoneIndex(Resolved.Bone);
+	if (!Pose.IsValidIndex(Bone)) return false;
+	Out = Pose[Bone];
+	while ((Bone = Reference.GetParentIndex(Bone)) != INDEX_NONE) Out = Out * Pose[Bone];
+	return true;
+}
+
+bool FMantleAccessorySettings::AlignToAvatarAxes(FMantleCosmeticDraft& Draft, const USkeletalMesh* Body, FString& OutError, const USkeletalMesh* Face)
 {
 	OutError.Reset();
 	const FMantleAvatarContract* Contract = FMantleAvatarContract::Get(&OutError);
@@ -58,16 +104,16 @@ bool FMantleAccessorySettings::AlignToAvatarAxes(FMantleCosmeticDraft& Draft, co
 		if (OutError.IsEmpty()) OutError = TEXT("Choose a MetaHuman body and an accessory slot to align its axes.");
 		return false;
 	}
-	const FReferenceSkeleton& Reference = Body->GetRefSkeleton();
-	const TArray<FTransform>& Pose = Reference.GetRefBonePose();
-	int32 Bone = Reference.FindBoneIndex(FName(*Point->SocketBone));
-	if (!Pose.IsValidIndex(Bone))
+	// The slot's bone: on the face for a face slot (its FACIAL_* bone), on the body otherwise.
+	FTransform Component;
+	FMantleAccessoryBone Resolved;
+	if (!BoneInComponent(*Point, Body, Face, Component, &Resolved))
 	{
-		OutError = FString::Printf(TEXT("The chosen MetaHuman has no %s attachment bone."), *Point->SocketBone);
+		OutError = Resolved.bOnFace
+			? FString::Printf(TEXT("This slot is worn on a MetaHuman face, and the chosen face has no %s bone."), *Resolved.Bone.ToString())
+			: FString::Printf(TEXT("The chosen MetaHuman has no %s attachment bone."), *Resolved.Bone.ToString());
 		return false;
 	}
-	FTransform Component = Pose[Bone];
-	while ((Bone = Reference.GetParentIndex(Bone)) != INDEX_NONE) Component = Component * Pose[Bone];
 	FQuat Rotation = Component.GetRotation().Inverse();
 	Rotation.Normalize();
 	if (Rotation.ContainsNaN())
@@ -83,7 +129,7 @@ bool FMantleAccessorySettings::AlignToAvatarAxes(FMantleCosmeticDraft& Draft, co
 
 bool FMantleAccessorySettings::ApplyDefaultPlacement(FMantleCosmeticDraft& Draft, const USkeletalMesh* Body, FString& OutError, const USkeletalMesh* Face)
 {
-	if (!AlignToAvatarAxes(Draft, Body, OutError))
+	if (!AlignToAvatarAxes(Draft, Body, OutError, Face))
 	{
 		return false;
 	}
@@ -92,6 +138,56 @@ bool FMantleAccessorySettings::ApplyDefaultPlacement(FMantleCosmeticDraft& Draft
 		FString Ignored;
 		RestOnShoulders(Draft, Body, Ignored, Face);
 	}
+	const EMantleAccessoryAnchor Anchor = DefaultAnchor(Draft.Slot);
+	if (Anchor != EMantleAccessoryAnchor::Pivot)
+	{
+		FString Ignored;
+		SeatOnSocket(Draft, Anchor, Ignored);
+	}
+	return true;
+}
+
+EMantleAccessoryAnchor FMantleAccessorySettings::DefaultAnchor(const FString& Slot)
+{
+	if (Slot == TEXT("acc_ear_l") || Slot == TEXT("acc_ear_r")) return EMantleAccessoryAnchor::TopCenter;
+	if (Slot == TEXT("acc_eyes") || Slot == TEXT("acc_nose") || Slot == TEXT("acc_ring") || Slot == TEXT("acc_wrist_l") || Slot == TEXT("acc_wrist_r")) return EMantleAccessoryAnchor::Center;
+	return EMantleAccessoryAnchor::Pivot;
+}
+
+FVector3f FMantleAccessorySettings::AnchorPoint(const EMantleAccessoryAnchor Anchor, const FBox3f& Bounds)
+{
+	const FVector3f Center = Bounds.GetCenter();
+	return Anchor == EMantleAccessoryAnchor::TopCenter ? FVector3f(Center.X, Center.Y, Bounds.Max.Z) : Center;
+}
+
+bool FMantleAccessorySettings::SeatOnSocket(FMantleCosmeticDraft& Draft, const EMantleAccessoryAnchor Anchor, FString& OutError)
+{
+	OutError.Reset();
+	const FMantleAvatarContract* Contract = FMantleAvatarContract::Get(&OutError);
+	const UStaticMesh* Mesh = Cast<UStaticMesh>(Draft.Source.Get());
+	if (!Contract || !Mesh || Anchor == EMantleAccessoryAnchor::Pivot)
+	{
+		if (OutError.IsEmpty()) OutError = TEXT("Choose a static mesh and a small accessory slot to seat it on its socket.");
+		return false;
+	}
+	FBox3f Bounds(Mesh->GetBoundingBox());
+	if (!Bounds.IsValid)
+	{
+		OutError = TEXT("The accessory has no bounds to seat on its socket.");
+		return false;
+	}
+	// The upload centers a mesh whose pivot is out of the slot's reach (RecenterOffset); seat what uploads.
+	if (const FMantleContractAccessoryBounds* Limits = Contract->AccessoryBounds.Find(Draft.Slot))
+	{
+		Bounds = Bounds.ShiftBy(-RecenterOffset(Bounds, *Limits));
+	}
+	// The worn mesh is the attach rotation, scale and offset on the socket bone. The rotation turns the mesh's axes into the avatar's
+	// (AlignToAvatarAxes), so the anchor in the avatar's axes is the scaled anchor, and the offset in the bone's frame is minus
+	// the attach rotation applied to it.
+	const FVector Point = FVector(AnchorPoint(Anchor, Bounds) * Draft.AttachScale);
+	const FQuat Rotation = FRotator(Draft.AttachRotation.X, Draft.AttachRotation.Y, Draft.AttachRotation.Z).Quaternion();
+	Draft.AttachLocation = FMantleCosmeticPackage::ClampAttachLocation(FVector3f(-Rotation.RotateVector(Point)));
+	Draft.bAttach = true;
 	return true;
 }
 
@@ -156,7 +252,7 @@ bool FMantleAccessorySettings::RestOnShoulders(FMantleCosmeticDraft& Draft, cons
 	{
 		return false;
 	}
-	Mesh = UploadMesh(Mesh, Contract->RigidAccessory);
+	Mesh = UploadMesh(Mesh, Contract->AccessoryClassFor(Draft.Slot));
 	const FReferenceSkeleton& Reference = Body->GetRefSkeleton();
 	const TArray<FTransform>& Pose = Reference.GetRefBonePose();
 	int32 Bone = Reference.FindBoneIndex(FName(*Point->SocketBone));

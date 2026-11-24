@@ -196,5 +196,7 @@ bool FMantleCatalogGarmentFit::TracksBody(const FString& ApiSlot)
 {
 	// Case-sensitive: API slot ids are lower case (FString's == ignores case).
 	return ApiSlot.Equals(TEXT("top"), ESearchCase::CaseSensitive) || ApiSlot.Equals(TEXT("bottom"), ESearchCase::CaseSensitive)
-		|| ApiSlot.Equals(TEXT("footwear"), ESearchCase::CaseSensitive);
+		|| ApiSlot.Equals(TEXT("footwear"), ESearchCase::CaseSensitive)
+		|| ApiSlot.Equals(TEXT("socks"), ESearchCase::CaseSensitive) || ApiSlot.Equals(TEXT("legwear"), ESearchCase::CaseSensitive)
+		|| ApiSlot.Equals(TEXT("outerwear"), ESearchCase::CaseSensitive) || ApiSlot.Equals(TEXT("gloves"), ESearchCase::CaseSensitive);
 }

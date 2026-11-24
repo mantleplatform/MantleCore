@@ -1,4 +1,5 @@
 // Copyright Joshua Eger. All Rights Reserved.
+#include "MantleCatalogGarmentFit.h"
 #include "MantleCosmeticItem.h"
 
 #include "Misc/AutomationTest.h"
@@ -43,6 +44,36 @@ bool FMantleCosmeticAccessoryColorsTest::RunTest(const FString& Parameters)
 
 	TestTrue(TEXT("a top with color regions reads"), MantleCosmetic::ParseItemBatch(Batch(TEXT("top"), TEXT("skinned")), Items, Missing, WhyNot));
 	TestFalse(TEXT("hair refuses color regions"), MantleCosmetic::ParseItemBatch(Batch(TEXT("hair"), TEXT("skinned")), Items, Missing, WhyNot));
+
+	// #65 and #136: the four layer slots read them as clothing, the seven newer accessory slots as accessories.
+	for (const TCHAR* Slot : {TEXT("socks"), TEXT("legwear"), TEXT("outerwear"), TEXT("gloves")})
+	{
+		TestTrue(*FString::Printf(TEXT("%s with color regions reads"), Slot), MantleCosmetic::ParseItemBatch(Batch(Slot, TEXT("skinned")), Items, Missing, WhyNot));
+	}
+	for (const TCHAR* Slot : {TEXT("acc_eyes"), TEXT("acc_ear_l"), TEXT("acc_ear_r"), TEXT("acc_nose"), TEXT("acc_wrist_l"), TEXT("acc_wrist_r"), TEXT("acc_ring")})
+	{
+		TestTrue(*FString::Printf(TEXT("%s with color regions reads"), Slot), MantleCosmetic::ParseItemBatch(Batch(Slot, TEXT("rigid")), Items, Missing, WhyNot));
+	}
+	return true;
+}
+
+// The slots whose garment is fitted to the body: top, bottom, footwear and the four #65 layer slots. Hair, the face
+// slots, nails and the accessories are not.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCatalogGarmentTracksBodyTest,
+	"Mantle.Cosmetic.TracksBodySlots",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCatalogGarmentTracksBodyTest::RunTest(const FString& Parameters)
+{
+	for (const TCHAR* Slot : {TEXT("top"), TEXT("bottom"), TEXT("footwear"), TEXT("socks"), TEXT("legwear"), TEXT("outerwear"), TEXT("gloves")})
+	{
+		TestTrue(*FString::Printf(TEXT("%s tracks the body"), Slot), FMantleCatalogGarmentFit::TracksBody(FString(Slot)));
+	}
+	for (const TCHAR* Slot : {TEXT("hair"), TEXT("eyebrows"), TEXT("eyelashes"), TEXT("facial_hair"), TEXT("nails"), TEXT("acc_hat"), TEXT("acc_ring"), TEXT("Gloves"), TEXT("")})
+	{
+		TestFalse(*FString::Printf(TEXT("'%s' does not track the body"), Slot), FMantleCatalogGarmentFit::TracksBody(FString(Slot)));
+	}
 	return true;
 }
 

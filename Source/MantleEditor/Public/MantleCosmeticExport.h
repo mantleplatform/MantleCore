@@ -222,6 +222,16 @@ struct MANTLEEDITOR_API FMantleCosmeticDraft
 	FVector3f AttachRotation = FVector3f::ZeroVector;
 	FVector3f AttachScale = FVector3f::OneVector;
 
+	/** #65, #136, #389: creator-set item settings; each is sent only on the slots the contract allows it on (see FMantleCosmeticPackage). */
+	bool bTuckable = true;
+	bool bTallBoots = false;
+	FString HairRule = TEXT("underIt");
+	/** The earring pair's id: made when the creator picks Pair (FMantleItemSettings::MakePairId), kept so a rebuild or resume reuses it. */
+	FString PairId;
+	/** Earrings: the side(s) worn on. Left is slot acc_ear_l, Right acc_ear_r, Pair uploads both (the right one a mirrored copy). */
+	enum class EEarringSide : uint8 { Left, Right, Pair };
+	EEarringSide EarringSide = EEarringSide::Left;
+
 	/**
 	 * Accessories made from a skinned source (a MetaHuman Outfit hat): the rotation of the bone it hangs from in the
 	 * source's reference pose. The thumbnail stands it upright as worn; identity draws it in its own axes.

@@ -68,4 +68,55 @@ namespace MantleAccessoryPlacement
 		if (Reach > MaxReachCm) Factor = FMath::Min(Factor, MaxReachCm / Reach);
 		return static_cast<float>(Factor);
 	}
+
+	bool FindSlotBounds(const FString& SlotId, float& OutMaxDimensionCm, float& OutMaxReachCm)
+	{
+		// Mirrors schema/avatar/limits.json rigid_accessory.boundsPerSlot; the two must be kept in step.
+		struct FSlotBounds
+		{
+			const TCHAR* Slot;
+			float MaxDimensionCm;
+			float MaxReachCm;
+		};
+		static const FSlotBounds Table[] = {
+			{ TEXT("acc_hat"), 60.0f, 50.0f },
+			{ TEXT("acc_face"), 35.0f, 30.0f },
+			{ TEXT("acc_neck"), 45.0f, 35.0f },
+			{ TEXT("acc_shoulder_l"), 40.0f, 40.0f },
+			{ TEXT("acc_shoulder_r"), 40.0f, 40.0f },
+			{ TEXT("acc_front"), 60.0f, 50.0f },
+			{ TEXT("acc_back"), 80.0f, 70.0f },
+			{ TEXT("acc_waist"), 70.0f, 55.0f },
+			{ TEXT("acc_eyes"), 25.0f, 20.0f },
+			{ TEXT("acc_ear_l"), 12.0f, 12.0f },
+			{ TEXT("acc_ear_r"), 12.0f, 12.0f },
+			{ TEXT("acc_nose"), 5.0f, 5.0f },
+			{ TEXT("acc_wrist_l"), 15.0f, 12.0f },
+			{ TEXT("acc_wrist_r"), 15.0f, 12.0f },
+			{ TEXT("acc_ring"), 6.0f, 5.0f },
+		};
+		for (const FSlotBounds& Row : Table)
+		{
+			if (SlotId.Equals(Row.Slot, ESearchCase::CaseSensitive))
+			{
+				OutMaxDimensionCm = Row.MaxDimensionCm;
+				OutMaxReachCm = Row.MaxReachCm;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	FTransform PlacedRelative(const FMantleCosmeticTransform& Attach, const FBox3f& Bounds, const FString& SlotId,
+		const FTransform& SocketLocal, const FMantleCosmeticTransform* Override, float& OutFactor)
+	{
+		const FTransform Clamped = ClampedAttach(Attach);
+		float MaxDimensionCm = 0.0f;
+		float MaxReachCm = 0.0f;
+		OutFactor = FindSlotBounds(SlotId, MaxDimensionCm, MaxReachCm) && Bounds.IsValid
+			? BoundsClampFactor(Bounds, Clamped.GetScale3D(), MaxDimensionCm, MaxReachCm) : 1.0f;
+		FTransform Placed = Clamped;
+		Placed.SetScale3D(Clamped.GetScale3D() * OutFactor);
+		return ComposeRelative(Placed, SocketLocal, Override);
+	}
 }

@@ -1311,9 +1311,9 @@ bool FMantleParametricOutfit::PrepareRigid(const FMantleCosmeticDraft& Draft, co
 	TOptional<TArray<int32>> KeepSlots;
 	int32 Kept = 0;
 	int32 After = 0;
-	USkeletalMesh* Garment = ExportGarment(*Asset, *Single, Draft.KeepSlots, Draft.Slot, Contract.RigidAccessory.MaxTriangles, KeepSlots, Kept, After, KeepAlive, OutError);
+	USkeletalMesh* Garment = ExportGarment(*Asset, *Single, Draft.KeepSlots, Draft.Slot, Contract.AccessoryMaxTriangles(Draft.Slot), KeepSlots, Kept, After, KeepAlive, OutError);
 	if (!Garment) { return false; }
-	if (After != Kept) { Notes.Add(FString::Printf(TEXT("Reduced from %d to %d triangles to fit the %d limit."), Kept, After, Contract.RigidAccessory.MaxTriangles)); }
+	if (After != Kept) { Notes.Add(FString::Printf(TEXT("Reduced from %d to %d triangles to fit the %d limit."), Kept, After, Contract.AccessoryMaxTriangles(Draft.Slot))); }
 
 	FMantleGlbMesh Glb;
 	TArray<UMaterialInterface*> GlbMaterials;
@@ -1455,6 +1455,12 @@ bool FMantleParametricOutfit::RigidPivot(const FMantleAvatarContract& Contract, 
 	if (!Entry || Entry->ItemClass != TEXT("rigid_accessory") || Entry->SocketBone.IsEmpty())
 	{
 		OutError = FString::Printf(TEXT("\"%s\" is not an accessory slot with a socket bone"), *Slot);
+		return false;
+	}
+	// #136: the ear, eye and nose slots hang from the MetaHuman face's bones, which an Outfit's body skeleton does not have.
+	if (Entry->IsOnFace())
+	{
+		OutError = FString::Printf(TEXT("An Outfit piece cannot go on \"%s\": that slot is worn on the MetaHuman face, and Outfits are made on the body. Export the piece as a static mesh and upload it as an accessory instead."), *Slot);
 		return false;
 	}
 	OutPivot.Bone = Entry->SocketBone;

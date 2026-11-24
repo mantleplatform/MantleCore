@@ -188,6 +188,20 @@ struct MANTLERUNTIME_API FMantleCosmeticItem
 	 */
 	TMap<FString, FString> SecondaryMotion;
 
+	/**
+	 * The creator's item settings (#65, #136, #389: schema/avatar/limits.json itemSettings), plain top-level fields the
+	 * API leaves out when unset; an absent, unreadable or unknown value is the default here. Each is only meaningful on
+	 * the slots limits.json lists for it.
+	 * - bTuckable (top): false marks a top that cannot be tucked in (the worn entry's tucked flag is then ignored).
+	 * - bTallBoots (footwear): true puts the footwear over the bottom.
+	 * - HairRule (acc_hat, acc_face, outerwear): "underIt", "hideAll" or "leaveAlone". Stored for the hair-under-hats work.
+	 * - PairId (acc_ear_l, acc_ear_r): joins two earrings into a pair; empty: none. Stored for the earring pairs.
+	 */
+	bool bTuckable = true;
+	bool bTallBoots = false;
+	FString HairRule = TEXT("underIt");
+	FString PairId;
+
 	/** Fields that came with a URL but no usable cooked hash, for the log ("mesh", "materials[0].albedo (sha256 ...)"). */
 	TArray<FString> UnverifiedAssets;
 
@@ -308,6 +322,15 @@ namespace MantleCosmetic
 	 */
 	MANTLERUNTIME_API bool ReadSecondaryMotion(const TSharedPtr<FJsonValue>& Value, const FString& Where, TMap<FString, FString>& Out,
 		FString& OutWhyNot);
+
+	/**
+	 * The creator's item settings (limits.json itemSettings) of an item or card object: tuckable and tallBoots (booleans),
+	 * hairRule (underIt, hideAll or leaveAlone) and pairId (a string). Each is a plain top-level field the API leaves out
+	 * when unset; one that is absent, null, of the wrong type or (hairRule) not one of the three rules leaves the value
+	 * passed in alone, so a caller starts from the defaults (true, false, "underIt", empty) and a bad value never fails an answer.
+	 */
+	MANTLERUNTIME_API void ReadItemSettings(const TSharedPtr<FJsonObject>& Object, bool& bInOutTuckable, bool& bInOutTallBoots,
+		FString& InOutHairRule, FString& InOutPairId);
 
 	/**
 	 * An item's "bodyMetrics". Absent or null: true with Out unset. An object: its six lengths are required,

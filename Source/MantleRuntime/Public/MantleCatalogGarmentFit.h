@@ -118,7 +118,8 @@ struct MANTLERUNTIME_API FMantleCatalogGarmentFit
 
 	/**
 	 * True for the API slots whose garment is fitted to the body (FitToWearer, with the authored clearance): "top",
-	 * "bottom" and "footwear". Hair and the face slots sit on the head, which the body does not have, and only warp.
+	 * "bottom", "footwear" and the four #65 layer slots "socks", "legwear", "outerwear" and "gloves". Hair and the face
+	 * slots sit on the head, which the body does not have, and only warp.
 	 */
 	static bool TracksBody(const FString& ApiSlot);
 };

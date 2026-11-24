@@ -111,7 +111,8 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	/** CrowdSpawner looks[], 0 to this many. */
 	static constexpr int32 MaxCrowdLooks = 16;
 
-	/** One crowd look's wearing[], 0 to this many (avatar descriptor v2's replicated budget). */
+	/** One crowd look's wearing[], 0 to this many. Stays 24 beside the avatar descriptor's MaxWearing of 27: it is the
+	 *  place schema's and the backend's number too (they change together), and a crowd look names no acc_ring. */
 	static constexpr int32 MaxCrowdLookWearing = 24;
 
 	/** CrowdSpawner variation.skinTones[], 1 to this many. */

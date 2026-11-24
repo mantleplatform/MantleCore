@@ -19,4 +19,6 @@ public:
 		const FMantleSkinnedMesh& TargetFace, const FMantleSkinnedMesh& Body, bool bFacial,
 		FMantleSkinnedMesh& Out, FString& Error, int32* OutBorrowedRoots = nullptr);
 	static bool IsFaceSkinned(const FMantleSkinnedMesh& Mesh);
+	/** The wearer's head skin as the fit binds hair to it (#389): Face's LOD0 positions and the triangles of its skin and head sections. False, both empty, when it has none. */
+	static bool HeadSkin(const FMantleSkinnedMesh& Face, TArray<FVector3f>& OutPositions, TArray<uint32>& OutIndices);
 };

@@ -38,8 +38,9 @@ struct MANTLERUNTIME_API FMantleCrowdWornSettings
 
 	/**
 	 * A wear or accessory slot: hair, eyebrows, eyelashes, facial_hair, top, bottom, footwear,
-	 * acc_hat, acc_face, acc_neck, acc_shoulder_l, acc_shoulder_r, acc_front, acc_back or
-	 * acc_waist. One item per slot.
+	 * socks, legwear, outerwear, gloves, acc_hat, acc_face, acc_neck, acc_shoulder_l,
+	 * acc_shoulder_r, acc_front, acc_back, acc_waist, acc_eyes, acc_ear_l, acc_ear_r, acc_nose,
+	 * acc_wrist_l or acc_wrist_r (not acc_ring: it needs a finger). One item per slot.
 	 */
 	UPROPERTY(EditAnywhere, Category = "Crowd")
 	FString Slot;

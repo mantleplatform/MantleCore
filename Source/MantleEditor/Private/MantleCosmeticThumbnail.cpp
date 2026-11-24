@@ -20,9 +20,11 @@
 #include "StaticMeshAttributes.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/App.h"
+#include "Misc/ScopeExit.h"
 #include "RHIGlobals.h"
 #include "RHIShaderPlatform.h"
 #include "RenderingThread.h"
+#include "SceneInterface.h"
 #include "ShaderCompiler.h"
 #include "TextureResource.h"
 #include "ThumbnailHelpers.h"
@@ -147,6 +149,39 @@ namespace MantleCosmeticThumbnailPrivate
 			Lines.Add(Material ? FString::Printf(TEXT("%s (%s)"), *Material->GetPathName(), CaptureMaterialState(Material)) : FString(TEXT("none")));
 		}
 		return FString::Printf(TEXT("%s: %s"), Mesh ? *Mesh->GetPathName() : TEXT("?"), *FString::Join(Lines, TEXT(", ")));
+	}
+
+	/**
+	 * Frees what a capture made, now rather than at the next garbage collection. Each capture's scene is a world of its own with
+	 * its own renderer scene, and that scene's GPU scene reserves its buffers 2 GB of address space at a time (GPUScene.cpp,
+	 * AllocOrResizeBufferIfNeeded): about 8 GB a picture. ~FPreviewScene unregisters the components and cleans the world up but
+	 * only asks for a collection (PreviewScene.cpp, Uninitialize: UEngine::ForceGarbageCollection, which runs at the next engine
+	 * tick), and the renderer scene goes only when the world is collected (UWorld::FinishDestroy). A run of pictures with no tick
+	 * between them (a -ExecCmds batch runs every command in one frame) kept every one: 31 pictures passed the 256 GB reserved
+	 * budget and the PC froze (2026-11-24). So the renderer scene is released here, as UWorld::FinishDestroy releases it, once
+	 * the preview scene has cleaned its world up; the world object itself still waits for a collection, with no scene to hold.
+	 */
+	void CaptureRelease(TUniquePtr<FCaptureScene>& Scene, UTextureRenderTarget2D* Target)
+	{
+		if (Target)
+		{
+			Target->ReleaseResource();
+		}
+		if (!Scene)
+		{
+			return;
+		}
+		const TWeakObjectPtr<UWorld> World(Scene->GetWorld());
+		// Unregisters every component and cleans the world up (CleanupWorld, which also ends its effects system).
+		Scene.Reset();
+		// Even if marked as garbage by the cleanup: it is the collection that has not run yet.
+		UWorld* Cleaned = World.Get(/*bEvenIfPendingKill*/ true);
+		if (Cleaned && Cleaned->Scene && !Cleaned->FXSystem)
+		{
+			Cleaned->Scene->Release();
+			Cleaned->Scene = nullptr;
+		}
+		FlushRenderingCommands();
 	}
 }
 
@@ -396,7 +431,10 @@ bool FMantleCosmeticThumbnail::Capture(const FMantleThumbnailSubject& Subject, i
 		return false;
 	}
 
-	FCaptureScene Scene(Subject.bFloor);
+	TUniquePtr<FCaptureScene> Scene = MakeUnique<FCaptureScene>(Subject.bFloor);
+	UTextureRenderTarget2D* Target = nullptr;
+	// Whatever way this returns, the scene and the render target go now (CaptureRelease).
+	ON_SCOPE_EXIT { CaptureRelease(Scene, Target); };
 	// What the picture draws, and what each piece is, for the materials' wait and the log.
 	TArray<TPair<UPrimitiveComponent*, const UObject*>> Drawn;
 
@@ -415,7 +453,7 @@ bool FMantleCosmeticThumbnail::Capture(const FMantleThumbnailSubject& Subject, i
 		Component->SetDisablePostProcessBlueprint(true);
 		Component->SetSkeletalMeshAsset(Mesh);
 		Component->SetForcedLOD(1);
-		Scene.AddComponent(Component, FTransform::Identity);
+		Scene->AddComponent(Component, FTransform::Identity);
 		Drawn.Emplace(Component, Mesh);
 		// #124: materials drawn in place of the mesh's own (an overlay on the skin).
 		if (Subject.MaterialOverrides.IsValidIndex(Index))
@@ -441,14 +479,14 @@ bool FMantleCosmeticThumbnail::Capture(const FMantleThumbnailSubject& Subject, i
 	FBox Frame = Subject.Frame;
 	if (Subject.Pose)
 	{
-		Subject.Pose(Scene, SkeletalComponents, Frame);
+		Subject.Pose(*Scene, SkeletalComponents, Frame);
 	}
 	if (Subject.StaticMesh)
 	{
 		UStaticMeshComponent* Component = NewObject<UStaticMeshComponent>(GetTransientPackage(), NAME_None, RF_Transient);
 		Component->SetStaticMesh(Subject.StaticMesh);
 		Component->SetForcedLodModel(1);
-		Scene.AddComponent(Component, Subject.StaticTransform);
+		Scene->AddComponent(Component, Subject.StaticTransform);
 		Drawn.Emplace(Component, Subject.StaticMesh);
 	}
 	if (Subject.StaticMesh && Subject.StaticBackFaces)
@@ -456,11 +494,11 @@ bool FMantleCosmeticThumbnail::Capture(const FMantleThumbnailSubject& Subject, i
 		UStaticMeshComponent* Component = NewObject<UStaticMeshComponent>(GetTransientPackage(), NAME_None, RF_Transient);
 		Component->SetStaticMesh(Subject.StaticBackFaces.Get());
 		Component->SetForcedLodModel(1);
-		Scene.AddComponent(Component, Subject.StaticTransform);
+		Scene->AddComponent(Component, Subject.StaticTransform);
 		Drawn.Emplace(Component, Subject.StaticBackFaces.Get());
 	}
 
-	UTextureRenderTarget2D* Target = NewObject<UTextureRenderTarget2D>(GetTransientPackage(), NAME_None, RF_Transient);
+	Target = NewObject<UTextureRenderTarget2D>(GetTransientPackage(), NAME_None, RF_Transient);
 	Target->ClearColor = FLinearColor::Black;
 	// 8-bit with the display gamma (not forced linear): the final LDR color as the editor shows it.
 	Target->InitCustomFormat(Size, Size, PF_B8G8R8A8, false);
@@ -477,7 +515,7 @@ bool FMantleCosmeticThumbnail::Capture(const FMantleThumbnailSubject& Subject, i
 	Camera->ShowFlags.DisableAdvancedFeatures();
 	Camera->ShowFlags.SetMotionBlur(false);
 	const FVector Location = FrameCamera(Frame.IsValid ? Frame : Subject.Frame, Subject.View, FieldOfViewDegrees, FrameMargin);
-	Scene.AddComponent(Camera, FTransform(Subject.View, Location));
+	Scene->AddComponent(Camera, FTransform(Subject.View, Location));
 
 	// Everything the picture needs in before it is taken, or a material draws as the engine's gray world grid: loads,
 	// asset compiles, every shader job and every mip (CaptureSettle). A material just made (a bake's) or one the editor
@@ -523,6 +561,12 @@ bool FMantleCosmeticThumbnail::Capture(const FMantleThumbnailSubject& Subject, i
 			CaptureWarmUpRounds);
 	}
 
+	// A dev picture asks for frames to settle after the camera is placed: one capture and flush per frame.
+	for (int32 Settled = 0; Settled < Subject.SettleFrames; ++Settled)
+	{
+		Camera->CaptureScene();
+		FlushRenderingCommands();
+	}
 	Camera->CaptureScene();
 	FlushRenderingCommands();
 

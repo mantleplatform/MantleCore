@@ -198,13 +198,16 @@ struct MANTLERUNTIME_API FMantleClearanceRestore
 	 *     point's push gain along its surface normal divided by that normal's cosine with the shared
 	 *     direction, so no copy gains less clearance than its own push gave it; where a cosine falls below
 	 *     NormalMinDot the shared direction is the copies' mean surface normal (cosines floored there);
+	 *   - Frozen (per vertex, empty for none): a point with a frozen vertex is held: its push is 0 and stays 0 through every
+	 *     smoothing pass above (it counts as zero to its neighbors), so it does not move at all;
 	 *   - flip limiter: a triangle turned over by the push (against its pre-push face, and against
 	 *     Authored's where the pre-push face still agrees with it) halves its points' push, up to
 	 *     MaxHalvings passes; then the points of any triangle still flipped get no push at all.
 	 * Vertices are never pulled inward; normals, tangents and everything else stay. False (Garment
-	 * unchanged), with the reason in OutError, when the sizes do not match (Seams: empty or one per vertex).
+	 * unchanged), with the reason in OutError, when the sizes do not match (Seams, Frozen: empty or one per vertex).
 	 */
 	static bool Restore(FMantleSkinnedMeshLOD& Garment, const FMantleGarmentClearance& Target, TConstArrayView<FVector3f> Surface,
 		const FMantleSkinnedMeshLOD* Authored, float SlackCm, float MinKeptCm, int32 SmoothIters,
-		FMantleClearanceRestoreStats* OutStats = nullptr, FString* OutError = nullptr, TConstArrayView<int32> Seams = TConstArrayView<int32>());
+		FMantleClearanceRestoreStats* OutStats = nullptr, FString* OutError = nullptr, TConstArrayView<int32> Seams = TConstArrayView<int32>(),
+		TConstArrayView<uint8> Frozen = TConstArrayView<uint8>());
 };

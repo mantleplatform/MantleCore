@@ -1,6 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleCharacterSplit.h"
 
+#include "MantleAvatarContract.h"
 #include "MantleAvatarConverter.h"
 #include "MantleAvatarStripFixer.h"
 #include "MantleCosmeticExport.h"
@@ -103,7 +104,7 @@ namespace MantleCharacterSplitPrivate
 			Out.Why = TEXT("its name says a top");
 			return Out;
 		}
-		if (SplitHasWord(Words, { TEXT("underwear"), TEXT("panties"), TEXT("panty"), TEXT("briefs"), TEXT("boxers"), TEXT("leggings"), TEXT("tights") }))
+		if (SplitHasWord(Words, { TEXT("underwear"), TEXT("panties"), TEXT("panty"), TEXT("briefs"), TEXT("boxers") }))
 		{
 			Out.Role = EMantleSplitRole::Garment;
 			Out.Slot = TEXT("bottom");
@@ -192,7 +193,7 @@ FString FMantleCharacterSplit::RegionOf(const TConstArrayView<FString> BoneNames
 
 bool FMantleCharacterSplit::NamesAccessory(const FString& Name)
 {
-	return MantleCharacterSplitPrivate::SplitHasWord(Name, { TEXT("hat"), TEXT("cap"), TEXT("helmet"), TEXT("glove"), TEXT("gloves"), TEXT("gauntlet"), TEXT("bracer"),
+	return MantleCharacterSplitPrivate::SplitHasWord(Name, { TEXT("hat"), TEXT("cap"), TEXT("helmet"), TEXT("bracer"),
 		TEXT("belt"), TEXT("sash"), TEXT("bag"), TEXT("backpack"), TEXT("purse"), TEXT("scarf"), TEXT("mask"), TEXT("glasses"), TEXT("goggles"), TEXT("necklace"),
 		TEXT("bracelet"), TEXT("ring"), TEXT("earring"), TEXT("earrings"), TEXT("cape"), TEXT("cloak"), TEXT("quiver"), TEXT("pauldron"), TEXT("pauldrons") });
 }
@@ -217,11 +218,17 @@ int32 FMantleCharacterSplit::LayerOf(const EMantleSplitRole Role, const FString&
 	{
 		return 1;
 	}
-	if (SplitHasWord(Name, { TEXT("jacket"), TEXT("coat"), TEXT("cape"), TEXT("cloak"), TEXT("armor"), TEXT("armour"), TEXT("breastplate"), TEXT("robe"), TEXT("vest"), TEXT("poncho") }))
+	if (Slot == TEXT("outerwear")
+		|| SplitHasWord(Name, { TEXT("jacket"), TEXT("coat"), TEXT("cape"), TEXT("cloak"), TEXT("armor"), TEXT("armour"), TEXT("breastplate"), TEXT("robe"), TEXT("vest"), TEXT("poncho") }))
 	{
 		return 5;
 	}
-	return Slot == TEXT("top") ? 3 : 2;
+	// Socks and legwear are drawn under the other clothes, gloves over the top.
+	if (Slot == TEXT("socks") || Slot == TEXT("legwear"))
+	{
+		return 1;
+	}
+	return Slot == TEXT("gloves") ? 4 : Slot == TEXT("top") ? 3 : 2;
 }
 
 FMantleSplitProposal FMantleCharacterSplit::Propose(const TConstArrayView<FMantleSplitSource> Meshes)
@@ -544,13 +551,30 @@ namespace MantleCharacterSplitPrivate
 
 	bool IsGarmentSlot(const FString& Slot)
 	{
-		return Slot == TEXT("top") || Slot == TEXT("bottom") || Slot == TEXT("footwear");
+		return FMantleAvatarContract::IsClothingSlotOrDefault(Slot);
 	}
 
-	/** Row order: top, bottom, footwear, accessory, hair, not used. */
+	/** Row order: the clothing slots in wearing order, accessory, hair, not used. */
 	int32 SlotOrder(const FString& Slot)
 	{
-		return Slot == TEXT("top") ? 0 : Slot == TEXT("bottom") ? 1 : Slot == TEXT("footwear") ? 2 : Slot == TEXT("accessory") ? 3 : Slot.IsEmpty() ? 5 : 4;
+		const int32 Rank = FMantleAvatarContract::ClothingRankOrDefault(Slot);
+		if (Rank != INDEX_NONE)
+		{
+			return Rank;
+		}
+		const int32 Clothing = FMantleAvatarContract::ClothingSlotsOrDefault().Num();
+		return Slot == TEXT("accessory") ? Clothing : Slot.IsEmpty() ? Clothing + 2 : Clothing + 1;
+	}
+
+	/** The clothing slots in the order a review's items are listed: top, bottom, footwear as before, then the rest in wearing order. */
+	TArray<FString> ItemSlots()
+	{
+		TArray<FString> Out = { TEXT("top"), TEXT("bottom"), TEXT("footwear") };
+		for (const FString& Slot : FMantleAvatarContract::ClothingSlotsOrDefault())
+		{
+			Out.AddUnique(Slot);
+		}
+		return Out;
 	}
 
 	/** "a, b and c". */
@@ -915,6 +939,7 @@ int32 FMantlePackReview::BodyMesh() const
 
 TArray<FMantlePackReview::FItem> FMantlePackReview::Items() const
 {
+	using namespace MantleCharacterSplitPrivate;
 	TArray<FItem> Out;
 	auto Into = [this](const int32 Host, TArray<int32>& With)
 	{
@@ -926,7 +951,7 @@ TArray<FMantlePackReview::FItem> FMantlePackReview::Items() const
 			}
 		}
 	};
-	for (const TCHAR* Slot : { TEXT("top"), TEXT("bottom"), TEXT("footwear") })
+	for (const FString& Slot : ItemSlots())
 	{
 		TArray<int32> Heads;
 		for (int32 Index = 0; Index < Pieces.Num(); ++Index)
@@ -1072,7 +1097,7 @@ TArray<FString> FMantlePackReview::Describe(const FString& Label) const
 		Lines.Add(FString::Printf(TEXT("MANTLE_PACK %s:   %s: %s%s %s [%s] (%s)"), *Label, *SlotHeading(Piece), Piece.PartOf != INDEX_NONE ? TEXT("  + ") : TEXT(""),
 			Piece.Slot.IsEmpty() ? TEXT("") : Piece.bTicked ? TEXT("[x]") : TEXT("[ ]"), *RowText(Index), *PlaceShares(Piece.Place), *Piece.Why));
 	}
-	for (const TCHAR* Slot : { TEXT("top"), TEXT("bottom"), TEXT("footwear") })
+	for (const FString& Slot : FMantleAvatarContract::ClothingSlotsOrDefault())
 	{
 		int32 Heads = 0;
 		for (const FMantlePackPiece& Piece : Pieces)
@@ -1081,7 +1106,7 @@ TArray<FString> FMantlePackReview::Describe(const FString& Label) const
 		}
 		if (Heads > 1)
 		{
-			Lines.Add(FString::Printf(TEXT("MANTLE_PACK %s:   %s: %d pieces, %s"), *Label, Slot, Heads, IsOneItem(Slot) ? TEXT("one item") : TEXT("one item each (two sit on the same part of the body)")));
+			Lines.Add(FString::Printf(TEXT("MANTLE_PACK %s:   %s: %d pieces, %s"), *Label, *Slot, Heads, IsOneItem(Slot) ? TEXT("one item") : TEXT("one item each (two sit on the same part of the body)")));
 		}
 	}
 	for (const FItem& Item : Items())

@@ -252,7 +252,7 @@ struct MANTLEEDITOR_API FMantleGarmentOutfit
 		TConstArrayView<TArray<USkeletalMesh*>> Trims = {});
 
 	/**
-	 * Pure (tested): the garment slot a mesh beside a body is ("top", "bottom", "footwear"), from its name's words, else
+	 * Pure (tested): the garment slot a mesh beside a body is ("top", "bottom", "footwear", "socks", "legwear", "outerwear", "gloves"), from its name's words, else
 	 * from its sections when its name says no piece. Empty when it is not one piece of clothing; then OutWhy says why in
 	 * plain words when it is clothing that can't be an Outfit (several pieces in one mesh, or clothing merged with the
 	 * body's skin), and is empty when it isn't clothing at all (a body, hair, a hat, a prop). A one-piece name with a skin

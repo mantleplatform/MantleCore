@@ -25,6 +25,7 @@
 #include "MantleHairColor.h"
 #include "MantleHairFitPictures.h"
 #include "MantleHairGeneration.h"
+#include "MantleItemSettings.h"
 #include "MantleMetaHumanBuild.h"
 #include "MantleMetaHumanPose.h"
 #include "MantleParametricOutfit.h"
@@ -111,6 +112,14 @@ namespace MantleCosmeticPanelPrivate
 			[
 				SNew(SMantleCosmeticPanel)
 			];
+	}
+
+	/** #65: the public words for a hairRule value (limits.json itemSettings.hairRule). */
+	FText HairRuleLabel(const FString& Value)
+	{
+		if (Value == TEXT("hideAll")) return LOCTEXT("HairRuleHideAll", "Hide all hair");
+		if (Value == TEXT("leaveAlone")) return LOCTEXT("HairRuleLeaveAlone", "Leave hair alone");
+		return LOCTEXT("HairRuleUnderIt", "Tuck hair under it");
 	}
 
 	FText ClassHelp(EMantleCosmeticClass Class)
@@ -264,6 +273,25 @@ void SMantleCosmeticPanel::Construct(const FArguments& InArgs)
 	for (const TCHAR* Role : { TEXT("skin"), TEXT("eyes"), TEXT("other") })
 	{
 		RoleOptions.Add(MakeShared<FString>(Role));
+	}
+	// #65: the hair rule choices, in the contract's order (its default first when the contract cannot be read).
+	{
+		const FMantleAvatarContract* RuleContract = FMantleAvatarContract::Get();
+		const FMantleContractItemSetting* Rule = RuleContract ? RuleContract->FindItemSetting(FMantleItemSettings::HairRule()) : nullptr;
+		if (Rule && Rule->Values.Num() > 0)
+		{
+			for (const FString& Value : Rule->Values)
+			{
+				HairRuleOptions.Add(MakeShared<FString>(Value));
+			}
+		}
+		else
+		{
+			for (const TCHAR* Value : { TEXT("underIt"), TEXT("hideAll"), TEXT("leaveAlone") })
+			{
+				HairRuleOptions.Add(MakeShared<FString>(Value));
+			}
+		}
 	}
 	// This panel creates new catalog items; existing items are updated through their explicit API path.
 	PublishAsOptions.Add(MakeShared<FString>());
@@ -907,6 +935,91 @@ void SMantleCosmeticPanel::Construct(const FArguments& InArgs)
 						AccessoryOnly)
 				]
 
+				// #65, #136, #389: the creator-set item settings. Each row shows only on the slots the contract allows it on.
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					MakeSection(LOCTEXT("TuckTitle", "Tucking"),
+						SNew(SCheckBox)
+						.ToolTipText(LOCTEXT("TuckableTip", "Players can tuck this top into the bottom. Turn off for a tunic or dress."))
+						.IsChecked_Lambda([this] { return Draft.bTuckable ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+						.OnCheckStateChanged_Lambda([this](ECheckBoxState State) { Draft.bTuckable = State == ECheckBoxState::Checked; Package.Reset(); })
+						[
+							SNew(STextBlock).Text(LOCTEXT("TuckableLabel", "Can be tucked in"))
+						],
+						TAttribute<EVisibility>::CreateLambda([this] { return SettingShown(FMantleItemSettings::Tuckable()) ? EVisibility::Visible : EVisibility::Collapsed; }))
+				]
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					MakeSection(LOCTEXT("BootsTitle", "Boots"),
+						SNew(SCheckBox)
+						.ToolTipText(LOCTEXT("TallBootsTip", "Jeans go inside these boots."))
+						.IsChecked_Lambda([this] { return Draft.bTallBoots ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+						.OnCheckStateChanged_Lambda([this](ECheckBoxState State) { Draft.bTallBoots = State == ECheckBoxState::Checked; Package.Reset(); })
+						[
+							SNew(STextBlock).Text(LOCTEXT("TallBootsLabel", "Tall boots: worn over the bottom"))
+						],
+						TAttribute<EVisibility>::CreateLambda([this] { return SettingShown(FMantleItemSettings::TallBoots()) ? EVisibility::Visible : EVisibility::Collapsed; }))
+				]
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					MakeSection(LOCTEXT("HairRuleTitle", "Hair under it"),
+						SNew(SComboBox<TSharedPtr<FString>>)
+						.OptionsSource(&HairRuleOptions)
+						.OnGenerateWidget_Lambda([](TSharedPtr<FString> Item)
+						{
+							return SNew(STextBlock).Text(HairRuleLabel(Item.IsValid() ? *Item : FString()));
+						})
+						.OnSelectionChanged_Lambda([this](TSharedPtr<FString> Item, ESelectInfo::Type)
+						{
+							if (Item.IsValid())
+							{
+								Draft.HairRule = *Item;
+								Package.Reset();
+							}
+						})
+						[
+							SNew(STextBlock).Text_Lambda([this] { return HairRuleLabel(Draft.HairRule); })
+						],
+						TAttribute<EVisibility>::CreateLambda([this] { return SettingShown(FMantleItemSettings::HairRule()) ? EVisibility::Visible : EVisibility::Collapsed; }))
+				]
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					MakeSection(LOCTEXT("EarringSideTitle", "Wear on"),
+						SNew(SVerticalBox)
+						+ SVerticalBox::Slot().AutoHeight()
+						[
+							SNew(SCheckBox)
+							.Style(&FAppStyle::Get().GetWidgetStyle<FCheckBoxStyle>("RadioButton"))
+							.IsChecked_Lambda([this] { return !IsEarringPair() && Draft.Slot == TEXT("acc_ear_l") ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+							.OnCheckStateChanged_Lambda([this](ECheckBoxState State) { if (State == ECheckBoxState::Checked) { SetEarringSide(FMantleCosmeticDraft::EEarringSide::Left); } })
+							[
+								SNew(STextBlock).Text(LOCTEXT("EarringLeft", "Left ear"))
+							]
+						]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
+						[
+							SNew(SCheckBox)
+							.Style(&FAppStyle::Get().GetWidgetStyle<FCheckBoxStyle>("RadioButton"))
+							.IsChecked_Lambda([this] { return !IsEarringPair() && Draft.Slot == TEXT("acc_ear_r") ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+							.OnCheckStateChanged_Lambda([this](ECheckBoxState State) { if (State == ECheckBoxState::Checked) { SetEarringSide(FMantleCosmeticDraft::EEarringSide::Right); } })
+							[
+								SNew(STextBlock).Text(LOCTEXT("EarringRight", "Right ear"))
+							]
+						]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
+						[
+							SNew(SCheckBox)
+							.Style(&FAppStyle::Get().GetWidgetStyle<FCheckBoxStyle>("RadioButton"))
+							.ToolTipText(LOCTEXT("EarringPairTip", "Uploads two items, the left earring and its mirror image for the right ear, worn together as one pair."))
+							.IsChecked_Lambda([this] { return IsEarringPair() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+							.OnCheckStateChanged_Lambda([this](ECheckBoxState State) { if (State == ECheckBoxState::Checked) { SetEarringSide(FMantleCosmeticDraft::EEarringSide::Pair); } })
+							[
+								SNew(STextBlock).Text(LOCTEXT("EarringPair", "Pair (both ears)"))
+							]
+						],
+						TAttribute<EVisibility>::CreateLambda([this] { return SettingShown(FMantleItemSettings::PairIdField()) ? EVisibility::Visible : EVisibility::Collapsed; }))
+				]
+
 				// Listing: name and description. There is no price field; nothing about prices is shown or sent.
 				+ SVerticalBox::Slot().AutoHeight()
 				[
@@ -1326,12 +1439,17 @@ void SMantleCosmeticPanel::RefreshSlots()
 	const FMantleAvatarContract* Contract = FMantleAvatarContract::Get();
 	if (Contract)
 	{
-		for (const FString& Slot : CosmeticSlotOptions(*Contract, Draft.Class))
+		// #136: the slots that exist on the MetaHuman the panel previews and places on (its face carries the ear, eye and nose
+		// bones). The game offers each avatar only the slots its own skeleton has.
+		for (const FString& Slot : CosmeticSlotOptions(*Contract, Draft.Class, TEXT("metahuman")))
 		{
 			SlotOptions.Add(MakeShared<FString>(Slot));
 		}
 	}
 	Draft.Slot = SlotOptions.Num() > 0 ? *SlotOptions[0] : FString();
+	// #136: a new class starts on a single earring.
+	Draft.EarringSide = FMantleCosmeticDraft::EEarringSide::Left;
+	Draft.PairId.Reset();
 	if (SlotCombo.IsValid())
 	{
 		SlotCombo->RefreshOptions();
@@ -1351,6 +1469,12 @@ void SMantleCosmeticPanel::SetSlot(const FString& Slot)
 {
 	SaveAccessoryPlacement();
 	Draft.Slot = Slot;
+	// #136: the earrings' Wear on follows the slot; Pair stays on the left ear's slot (SetEarringSide picks it), anything else leaves it.
+	if (!(Draft.EarringSide == FMantleCosmeticDraft::EEarringSide::Pair && Slot == TEXT("acc_ear_l")))
+	{
+		Draft.EarringSide = Slot == TEXT("acc_ear_r") ? FMantleCosmeticDraft::EEarringSide::Right : FMantleCosmeticDraft::EEarringSide::Left;
+		Draft.PairId.Reset();
+	}
 	if (Draft.Class == EMantleCosmeticClass::Overlay && !FMantleOverlayChecks::IsScarSlot(Slot))
 	{
 		// Tattoos take no normal map; a scar's stays picked only while a scar slot is.
@@ -1363,6 +1487,57 @@ void SMantleCosmeticPanel::SetSlot(const FString& Slot)
 	// #483: the sections the new slot takes.
 	RefreshOutfitSections();
 	Package.Reset();
+}
+
+bool SMantleCosmeticPanel::SettingShown(const TCHAR* Name) const
+{
+	const FMantleAvatarContract* Contract = FMantleAvatarContract::Get();
+	return Contract && Contract->SettingAllowed(Name, Draft.Slot);
+}
+
+bool SMantleCosmeticPanel::IsEarringPair() const
+{
+	return Draft.Class == EMantleCosmeticClass::Accessory && Draft.Slot == TEXT("acc_ear_l")
+		&& Draft.EarringSide == FMantleCosmeticDraft::EEarringSide::Pair;
+}
+
+void SMantleCosmeticPanel::SetEarringSide(FMantleCosmeticDraft::EEarringSide Side)
+{
+	Draft.EarringSide = Side;
+	if (Side == FMantleCosmeticDraft::EEarringSide::Pair)
+	{
+		// One id for both items, made now and kept, so a rebuild or a resumed upload reuses it.
+		if (!FMantleItemSettings::IsValidPairId(Draft.PairId))
+		{
+			Draft.PairId = FMantleItemSettings::MakePairId(Draft.Name, FGuid::NewGuid());
+		}
+	}
+	else
+	{
+		Draft.PairId.Reset();
+	}
+	// Left and Pair wear the left ear's slot, Right the right ear's; the slot picker takes the same path as a click on it (SetSlot).
+	const FString Target = Side == FMantleCosmeticDraft::EEarringSide::Right ? TEXT("acc_ear_r") : TEXT("acc_ear_l");
+	if (Draft.Slot != Target)
+	{
+		for (const TSharedPtr<FString>& Option : SlotOptions)
+		{
+			if (Option.IsValid() && Option->Equals(Target, ESearchCase::CaseSensitive))
+			{
+				if (SlotCombo.IsValid())
+				{
+					SlotCombo->SetSelectedItem(Option);
+				}
+				if (Draft.Slot != Target)
+				{
+					SetSlot(Target);
+				}
+				break;
+			}
+		}
+	}
+	Package.Reset();
+	PairPackage.Reset();
 }
 
 void SMantleCosmeticPanel::SetAuthoringBody(USkeletalMesh* Body)
@@ -2116,7 +2291,50 @@ bool SMantleCosmeticPanel::BuildPackage()
 	FScopedSlowTask Progress(1.0f, LOCTEXT("Preparing", "Checking and exporting..."));
 	Progress.MakeDialogDelayed(0.5f);
 	Progress.EnterProgressFrame(1.0f);
-	Package = FMantleCosmeticExport::Build(Draft, *Contract);
+	PairPackage.Reset();
+	if (IsEarringPair())
+	{
+		// #136: a Pair is two items. Package is the left earring (the name's " (left)", the pair id); PairPackage the right one,
+		// built from a mirrored copy of the left mesh (FMantleItemSettings::MakeRightDraft). The pair id is made once and kept.
+		if (!FMantleItemSettings::IsValidPairId(Draft.PairId))
+		{
+			Draft.PairId = FMantleItemSettings::MakePairId(Draft.Name, FGuid::NewGuid());
+		}
+		FMantleCosmeticDraft LeftDraft = Draft;
+		LeftDraft.Name = FMantleItemSettings::WithSideSuffix(Draft.Name, false);
+		Package = FMantleCosmeticExport::Build(LeftDraft, *Contract);
+		FMantleCosmeticDraft RightDraft;
+		FString PairWhy;
+		if (FMantleItemSettings::MakeRightDraft(Draft, RightDraft, PairWhy))
+		{
+			PairPackage = FMantleCosmeticExport::Build(RightDraft, *Contract);
+			// Its source is a transient mirrored copy: the item records the creator's own asset, as the left one does.
+			PairPackage->Provenance = Package->Provenance;
+			// The right earring's problems show with the left's, named, so the upload waits for both.
+			for (const FMantleCosmeticIssue& Issue : PairPackage->Issues)
+			{
+				if (Issue.Severity == EMantleCosmeticSeverity::Info)
+				{
+					continue;
+				}
+				FMantleCosmeticIssue Named = Issue;
+				Named.Message = TEXT("Right earring: ") + Named.Message;
+				Package->Issues.Add(Named);
+			}
+			for (const FString& Note : PairPackage->Notes)
+			{
+				Package->Notes.Add(TEXT("Right earring: ") + Note);
+			}
+		}
+		else
+		{
+			Package->Issues.Add(FMantleCosmeticChecks::Error(PairWhy));
+		}
+	}
+	else
+	{
+		Package = FMantleCosmeticExport::Build(Draft, *Contract);
+	}
 	for (const FString& Note : Package->Notes)
 	{
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_COSMETIC_EXPORT %s"), *Note);
@@ -2349,6 +2567,11 @@ FReply SMantleCosmeticPanel::OnUpload()
 		Draft.bOverlayPlaced ? (Draft.OverlayPicture.IsValid() ? Draft.OverlayPicture->GetPathName() : Draft.OverlayPictureFile)
 			: Draft.Source.IsValid() ? Draft.Source->GetPathName() : Draft.OverlayMaskFile, Draft.Slot);
 	Session = MakeShared<FMantleCosmeticUploadSession>(Package.GetValue(), MakeShared<FMantleApiUploadTransport>(), ResumeFile);
+	// #136: a Pair uploads the left earring first; TickUpload starts the right one (its own resume file) when the left succeeds.
+	bUploadingRight = false;
+	bPairRightPending = PairPackage.IsSet() && IsEarringPair();
+	PairRightResumeFile = bPairRightPending ? FMantleCosmeticUploadSession::DefaultResumeFile(
+		Draft.Source.IsValid() ? Draft.Source->GetPathName() : FString(), TEXT("acc_ear_r")) : FString();
 	Session->Start();
 	RegisterActiveTimer(0.1f, FWidgetActiveTimerDelegate::CreateSP(this, &SMantleCosmeticPanel::TickUpload));
 	return FReply::Handled();
@@ -2374,6 +2597,19 @@ EActiveTimerReturnType SMantleCosmeticPanel::TickUpload(double InCurrentTime, fl
 	{
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_COSMETIC_UPLOAD %s item=%s status=%s"),
 			Session->Succeeded() ? TEXT("DONE") : TEXT("STOPPED"), *Session->GetItemId(), *Session->GetItemStatus());
+		// #136: the left earring is up; the right one (the mirrored copy) goes next, in a session of its own. The publish list below
+		// waits for both. A left that failed starts no right.
+		if (bPairRightPending)
+		{
+			bPairRightPending = false;
+			if (Session->Succeeded() && PairPackage.IsSet())
+			{
+				Session = MakeShared<FMantleCosmeticUploadSession>(PairPackage.GetValue(), MakeShared<FMantleApiUploadTransport>(), PairRightResumeFile);
+				bUploadingRight = true;
+				Session->Start();
+				return EActiveTimerReturnType::Continue;
+			}
+		}
 		// Chunk 6: the publish list's open row is uploaded (while the draft is still what it opened); walking, the next ticked row opens.
 		if (PublishRows.IsValidIndex(PublishOpen) && PublishOpenSource.IsValid() && Draft.Source == PublishOpenSource)
 		{
@@ -2405,6 +2641,11 @@ FText SMantleCosmeticPanel::GetStatusText() const
 {
 	if (Session.IsValid())
 	{
+		// #136: a Pair says which earring is going up.
+		if (bUploadingRight || bPairRightPending)
+		{
+			return FText::FromString(FString::Printf(TEXT("%s earring: %s"), bUploadingRight ? TEXT("Right") : TEXT("Left"), *Session->GetStatusText()));
+		}
 		return FText::FromString(Session->GetStatusText());
 	}
 	if (Package.IsSet())
@@ -4753,9 +4994,16 @@ void SMantleCosmeticPanel::AddPackReviewRows()
 	// One row per piece, grouped by where it goes; the pieces that go into one shown under it.
 	auto Order = [](const FString& Slot)
 	{
-		return Slot == TEXT("top") ? 0 : Slot == TEXT("bottom") ? 1 : Slot == TEXT("footwear") ? 2 : Slot == TEXT("accessory") ? 3 : Slot.IsEmpty() ? 5 : 4;
+		// The clothing slots in wearing order, then accessory, hair, not used.
+		const int32 Rank = FMantleAvatarContract::ClothingRankOrDefault(Slot);
+		if (Rank != INDEX_NONE)
+		{
+			return Rank;
+		}
+		const int32 Clothing = FMantleAvatarContract::ClothingSlotsOrDefault().Num();
+		return Slot == TEXT("accessory") ? Clothing : Slot.IsEmpty() ? Clothing + 2 : Clothing + 1;
 	};
-	auto IsGarment = [](const FString& Slot) { return Slot == TEXT("top") || Slot == TEXT("bottom") || Slot == TEXT("footwear"); };
+	auto IsGarment = [](const FString& Slot) { return FMantleAvatarContract::IsClothingSlotOrDefault(Slot); };
 	TArray<int32> Heads;
 	for (int32 Index = 0; Index < Review.Pieces.Num(); ++Index)
 	{
@@ -4781,9 +5029,11 @@ void SMantleCosmeticPanel::AddPackReviewRows()
 				Current = Move;
 			}
 		};
-		AddMove(TEXT("Top"), TEXT("top"), INDEX_NONE);
-		AddMove(TEXT("Bottom"), TEXT("bottom"), INDEX_NONE);
-		AddMove(TEXT("Footwear"), TEXT("footwear"), INDEX_NONE);
+		// Every clothing slot in wearing order: Socks, Legwear, Footwear, Bottom, Top, Outerwear, Gloves.
+		for (const FString& ClothingSlot : FMantleAvatarContract::ClothingSlotsOrDefault())
+		{
+			AddMove(ClothingSlot.Left(1).ToUpper() + ClothingSlot.Mid(1), ClothingSlot, INDEX_NONE);
+		}
 		AddMove(TEXT("Accessory"), TEXT("accessory"), INDEX_NONE);
 		AddMove(TEXT("Hair"), TEXT("hair"), INDEX_NONE);
 		if (bUsed && Piece.PartOf == INDEX_NONE && !Current.IsValid())
