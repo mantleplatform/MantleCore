@@ -1,12 +1,11 @@
 // Copyright Joshua Eger. All Rights Reserved.
 //
 // Maintainer command: Mantle.Dev.RenderHairRule <HatStaticMesh> <HairCardsMesh> <Body> <Face> <Directory> <Label> [slot=acc_hat] [size]
-// Shows what a hat's hairRule does to long hair. The hair goes on the head it was authored on, found as the upload finds it
-// (FMantleHairSourceDiscovery::FindHead: a recorded head, else the binding's SourceSkeletalMesh of the groom that uses the cards; for
-// MetaHuman's own grooms that is SKM_Groom_Head_Legacy01, not the standard face), else on Face. Bought cards are fitted to that head as
-// the plugin does (as Mantle.Dev.RenderHairFit: FMantleEditorActions::MakeCosmeticDraft, then FMantleCosmeticExport::Build); cards the
-// export keeps where they are are drawn as they are on that head's skin. The hat is placed on the slot's bone of that head (of Body when
-// the head has no such bone) as Mantle.Dev.RenderAccessory places it (the panel's default placement). Then the hair is drawn three ways:
+// Shows what a hat's hairRule does to long hair, as a player wearing both sees it. The hair is exported as the upload makes it, on the
+// head it was authored on (FMantleHairSourceDiscovery::FindHead: for MetaHuman's own grooms SKM_Groom_Head_Legacy01; else Face), then
+// moved onto Face, the wearer's, by the client's own step (FMantleHairHeadFit::Fit, MetaHuman UV correspondence); the head drawn is
+// Face's head skin (FMantleHairHeadFit::HeadSkin). The hat is on Body's socket bone with the panel's placement (a saved one, else the
+// default), as Mantle.Dev.RenderAccessory places it. Then the hair is drawn three ways:
 //   underIt    - the runtime's hair-under-hats step (FMantleHairHatFit::Fit on the fitted hair, the hat and the head skin): what pokes
 //                through the hat is pulled in under it, what is wholly through is cut out
 //   hideAll    - no hair at all
@@ -24,12 +23,13 @@
 #include "MantleEditorActions.h"
 #include "MantleHairFitPictures.h"
 #include "MantleHairHatFit.h"
+#include "MantleHairHeadFit.h"
 #include "MantleHairSourceDiscovery.h"
 #include "MantlePng.h"
+#include "MantleSkinnedMesh.h"
 
 #include "Engine/SkeletalMesh.h"
 #include "Engine/SkeletalMeshSocket.h"
-#include "Engine/SkinnedAssetCommon.h"
 #include "Engine/StaticMesh.h"
 #include "HAL/IConsoleManager.h"
 #include "Materials/Material.h"
@@ -39,8 +39,6 @@
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "ReferenceSkeleton.h"
-#include "Rendering/SkeletalMeshLODRenderData.h"
-#include "Rendering/SkeletalMeshRenderData.h"
 #include "StaticMeshAttributes.h"
 #include "StaticMeshDescription.h"
 #include "UObject/StrongObjectPtr.h"
@@ -77,43 +75,6 @@ namespace MantleDevRenderHairRulePrivate
 			const auto Corners = Description->GetTriangleVertices(Triangle);
 			for (int32 Corner = 0; Corner < 3; ++Corner) OutIndices.Add(Remap[Corners[Corner]]);
 		}
-		return OutIndices.Num() >= 3;
-	}
-
-	/**
-	 * The face's skin as a triangle list in its reference pose, from its render data (as the export reads it): LOD 3 when there is one
-	 * (the LOD the hair export authors on), else its last. Only sections whose slot reads as skin or head; all of them when none does.
-	 */
-	bool ReadHeadSkin(const USkeletalMesh* Face, TArray<FVector3f>& OutPositions, TArray<uint32>& OutIndices)
-	{
-		const FSkeletalMeshRenderData* RenderData = Face ? Face->GetResourceForRendering() : nullptr;
-		if (!RenderData || RenderData->LODRenderData.IsEmpty()) return false;
-		const int32 LODIndex = FMath::Min(3, RenderData->LODRenderData.Num() - 1);
-		const FSkeletalMeshLODRenderData& LOD = RenderData->LODRenderData[LODIndex];
-		const FPositionVertexBuffer& PositionBuffer = LOD.StaticVertexBuffers.PositionVertexBuffer;
-		TArray<uint32> Indices;
-		LOD.MultiSizeIndexContainer.GetIndexBuffer(Indices);
-		const TArray<FSkeletalMaterial>& Slots = Face->GetMaterials();
-		const FSkeletalMeshLODInfo* LODInfo = Face->GetLODInfo(LODIndex);
-		TArray<uint32> Skin, All;
-		for (int32 SectionIndex = 0; SectionIndex < LOD.RenderSections.Num(); ++SectionIndex)
-		{
-			const FSkelMeshRenderSection& Section = LOD.RenderSections[SectionIndex];
-			int32 Slot = Section.MaterialIndex;
-			if (LODInfo && LODInfo->LODMaterialMap.IsValidIndex(SectionIndex) && Slots.IsValidIndex(LODInfo->LODMaterialMap[SectionIndex])) Slot = LODInfo->LODMaterialMap[SectionIndex];
-			const FString Name = Slots.IsValidIndex(Slot) ? Slots[Slot].MaterialSlotName.ToString().ToLower() : FString();
-			const bool bSkin = Name.Contains(TEXT("skin")) || Name.Contains(TEXT("head"));
-			for (uint32 I = 0; I < Section.NumTriangles * 3; ++I)
-			{
-				const uint32 Index = Indices[Section.BaseIndex + I];
-				All.Add(Index);
-				if (bSkin) Skin.Add(Index);
-			}
-		}
-		const TArray<uint32>& Chosen = Skin.IsEmpty() ? All : Skin;
-		OutPositions.SetNumUninitialized(PositionBuffer.GetNumVertices());
-		for (uint32 Vertex = 0; Vertex < PositionBuffer.GetNumVertices(); ++Vertex) OutPositions[Vertex] = PositionBuffer.VertexPosition(Vertex);
-		OutIndices = Chosen;
 		return OutIndices.Num() >= 3;
 	}
 
@@ -193,38 +154,49 @@ namespace MantleDevRenderHairRulePrivate
 			return;
 		}
 
-		// The head the hair was authored on, found as the upload finds it. MetaHuman's own grooms name theirs in their binding
-		// (SourceSkeletalMesh: SKM_Groom_Head_Legacy01), and their cards sit on that head, not on the standard face; drawing them on
-		// Face put them 11 cm low. Hair with no such head (bought cards) is fitted to Face, as the upload does with the face chosen.
+		// The hair as the upload makes it, on the head it was authored on: found as the upload finds it (FindHead; MetaHuman's own
+		// grooms name SKM_Groom_Head_Legacy01 in their binding), else Face (bought cards, fitted to it by the export).
 		FString HeadError;
 		USkeletalMesh* HairHead = FMantleHairSourceDiscovery::FindHead(Hair, HeadError);
-		USkeletalMesh* DrawnHead = HairHead ? HairHead : Face;
-		UE_LOG(LogMantleRenderHairRule, Display, TEXT("MANTLE_RENDER_HAIRRULE hair head: %s (%s)"), *DrawnHead->GetPathName(),
-			HairHead ? TEXT("the head the hair was authored on") : *FString::Printf(TEXT("the face given; %s"), *HeadError));
-
-		// The hair on that head exactly as the plugin does it (Mantle.Dev.RenderHairFit).
+		UE_LOG(LogMantleRenderHairRule, Display, TEXT("MANTLE_RENDER_HAIRRULE hair authored on: %s (%s)"), *(HairHead ? HairHead : Face)->GetPathName(),
+			HairHead ? TEXT("its recorded head") : *FString::Printf(TEXT("the face given; %s"), *HeadError));
 		const FString HairSlot = Contract->HairSlots.Num() > 0 ? Contract->HairSlots[0] : FString(TEXT("hair"));
 		FMantleCosmeticDraft HairDraft = FMantleEditorActions::MakeCosmeticDraft(EMantleCosmeticClass::Hair, Hair, HairSlot, Label, *Contract, EMantleFitSex::Auto);
 		HairDraft.AuthoringBody = HairHead ? HairHead : Body;
-		HairDraft.AuthoringFace = DrawnHead;
+		HairDraft.AuthoringFace = HairHead ? HairHead : Face;
 		HairDraft.bRenderThumbnail = false;
-		const FMantleCosmeticPackage Package = FMantleCosmeticExport::Build(HairDraft, *Contract);
+		FMantleSkinnedMesh Cards, SourceHead;
+		const FMantleCosmeticPackage Package = FMantleCosmeticExport::Build(HairDraft, *Contract, &Cards, &SourceHead);
 		for (const FString& Note : Package.Notes) UE_LOG(LogMantleRenderHairRule, Display, TEXT("MANTLE_RENDER_HAIRRULE note: %s"), *Note);
 		for (const FMantleCosmeticIssue& Issue : Package.Issues) UE_LOG(LogMantleRenderHairRule, Display, TEXT("MANTLE_RENDER_HAIRRULE issue: %s"), *Issue.ToString());
-		// Fitted hair: the fit's own geometry. Hair the export keeps where it is (MetaHuman's own cards): the cards as they are, on the
-		// skin of the head they were authored on, both in that head's reference pose.
-		FMantleHairFitMeshes Meshes = Package.HairHeadFitMeshes;
-		if (!Package.bHairHeadFitted || !Meshes.IsValid())
+		if (Package.HasErrors() || Cards.LODs.IsEmpty() || SourceHead.LODs.IsEmpty())
 		{
-			Meshes = FMantleHairFitMeshes();
-			if (Package.HasErrors() || !ReadTriangles(Hair, Meshes.AfterPositions, Meshes.HairTriangles) || !ReadHeadSkin(DrawnHead, Meshes.HeadPositions, Meshes.HeadTriangles))
-			{
-				UE_LOG(LogMantleRenderHairRule, Error, TEXT("MANTLE_RENDER_HAIRRULE failed: no hair to draw (errors=%d)"), Package.HasErrors());
-				return;
-			}
-			UE_LOG(LogMantleRenderHairRule, Display, TEXT("MANTLE_RENDER_HAIRRULE hair kept as it is (not refitted): %d hair and %d head triangles"),
-				Meshes.HairTriangles.Num() / 3, Meshes.HeadTriangles.Num() / 3);
+			UE_LOG(LogMantleRenderHairRule, Error, TEXT("MANTLE_RENDER_HAIRRULE failed: the hair export made no cards and source head (errors=%d)"), Package.HasErrors());
+			return;
 		}
+
+		// Then as players' clients wear it: moved from its authoring head onto the wearer's face by MetaHuman UV correspondence
+		// (FMantleHairHeadFit::Fit, the same step the client and the panel preview run), with the hat on the wearer's own head bone.
+		// The authoring head itself is never worn: Legacy01 is a different, lower head than the standard face (its head top about
+		// 12 cm below it), so a hat on Legacy01's head bone floated over its hair.
+		FMantleSkinnedMesh WearerFace, WearerBody, Worn;
+		FString FitError;
+		if (!FMantleSkinnedMesh::ExtractFromSkeletalMesh(Face, WearerFace, &FitError) || !FMantleSkinnedMesh::ExtractFromSkeletalMesh(Body, WearerBody, &FitError)
+			|| !FMantleHairHeadFit::Fit(Cards, SourceHead, WearerFace, WearerBody, false, Worn, FitError) || Worn.LODs.IsEmpty())
+		{
+			UE_LOG(LogMantleRenderHairRule, Error, TEXT("MANTLE_RENDER_HAIRRULE failed: the hair could not be fitted to the wearer's face (%s)"), *FitError);
+			return;
+		}
+		FMantleHairFitMeshes Meshes;
+		Meshes.AfterPositions = Worn.LODs[0].Positions;
+		Meshes.HairTriangles = Worn.LODs[0].Indices;
+		if (!FMantleHairHeadFit::HeadSkin(WearerFace, Meshes.HeadPositions, Meshes.HeadTriangles))
+		{
+			UE_LOG(LogMantleRenderHairRule, Error, TEXT("MANTLE_RENDER_HAIRRULE failed: the wearer's face has no head skin"));
+			return;
+		}
+		UE_LOG(LogMantleRenderHairRule, Display, TEXT("MANTLE_RENDER_HAIRRULE hair fitted to %s: %d hair and %d head triangles"), *Face->GetName(),
+			Meshes.HairTriangles.Num() / 3, Meshes.HeadTriangles.Num() / 3);
 
 		// The hat where the panel's default placement puts it (Mantle.Dev.RenderAccessory).
 		FMantleCosmeticDraft HatDraft = FMantleEditorActions::MakeCosmeticDraft(EMantleCosmeticClass::Accessory, HatSource, HatSlot, FString(), *Contract, EMantleFitSex::Auto);
@@ -251,9 +223,8 @@ namespace MantleDevRenderHairRulePrivate
 		{
 			Recentered = FTransform(FVector(-FMantleAccessorySettings::RecenterOffset(FBox3f(HatShown->GetBoundingBox()), *Limits)));
 		}
-		// The hat goes on the slot's bone of the head the hair is drawn on, so hat, hair and head share one space; on Body's when that
-		// head has no such bone.
-		const USkeletalMesh* HatOn = DrawnHead->GetRefSkeleton().FindBoneIndex(FName(*Point->SocketBone)) != INDEX_NONE ? DrawnHead : Body;
+		// The hat on the wearer's body, on its socket bone (the socket sits at identity there), as the client attaches it.
+		const USkeletalMesh* HatOn = Body;
 		const FReferenceSkeleton& Reference = HatOn->GetRefSkeleton();
 		const TArray<FTransform>& Pose = Reference.GetRefBonePose();
 		int32 Bone = Reference.FindBoneIndex(FName(*Point->SocketBone));
