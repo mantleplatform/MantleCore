@@ -39,7 +39,7 @@ declare Vector3: {
 declare extern type Entity with
 	--- Whether every player's machine follows this entity at any distance, however far the player is (a quest target, a boss). Off by default: a large place sends a player only the entities near them. Set on the server; read on the server and on a client.
 	AlwaysRelevant: boolean
-	--- Whether a physics entity is held where it is (true) or simulating (false); the place's physics.simulate says how it starts. Set it on the server to drop or pin it. Every other entity is always anchored, and setting it on one errors. On a client, a physics entity far from the player's views (its prop is not sent there) reads the value it was last seen with here, the place's when it never was.
+	--- Whether a physics entity is held where it is (true) or simulating (false); the place's physics.simulate says how it starts (a physics object Assets:Spawn makes starts simulating, an Entity:Clone as its original is). Set it on the server to drop or pin it. Every other entity is always anchored, and setting it on one errors. On a client, a physics entity far from the player's views (its prop is not sent there) reads the value it was last seen with here, the place's when it never was.
 	Anchored: boolean
 	--- How fast the entity spins, in degrees per second about the world axes (X, Y, Z). Setting it (server only) replaces a physics entity's spin; setting it on an Anchored entity, or one with no physics block, errors. Anything that isn't simulating reads (0, 0, 0).
 	AngularVelocity: Vector3
@@ -75,7 +75,7 @@ declare extern type Entity with
 	Mass: number
 	--- The actor's label.
 	Name: string
-	--- A physics entity's surface: "default", "rubber" (bouncy), "ice" (slippery), "metal", "wood" or "stone"; the place's physics.material says how it starts. Set it on the server, anchored or not, and every player sees the change. nil for an entity with no physics block, and setting it on one errors, as does any other name. On a client, a physics entity far from the player's views (its prop is not sent there) reads the value it was last seen with here, the place's when it never was.
+	--- A physics entity's surface: "default", "rubber" (bouncy), "ice" (slippery), "metal", "wood" or "stone"; the place's physics.material (or Assets:Spawn's PhysicsMaterial) says how it starts. Set it on the server, anchored or not, and every player sees the change. nil for an entity with no physics block, and setting it on one errors, as does any other name. On a client, a physics entity far from the player's views (its prop is not sent there) reads the value it was last seen with here, the place's when it never was.
 	PhysicsMaterial: string?
 	--- For a piece made by placing mode (a player placing it, or Placing:PlaceAsPlayer), the placer's UserId; nil for any other entity and on a client. Read only, and it survives saves.
 	PlacedBy: string?
@@ -109,7 +109,7 @@ declare extern type Entity with
 	function ApplyAngularImpulse(self, impulse: Vector3): ()
 	--- Push a physics entity: impulse is in kg*cm/s along the world axes, so its velocity changes by impulse / Mass. Does nothing while it is Anchored. Errors on an entity with no physics block. (server only)
 	function ApplyImpulse(self, impulse: Vector3): ()
-	--- Make a copy (same look, tags and place). On the server the copy appears for everyone; on a client only for that player. Tip: keep a hidden template and clone it. A physics entity, a Constraint or an NPC can't be cloned (it errors, and says how to make another).
+	--- Make a copy (same look, tags and place). On the server the copy appears for everyone; on a client only for that player. Tip: keep a hidden template and clone it. A physics entity is copied by a server script: the copy has its mass, PhysicsMaterial and Grabbable, starts Anchored or simulating as the original is, at rest, and can be joined with Constraints:Create. It stands exactly where the original does until you move it, and physics only steps after your script, so set its Position right after cloning. A Constraint or an NPC can't be cloned (it errors, and says how to make another), nor can a client script clone a physics entity.
 	function Clone(self): Entity
 	--- Remove the entity. On the server it disappears for everyone; on a client only for that player.
 	function Destroy(self): ()
@@ -684,8 +684,8 @@ end
 
 --- Spawn the place's own meshes at runtime (server only). Change any mesh's look through its Entity.
 declare extern type AssetsService with
-	--- Spawn one of the place's StaticMesh assets (any mesh its asset list names, placed or not) that every player sees, and return it as an Entity. props sets how it starts: Rotation, Scale (a Vector3, or one number for all three), Material (one of the place's Material assets, for every slot), Color, Transparency, Collision ("Blocking" by default, "Overlap" or "None"), CastShadow (true by default) and Anchored (spawned meshes stay where scripts put them; false is refused). A mesh uploaded with the place may take a moment to appear on a player's screen while it downloads. Spawned meshes count towards the same limit as Entity:Clone; Destroy one to make room. (server only)
-	function Spawn(self, assetId: string, position: Vector3, props: {Rotation: Vector3?, Scale: Vector3 | number?, Material: string?, Color: string?, Transparency: number?, Collision: string?, CastShadow: boolean?, Anchored: boolean?}?): Entity
+	--- Spawn one of the place's StaticMesh assets (any mesh its asset list names, placed or not) that every player sees, and return it as an Entity. props sets how it starts: Rotation, Scale (a Vector3, or one number for all three), Material (one of the place's Material assets, for every slot), Color, Transparency, Collision ("Blocking" by default, "Overlap" or "None"), CastShadow (true by default) and Anchored (true by default: the mesh stays where scripts put it). Anchored = false makes a physics object: it falls, rolls and can be pushed, like a placed mesh with Simulate Physics on, and works with ApplyImpulse, Velocity, Anchored, Grabbable, Collided and Constraints:Create. Two more props go with it: Mass (kg, 0.1 to 100000; computed from the mesh's size when left out) and PhysicsMaterial ("default", "rubber", "ice", "metal", "wood" or "stone"). A physics object with Collision "Overlap" or "None" blocks nothing, so it falls through the floor, as a placed one does. A mesh uploaded with the place may take a moment to appear on a player's screen while it downloads; a physics object whose mesh is still downloading on the server holds still until it is there, then falls. Spawned meshes count towards the same limit as Entity:Clone; Destroy one to make room. (server only)
+	function Spawn(self, assetId: string, position: Vector3, props: {Rotation: Vector3?, Scale: Vector3 | number?, Material: string?, Color: string?, Transparency: number?, Collision: string?, CastShadow: boolean?, Anchored: boolean?, Mass: number?, PhysicsMaterial: string?}?): Entity
 end
 declare Assets: AssetsService
 
