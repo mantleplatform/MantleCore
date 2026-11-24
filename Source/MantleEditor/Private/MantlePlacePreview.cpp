@@ -4,6 +4,7 @@
 #include "MantleAssetLibrary.h"
 #include "MantlePlaceAssetConverter.h"
 #include "MantlePlaceParser.h"
+#include "MantlePublisher.h"
 #include "MantleRuntime.h"
 #include "MantleSha256.h"
 
@@ -206,6 +207,9 @@ bool FMantlePlacePreview::FindUploadedAssets(UWorld* SourceWorld, FMantlePlaceAs
 	}
 	// The same conversion Publish runs, from the same cache, so the hashes are the ones it uploads.
 	FMantlePlaceAssetConverter Converter;
+	// It blocks the editor, so nothing else collects garbage while it converts, and each material bake leaves render targets only a
+	// collection frees (as in the preview export: London's 534 materials took free RAM from 30 GB to 8 GB). As the blocking publish does.
+	Converter.CollectGarbageEverySteps = FMantlePublisher::CollectGarbageEverySteps;
 	Converter.Convert(Dependencies, OutSet);
 	return RecordKnownUploads(OutSet, Diff, OutProblem);
 }
