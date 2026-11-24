@@ -304,12 +304,50 @@ TArray<FColor> FMantleMinimapCanvas::Shade() const
 		}
 	}
 
-	// A surface no name placed, standing well above the ground around it, is a building.
-	for (int64 Index = 0; Index < N; ++Index)
+	// Roofs: each connected stretch of building, or of a surface no name placed, without a step of JoinStepCm, as one. Its rise is the
+	// most any of it stands above the ground just around it (its edges do, even when it is far wider than GroundRadiusCm). An unnamed
+	// stretch that rises more than BuildingRiseCm is a building, else ground; a building's color darkens with its rise.
+	TArray<float> Rise;
+	Rise.SetNumZeroed(N);
 	{
-		if (Surfaces[Index] == EMantleMinimapSurface::Ground && Heights[Index] - Ground[Index] > BuildingRiseCm)
+		TArray<int32> Region;
+		Region.Init(INDEX_NONE, N);
+		TArray<int64> Members;
+		TArray<int64> Stack;
+		for (int64 Start = 0; Start < N; ++Start)
 		{
-			Surfaces[Index] = EMantleMinimapSurface::Building;
+			const EMantleMinimapSurface Kind = Surfaces[Start];
+			if (Region[Start] != INDEX_NONE || (Kind != EMantleMinimapSurface::Unknown && Kind != EMantleMinimapSurface::Building))
+			{
+				continue;
+			}
+			Members.Reset();
+			Stack.Reset();
+			Stack.Add(Start);
+			Region[Start] = 1;
+			float Most = 0.0f;
+			while (Stack.Num() > 0)
+			{
+				const int64 Index = Stack.Pop(EAllowShrinking::No);
+				Members.Add(Index);
+				Most = FMath::Max(Most, Heights[Index] - Ground[Index]);
+				const int32 X = static_cast<int32>(Index % W), Y = static_cast<int32>(Index / W);
+				const int64 Neighbors[] = { X > 0 ? Index - 1 : -1, X + 1 < W ? Index + 1 : -1, Y > 0 ? Index - W : -1, Y + 1 < H ? Index + W : -1 };
+				for (const int64 Other : Neighbors)
+				{
+					if (Other >= 0 && Region[Other] == INDEX_NONE && Surfaces[Other] == Kind && FMath::Abs(Heights[Other] - Heights[Index]) < JoinStepCm)
+					{
+						Region[Other] = 1;
+						Stack.Add(Other);
+					}
+				}
+			}
+			const bool bBuilding = Kind == EMantleMinimapSurface::Building || Most > BuildingRiseCm;
+			for (const int64 Index : Members)
+			{
+				Surfaces[Index] = bBuilding ? EMantleMinimapSurface::Building : EMantleMinimapSurface::Ground;
+				Rise[Index] = Most;
+			}
 		}
 	}
 
@@ -323,8 +361,7 @@ TArray<FColor> FMantleMinimapCanvas::Shade() const
 			FColor Color = ColorOf(Surface);
 			if (Surface == EMantleMinimapSurface::Building)
 			{
-				const float Rise = FMath::Clamp(static_cast<float>((Heights[Index] - Ground[Index]) / TallCm), 0.0f, 1.0f);
-				Color = Lerp(BuildingLow, BuildingHigh, Rise);
+				Color = Lerp(BuildingLow, BuildingHigh, FMath::Clamp(static_cast<float>(Rise[Index] / TallCm), 0.0f, 1.0f));
 			}
 			// The outline: on this side of a border with a lower-ranked surface, or of a drop to a lower part of the same one.
 			bool bOutline = false;
@@ -357,6 +394,7 @@ FColor FMantleMinimapCanvas::ColorOf(EMantleMinimapSurface Surface)
 {
 	switch (Surface)
 	{
+	case EMantleMinimapSurface::Unknown:
 	case EMantleMinimapSurface::Ground: return FColor(232, 229, 222, 255);
 	case EMantleMinimapSurface::Green: return FColor(186, 220, 162, 255);
 	case EMantleMinimapSurface::Water: return FColor(156, 200, 240, 255);

@@ -10,6 +10,8 @@
 enum class EMantleMinimapSurface : uint8
 {
 	None = 0,
+	/** A surface no name placed: drawn as ground, or as a building where it stands well above the ground around it (Shade). */
+	Unknown,
 	Ground,
 	Green,
 	Water,
@@ -71,11 +73,14 @@ public:
 	/** Within this height (cm) per rank step, the higher-ranked surface is on top: a road mesh laid on the ground shows. */
 	static constexpr double RankLiftCm = 8.0;
 
-	/** A surface higher than this (cm) above the lowest one around it, that its name did not place, is drawn as a building. */
+	/** An Unknown stretch whose edge stands more than this (cm) above the lowest surface around it is drawn as a building. */
 	static constexpr double BuildingRiseCm = 300.0;
 
-	/** How far (cm) around a pixel the lowest surface is looked for, as the ground it stands on. */
-	static constexpr double GroundRadiusCm = 2500.0;
+	/** How far (cm) around a pixel the lowest surface is looked for, as the ground it stands on: a wall's foot, not a hill's. */
+	static constexpr double GroundRadiusCm = 500.0;
+
+	/** Neighboring pixels of the same surface closer in height than this (cm) are one roof, judged and colored as a whole. */
+	static constexpr double JoinStepCm = 100.0;
 
 	/** A step in height (cm) between two pixels of the same surface that gets an outline (a lower roof next to a taller one). */
 	static constexpr double StepOutlineCm = 200.0;

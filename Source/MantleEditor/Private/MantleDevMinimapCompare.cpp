@@ -227,7 +227,7 @@ namespace MantleDevMinimapComparePrivate
 		return true;
 	}
 
-	/** What a section draws as: its material's name says, else the mesh's, else the actor's; instanced foliage is green; else ground. */
+	/** What a section draws as: its material's name says, else the mesh's, else the actor's; instanced foliage is green; else unknown (ground, or a building where it stands tall). */
 	EMantleMinimapSurface SurfaceOf(const UStaticMeshComponent* Component, int32 MaterialSlot)
 	{
 		const UMaterialInterface* Material = Component->GetMaterial(MaterialSlot);
@@ -249,7 +249,7 @@ namespace MantleDevMinimapComparePrivate
 		{
 			return EMantleMinimapSurface::Green;
 		}
-		return EMantleMinimapSurface::Ground;
+		return EMantleMinimapSurface::Unknown;
 	}
 
 	// ---- Pictures with words on them ----------------------------------------------------------------------------------

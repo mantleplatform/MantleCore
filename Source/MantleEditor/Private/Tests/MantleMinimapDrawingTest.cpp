@@ -134,7 +134,9 @@ bool FMantleMinimapShadeTest::RunTest(const FString& Parameters)
 	Square(Canvas, 0.0, 0.0, 102400.0, 102400.0, 0.0, EMantleMinimapSurface::Ground);
 	// A named building, and an unnamed block 10 m tall that is drawn as one.
 	Square(Canvas, 10000.0, 10000.0, 20000.0, 20000.0, 1500.0, EMantleMinimapSurface::Building);
-	Square(Canvas, 40000.0, 40000.0, 50000.0, 50000.0, 1000.0, EMantleMinimapSurface::Ground);
+	Square(Canvas, 40000.0, 40000.0, 50000.0, 50000.0, 1000.0, EMantleMinimapSurface::Unknown);
+	// An unnamed paving slab 20 cm up stays ground.
+	Square(Canvas, 70000.0, 70000.0, 80000.0, 80000.0, 20.0, EMantleMinimapSurface::Unknown);
 	const TArray<FColor> Pixels = Canvas.Shade();
 	TestEqual(TEXT("one pixel each"), Pixels.Num(), Grid.Width * Grid.Height);
 	auto At = [&Pixels, &Grid](int32 X, int32 Y) { return Pixels[Y * Grid.Width + X]; };
@@ -145,6 +147,8 @@ bool FMantleMinimapShadeTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("a building is not ground"), Inside != Ground);
 	TestTrue(TEXT("its edge is darker than its roof"), Edge.R < Inside.R && Edge.G < Inside.G && Edge.B < Inside.B);
 	TestTrue(TEXT("a raised unnamed block is drawn as a building"), At(450, 450) != Ground && At(450, 450).R < Ground.R);
+	TestEqual(TEXT("its middle, far from any edge, too"), At(450, 450), At(420, 480));
+	TestEqual(TEXT("a low unnamed slab is ground"), At(750, 750), Ground);
 	bool bOpaque = true;
 	for (const FColor& Pixel : Pixels)
 	{
