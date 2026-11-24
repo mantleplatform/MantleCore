@@ -7,11 +7,12 @@ class UStaticMesh;
 class UStaticMeshComponent;
 
 /**
- * A placed mesh that draws with more materials than a place mesh may (FMantlePlaceAssetLimits::MaxSections, 8) publishes as
- * several meshes at export, so it looks the same in game and nothing is refused. City Sample's freeway markings and traffic
- * lights are meshes of 9 to 17 materials, every one different, so merging materials can't fix them.
+ * A placed mesh that draws with more materials than a place mesh may (FMantlePlaceAssetLimits::MaxSections, 64) publishes as
+ * several meshes at export, so it looks the same in game and nothing is refused. Up to the cap a mesh is not split: every
+ * material draws either way, so splitting only added pieces (it was needed at the old cap of 8, for City Sample's freeway markings
+ * and traffic lights of 9 to 17 materials).
  *
- * The mesh is cut by material slot into ceil(slots / 8) transient parts of at most 8 slots each, as the mirror bake
+ * The mesh is cut by material slot into ceil(slots / cap) transient parts of at most the cap of slots each, as the mirror bake
  * (FMantleMirrorBake) makes its copies: a static mesh built from a mesh description, never written into the creator's Content, kept
  * alive by this class's own cache so that Gather, Check and Export all see the same objects (and the same mesh keys) for
  * as long as the source is unchanged. One source is cut once, however many actors and instances draw it.

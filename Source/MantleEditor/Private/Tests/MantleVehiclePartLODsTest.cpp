@@ -139,7 +139,7 @@ bool FMantleVehicleCarBudgetTest::RunTest(const FString& Parameters)
 		AddInfo(TEXT("This editor has no static mesh reducer, so the reduction is not run."));
 		return true;
 	}
-	// A body of 11 materials (3 more than a body may draw), each a grid on one of two bones: 11 x 800 = 8,800 triangles, so with a limit of 5,000 the whole car is over it.
+	// A body of 11 materials (3 more than the split's cap of 8), each a grid on one of two bones: 11 x 800 = 8,800 triangles, so with a limit of 5,000 the whole car is over it.
 	FMantleSkinnedMesh Body;
 	Body.Bones = { { FName(TEXT("root")), INDEX_NONE }, { FName(TEXT("hub")), 0 } };
 	Body.ReferencePose = { FTransform::Identity, FTransform::Identity };
@@ -147,6 +147,8 @@ bool FMantleVehicleCarBudgetTest::RunTest(const FString& Parameters)
 	LOD.NumInfluences = 1;
 	TArray<FSkeletalMaterial> Materials;
 	constexpr int32 MaterialCount = 11;
+	// The split's own cap, not the vehicle's limit (64): 3 fewer than the 11 materials, so three of them go to parts.
+	constexpr int32 SplitCap = 8;
 	constexpr int32 N = 20;
 	for (int32 Material = 0; Material < MaterialCount; ++Material)
 	{
@@ -188,7 +190,7 @@ bool FMantleVehicleCarBudgetTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("and says it was reduced"), Reduced.bReduced);
 	FMantleVehicleBodySplitResult Split;
 	TestTrue(*FString::Printf(TEXT("the body splits into parts (%s)"), *Split.Problem),
-		FMantleVehicleBodySplit::Split(Body, Materials, Extras, FMantleVehicleLimits::MaxSections, FMantleVehicleLimits::MaxPartMaterials, FMantleVehicleLimits::MaxParts, Split));
+		FMantleVehicleBodySplit::Split(Body, Materials, Extras, SplitCap, SplitCap, FMantleVehicleLimits::MaxParts, Split));
 	int32 PartTriangles = 0;
 	for (const FMantleVehicleBodyPiece& Piece : Split.Pieces)
 	{

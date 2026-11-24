@@ -37,7 +37,13 @@ struct MANTLEEDITOR_API FMantlePlaceAssetLimits
 {
 	int32 MaxTriangles = 500000;
 	int32 MaxVertices = 1500000;
-	int32 MaxSections = 8;
+	int32 MaxSections = 64;
+
+	/**
+	 * Above this many materials a mesh gets a Check warning (it draws that many materials), never a refusal: every material is a draw, so
+	 * a mesh of dozens of them is worth a look, but the limit above is the only thing that refuses. Not in limits.json.
+	 */
+	static constexpr int32 MaterialsComfort = 32;
 	int32 MaxTextureSize = 2048;
 	int64 MaxTextureBytes = 8 << 20;
 	int64 MaxUploadBytes = 64 << 20;
@@ -79,7 +85,7 @@ struct MANTLEEDITOR_API FMantlePlaceAssetLimits
 	 * LOD) and a clip sampled over its bones (MAN1 with its skeleton).
 	 */
 	int32 MaxSkeletalTriangles = 100000;
-	int32 MaxSkeletalSections = 8;
+	int32 MaxSkeletalSections = 64;
 	int32 MaxSkeletalBones = 256;
 	double MaxClipSeconds = 60.0;
 	double MaxClipFrameRate = 60.0;

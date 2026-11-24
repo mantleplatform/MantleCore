@@ -35,7 +35,7 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	static constexpr double MaxInteractableRange = 5000.0;
 
 	/** StaticMesh, InstancedMesh and SkeletalMesh materials[]. */
-	static constexpr int32 MaxMaterialSlots = 16;
+	static constexpr int32 MaxMaterialSlots = 64;
 
 	/** StaticMesh and InstancedMesh drawDistance: above 0 and at most this many cm (10 km). */
 	static constexpr double MaxDrawDistance = 1000000.0;

@@ -551,9 +551,9 @@ bool FMantleSlotSplitLargeMeshTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-// A StaticMesh actor of 9 slots publishes as two StaticMesh entities (8 materials and 1) in the same place with the same name,
+// A StaticMesh actor of one slot more than a place mesh may have (65 today) publishes as two StaticMesh entities (a full part and 1) in the same place with the same name,
 // Check says nothing of slot counts, Gather lists the parts and not the whole mesh, and a material override on a slot lands on the
-// part that slot went to (slot 10 of 17 is the third slot of the second part).
+// part that slot went to (slot cap + 2 of 2 x cap + 1 is the third slot of the second part).
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleSlotSplitActorExportTest,
 	"Mantle.Editor.SlotSplit.AStaticMeshActorPublishesAsItsParts",
@@ -563,9 +563,11 @@ bool FMantleSlotSplitActorExportTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleSlotSplitTestPrivate;
 	FSplitFixture Fixture;
+	// The most slots a place mesh may have: the export splits a mesh that draws more.
+	const int32 SplitCap = FMantleSlotSplit::DefaultMaxSections();
 
-	TStrongObjectPtr<UStaticMesh> Nine(MakeSlotted(9, /*bBox*/ true));
-	TStrongObjectPtr<UStaticMesh> Seventeen(MakeSlotted(17, /*bBox*/ true));
+	TStrongObjectPtr<UStaticMesh> Nine(MakeSlotted(SplitCap + 1, /*bBox*/ true));
+	TStrongObjectPtr<UStaticMesh> Seventeen(MakeSlotted(2 * SplitCap + 1, /*bBox*/ true));
 	FTestWorld World;
 	const FVector Where(1000.0, 2000.0, 300.0);
 	AStaticMeshActor* NineActor = SpawnMeshActor(World.World, TEXT("Marking9"), Nine.Get(), Where);
@@ -581,15 +583,15 @@ bool FMantleSlotSplitActorExportTest::RunTest(const FString& Parameters)
 		AddWarning(TEXT("the engine's emissive material did not load; skipped"));
 		return true;
 	}
-	SeventeenActor->GetStaticMeshComponent()->SetMaterial(10, Override);
+	SeventeenActor->GetStaticMeshComponent()->SetMaterial(SplitCap + 2, Override);
 
-	// An override on the last slot (16, past the 16 an entity's materials may name) is fine on a mesh that publishes as parts.
+	// An override on the last slot (the cap x 2, past the cap an entity's materials may name) is fine on a mesh that publishes as parts.
 	UMaterialInterface* LastOverride = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineMaterials/DefaultMaterial.DefaultMaterial"));
-	SeventeenActor->GetStaticMeshComponent()->SetMaterial(16, LastOverride);
+	SeventeenActor->GetStaticMeshComponent()->SetMaterial(2 * SplitCap, LastOverride);
 
 	const FMantleValidationResult Validation = FMantlePlaceValidator::Validate(World.World);
 	TestFalse(TEXT("Check does not refuse the slot count"), HasSlotCountError(Validation));
-	TestFalse(TEXT("nor an override on slot 16 of a mesh that publishes as parts"), Validation.Issues.ContainsByPredicate([](const FMantleValidationIssue& Issue)
+	TestFalse(TEXT("nor an override on the last slot of a mesh that publishes as parts"), Validation.Issues.ContainsByPredicate([](const FMantleValidationIssue& Issue)
 	{
 		return Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(TEXT("overrides material slot"));
 	}));
@@ -601,7 +603,7 @@ bool FMantleSlotSplitActorExportTest::RunTest(const FString& Parameters)
 	}));
 	TArray<UStaticMesh*> NineParts;
 	FString Why;
-	FMantleSlotSplit::Split(Nine.Get(), 8, NineParts, Why);
+	FMantleSlotSplit::Split(Nine.Get(), SplitCap, NineParts, Why);
 	for (const UStaticMesh* Part : NineParts)
 	{
 		TestTrue(TEXT("but each part"), Dependencies.Meshes.ContainsByPredicate([Part](const FMantleGatheredMesh& Entry)
@@ -633,11 +635,11 @@ bool FMantleSlotSplitActorExportTest::RunTest(const FString& Parameters)
 			SeventeenProps.Add(Props);
 		}
 	}
-	if (!TestEqual(TEXT("the 9-slot actor is two entities"), NineProps.Num(), 2) || !TestEqual(TEXT("the 17-slot actor is three"), SeventeenProps.Num(), 3))
+	if (!TestEqual(TEXT("the one-over actor is two entities"), NineProps.Num(), 2) || !TestEqual(TEXT("the two-over actor is three"), SeventeenProps.Num(), 3))
 	{
 		return false;
 	}
-	TestEqual(TEXT("the first has 8 materials"), NineProps[0]->Materials.Num(), 8);
+	TestEqual(TEXT("the first has a full part of materials"), NineProps[0]->Materials.Num(), SplitCap);
 	TestEqual(TEXT("the second has 1"), NineProps[1]->Materials.Num(), 1);
 	TestTrue(TEXT("they are different meshes"), NineProps[0]->Mesh != NineProps[1]->Mesh);
 	TestTrue(TEXT("in the same place"), NineEntities[0]->Transform.Equals(NineEntities[1]->Transform) && NineEntities[0]->Transform.GetLocation().Equals(Where));
@@ -646,14 +648,14 @@ bool FMantleSlotSplitActorExportTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the second, a part of a mesh with a box, has none"), NineProps[1]->Collision == EMantleCollision::None);
 	TestTrue(TEXT("both are drawn"), NineProps[0]->bVisible && NineProps[1]->bVisible);
 
-	// Slot 10 is the third slot of the second part.
-	TestEqual(TEXT("each part of the 17 has its materials"), SeventeenProps[1]->Materials.Num(), 8);
+	// Slot cap + 2 is the third slot of the second part.
+	TestEqual(TEXT("each part of the long mesh has its materials"), SeventeenProps[1]->Materials.Num(), SplitCap);
 	const FString OverrideId = FMantlePlaceAssets::ProvisionalId(FMantlePlaceAssets::MaterialKey(Override));
-	TestEqual(TEXT("the override of slot 10 is on the second part's third slot"), SeventeenProps[1]->Materials.IsValidIndex(2) ? SeventeenProps[1]->Materials[2] : FString(), OverrideId);
+	TestEqual(TEXT("the override of slot cap + 2 is on the second part's third slot"), SeventeenProps[1]->Materials.IsValidIndex(2) ? SeventeenProps[1]->Materials[2] : FString(), OverrideId);
 	TestFalse(TEXT("and not on the first part"), SeventeenProps[0]->Materials.Contains(OverrideId));
 	TestFalse(TEXT("nor the third"), SeventeenProps[2]->Materials.Contains(OverrideId));
-	// Slot 16 is the only slot of the third part.
-	TestEqual(TEXT("the override of slot 16 is on the third part's only slot"), SeventeenProps[2]->Materials.Num() == 1 ? SeventeenProps[2]->Materials[0] : FString(),
+	// The last slot (2 x cap) is the only slot of the third part.
+	TestEqual(TEXT("the override of the last slot is on the third part's only slot"), SeventeenProps[2]->Materials.Num() == 1 ? SeventeenProps[2]->Materials[0] : FString(),
 		FMantlePlaceAssets::ProvisionalId(FMantlePlaceAssets::MaterialKey(LastOverride)));
 
 	// Every mesh an entity names is one Gather listed, so the upload has it.
@@ -664,8 +666,8 @@ bool FMantleSlotSplitActorExportTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-// An instanced component of a 9-slot mesh publishes as two instance sets (one for each part), each with every instance at its own
-// transform; one of 17 slots as three. A second component of the same mesh joins the same sets (one split for the whole level).
+// An instanced component of a mesh one slot over the cap publishes as two instance sets (one for each part), each with every instance at its own
+// transform; one of 2 x cap + 1 slots as three. A second component of the same mesh joins the same sets (one split for the whole level).
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleSlotSplitInstancedExportTest,
 	"Mantle.Editor.SlotSplit.InstancedMeshesPublishOneSetPerPart",
@@ -675,15 +677,17 @@ bool FMantleSlotSplitInstancedExportTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleSlotSplitTestPrivate;
 	FSplitFixture Fixture;
+	// The most slots a place mesh may have: the export splits a mesh that draws more.
+	const int32 SplitCap = FMantleSlotSplit::DefaultMaxSections();
 
-	TStrongObjectPtr<UStaticMesh> Nine(MakeSlotted(9, /*bBox*/ false));
-	TStrongObjectPtr<UStaticMesh> Seventeen(MakeSlotted(17, /*bBox*/ false));
+	TStrongObjectPtr<UStaticMesh> Nine(MakeSlotted(SplitCap + 1, /*bBox*/ false));
+	TStrongObjectPtr<UStaticMesh> Seventeen(MakeSlotted(2 * SplitCap + 1, /*bBox*/ false));
 	FTestWorld World;
 	const TArray<FVector> NineWhere = { FVector(0.0, 0.0, 0.0), FVector(500.0, 0.0, 0.0), FVector(1000.0, 0.0, 0.0) };
 	const TArray<FVector> MoreWhere = { FVector(0.0, 5000.0, 0.0), FVector(500.0, 5000.0, 0.0) };
-	if (!TestNotNull(TEXT("the first nine-slot component spawned"), SpawnInstances(World.World, TEXT("Decals9"), Nine.Get(), NineWhere))
+	if (!TestNotNull(TEXT("the first one-over component spawned"), SpawnInstances(World.World, TEXT("Decals9"), Nine.Get(), NineWhere))
 		|| !TestNotNull(TEXT("the second"), SpawnInstances(World.World, TEXT("Decals9b"), Nine.Get(), MoreWhere))
-		|| !TestNotNull(TEXT("the seventeen-slot one"), SpawnInstances(World.World, TEXT("Decals17"), Seventeen.Get(), NineWhere)))
+		|| !TestNotNull(TEXT("the two-over one"), SpawnInstances(World.World, TEXT("Decals17"), Seventeen.Get(), NineWhere)))
 	{
 		return false;
 	}
@@ -697,8 +701,8 @@ bool FMantleSlotSplitInstancedExportTest::RunTest(const FString& Parameters)
 	TArray<UStaticMesh*> NineParts;
 	TArray<UStaticMesh*> SeventeenParts;
 	FString Why;
-	FMantleSlotSplit::Split(Nine.Get(), 8, NineParts, Why);
-	FMantleSlotSplit::Split(Seventeen.Get(), 8, SeventeenParts, Why);
+	FMantleSlotSplit::Split(Nine.Get(), SplitCap, NineParts, Why);
+	FMantleSlotSplit::Split(Seventeen.Get(), SplitCap, SeventeenParts, Why);
 
 	// Instances by the mesh id the set names.
 	TMap<FString, TArray<FTransform>> InstancesByMesh;
@@ -713,7 +717,7 @@ bool FMantleSlotSplitInstancedExportTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("one set for each of the 2 + 3 parts"), InstancesByMesh.Num(), 5);
 
-	if (TestEqual(TEXT("the nine-slot mesh has two parts"), NineParts.Num(), 2))
+	if (TestEqual(TEXT("the one-over mesh has two parts"), NineParts.Num(), 2))
 	{
 		for (const UStaticMesh* Part : NineParts)
 		{
@@ -725,7 +729,7 @@ bool FMantleSlotSplitInstancedExportTest::RunTest(const FString& Parameters)
 			}
 		}
 	}
-	if (TestEqual(TEXT("the seventeen-slot mesh has three parts"), SeventeenParts.Num(), 3))
+	if (TestEqual(TEXT("the two-over mesh has three parts"), SeventeenParts.Num(), 3))
 	{
 		TArray<FVector> FirstPlaces;
 		for (const UStaticMesh* Part : SeventeenParts)
@@ -768,6 +772,39 @@ bool FMantleSlotSplitInstancedExportTest::RunTest(const FString& Parameters)
 	{
 		return Entry.Key == FMantlePlaceAssets::MeshKey(Seventeen.Get());
 	}));
+	return true;
+}
+
+// A mesh above the comfort number of materials (and well within the limit) is warned about, never refused, and is not split: it publishes as the one mesh.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleSlotSplitComfortWarningTest,
+	"Mantle.Editor.SlotSplit.ManyMaterialsWarnAndPublishWhole",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleSlotSplitComfortWarningTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleSlotSplitTestPrivate;
+	FSplitFixture Fixture;
+	const int32 Slots = FMantlePlaceAssetLimits::MaterialsComfort + 1;
+	TestTrue(TEXT("the comfort number is under the limit"), Slots <= FMantleSlotSplit::DefaultMaxSections());
+
+	TStrongObjectPtr<UStaticMesh> Many(MakeSlotted(Slots, /*bBox*/ false));
+	FTestWorld World;
+	if (!TestNotNull(TEXT("the actor spawned"), SpawnMeshActor(World.World, TEXT("ManyMaterials"), Many.Get(), FVector::ZeroVector)))
+	{
+		return false;
+	}
+	const FMantleValidationResult Validation = FMantlePlaceValidator::Validate(World.World);
+	TestFalse(TEXT("Check does not refuse the slot count"), HasSlotCountError(Validation));
+	const FString Said = FString::Printf(TEXT("draws %d materials"), Slots);
+	TestTrue(TEXT("Check warns that the mesh draws that many materials"), Validation.Issues.ContainsByPredicate([&Said](const FMantleValidationIssue& Issue)
+	{
+		return Issue.Severity == EMantleIssueSeverity::Warning && Issue.Problem.Contains(Said);
+	}));
+
+	TArray<UStaticMesh*> Parts;
+	FString Why;
+	TestFalse(TEXT("and it is not split"), FMantleSlotSplit::Split(Many.Get(), FMantleSlotSplit::DefaultMaxSections(), Parts, Why));
 	return true;
 }
 

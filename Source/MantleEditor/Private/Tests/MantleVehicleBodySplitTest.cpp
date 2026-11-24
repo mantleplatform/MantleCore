@@ -17,14 +17,14 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// A body that draws more materials than a published one may (8) is split into the body and parts of at most 8 materials each, and keeps its look. A
-// synthetic model of 14 materials, each its own quad strip, is split on its own (every triangle keeps its material, its place and its bone) and built as a vehicle (it
-// publishes: no check refuses it, the body reads back with at most 8 materials and the part with the rest).
+// A body that draws more materials than a published one may (FMantleVehicleLimits::MaxSections, 64) is split into the body and parts of at most that many materials
+// each, and keeps its look. A synthetic model of 6 more materials than that, each its own quad strip, is split on its own (every triangle keeps its material, its place and
+// its bone) and built as a vehicle (it publishes: no check refuses it, the body reads back with at most the cap and the part with the rest).
 
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleVehicleBodySplitTestPrivate
 {
-	constexpr int32 Materials = 14;
+	constexpr int32 Materials = FMantleVehicleLimits::MaxSections + 6;
 
 	/** The key a triangle is known by: its material's name and its corners, rounded, in order of position (the same triangle wherever it sits in a mesh). */
 	FString TriangleKey(const FName Material, const FVector& A, const FVector& B, const FVector& C)
@@ -38,7 +38,7 @@ namespace MantleVehicleBodySplitTestPrivate
 		return Material.ToString() + TEXT("|") + FString::Join(Corners, TEXT("|"));
 	}
 
-	/** Material k has k + 1 quads (so 14 is the biggest and the body's keepers are known), each quad its own four vertices; odd materials ride bone 1. */
+	/** Material k has k + 1 quads (so the last is the biggest and the body's keepers are known), each quad its own four vertices; odd materials ride bone 1. */
 	void MakeBody(FMantleSkinnedMesh& OutBody, TArray<FSkeletalMaterial>& OutMaterials)
 	{
 		OutBody.Bones = { { FName(TEXT("root")), INDEX_NONE }, { FName(TEXT("hub")), 0 } };
@@ -90,7 +90,7 @@ namespace MantleVehicleBodySplitTestPrivate
 		}
 	}
 
-	/** A static mesh of 14 quads in a row, each its own material, neighbors sharing their edge's vertex instances (so the render sections share vertices). */
+	/** A static mesh of Materials quads in a row, each its own material, neighbors sharing their edge's vertex instances (so the render sections share vertices). */
 	UStaticMesh* MakeStrip()
 	{
 		UObject* Outer = GetTransientPackage();
@@ -152,7 +152,7 @@ namespace MantleVehicleBodySplitTestPrivate
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleVehicleBodySplitTest,
-	"Mantle.Vehicle.BodySplit.FourteenMaterialsSplitAndKeepTheirLook",
+	"Mantle.Vehicle.BodySplit.MoreMaterialsThanTheCapSplitAndKeepTheirLook",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FMantleVehicleBodySplitTest::RunTest(const FString& Parameters)
@@ -161,7 +161,7 @@ bool FMantleVehicleBodySplitTest::RunTest(const FString& Parameters)
 	FMantleSkinnedMesh Body;
 	TArray<FSkeletalMaterial> Slots;
 	MakeBody(Body, Slots);
-	TestEqual(TEXT("the model draws 14 materials"), FMantleVehicleBodySplit::CountMaterials(Body), 14);
+	TestEqual(TEXT("the model draws 6 more materials than the cap"), FMantleVehicleBodySplit::CountMaterials(Body), Materials);
 	TMap<FString, int32> Before;
 	TMap<FString, int32> BoneBefore;
 	Triangles(Body, Slots, Before, BoneBefore);
@@ -176,11 +176,11 @@ bool FMantleVehicleBodySplitTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	TestEqual(TEXT("it drew 14 before"), Result.MaterialsBefore, 14);
-	TestEqual(TEXT("and the body draws 8 after"), FMantleVehicleBodySplit::CountMaterials(Body), 8);
-	TestEqual(TEXT("with 8 material slots left"), Slots.Num(), 8);
+	TestEqual(TEXT("it drew them all before"), Result.MaterialsBefore, Materials);
+	TestEqual(TEXT("and the body draws the cap after"), FMantleVehicleBodySplit::CountMaterials(Body), FMantleVehicleLimits::MaxSections);
+	TestEqual(TEXT("with that many material slots left"), Slots.Num(), FMantleVehicleLimits::MaxSections);
 	TestEqual(TEXT("the six smallest materials went to pieces, one piece for each of the two bones they ride (three materials each)"), Result.Pieces.Num(), 2);
-	TestTrue(TEXT("the body keeps the biggest material"), Slots.ContainsByPredicate([](const FSkeletalMaterial& Slot) { return Slot.MaterialSlotName == FName(TEXT("mat13")); }));
+	TestTrue(TEXT("the body keeps the biggest material"), Slots.ContainsByPredicate([](const FSkeletalMaterial& Slot) { return Slot.MaterialSlotName == FName(*FString::Printf(TEXT("mat%d"), Materials - 1)); }));
 	TestFalse(TEXT("and not the smallest"), Slots.ContainsByPredicate([](const FSkeletalMaterial& Slot) { return Slot.MaterialSlotName == FName(TEXT("mat0")); }));
 	TestEqual(TEXT("the body's vertices are kept in step with its triangles (extra UV channel)"), Extras.UVs[0].Num(), Body.LODs[0].Positions.Num());
 	TestEqual(TEXT("and its skin"), Body.LODs[0].InfluenceBones.Num(), Body.LODs[0].Positions.Num());
@@ -194,7 +194,7 @@ bool FMantleVehicleBodySplitTest::RunTest(const FString& Parameters)
 	for (const FMantleVehicleBodyPiece& Piece : Result.Pieces)
 	{
 		TestTrue(TEXT("a piece's bone is a bone of the body"), Piece.Bone == FName(TEXT("root")) || Piece.Bone == FName(TEXT("hub")));
-		TestTrue(TEXT("a piece has at most 8 materials"), Piece.Materials.Num() <= FMantleVehicleLimits::MaxPartMaterials);
+		TestTrue(TEXT("a piece has at most the part cap of materials"), Piece.Materials.Num() <= FMantleVehicleLimits::MaxPartMaterials);
 		TestTrue(TEXT("a hub piece is placed relative to the hub"), Piece.Bone != FName(TEXT("hub")) || Piece.ToBone.GetLocation().Equals(FVector(-100.0, 0.0, 0.0), 0.01));
 		for (const FMantleVehicleBodyPiece::FSection& Section : Piece.Sections)
 		{
@@ -230,7 +230,7 @@ bool FMantleVehicleBodySplitTest::RunTest(const FString& Parameters)
 	FMantleVehicleBodySplitResult Refused;
 	TestFalse(TEXT("pieces past the parts a vehicle may have are refused"), FMantleVehicleBodySplit::Split(Small, SmallSlots, NoExtras, FMantleVehicleLimits::MaxSections, FMantleVehicleLimits::MaxPartMaterials, 1, Refused));
 	TestFalse(TEXT("with a reason"), Refused.Problem.IsEmpty());
-	TestEqual(TEXT("and the body untouched"), FMantleVehicleBodySplit::CountMaterials(Small), 14);
+	TestEqual(TEXT("and the body untouched"), FMantleVehicleBodySplit::CountMaterials(Small), Materials);
 	FMantleVehicleBodySplitResult Within;
 	TestTrue(TEXT("a body already within the cap is not split"), FMantleVehicleBodySplit::Split(Body, Slots, Extras, FMantleVehicleLimits::MaxSections, FMantleVehicleLimits::MaxPartMaterials, FMantleVehicleLimits::MaxParts, Within));
 	TestEqual(TEXT("and has no pieces"), Within.Pieces.Num(), 0);
@@ -239,14 +239,14 @@ bool FMantleVehicleBodySplitTest::RunTest(const FString& Parameters)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleVehicleBodySplitBuildTest,
-	"Mantle.Vehicle.BodySplit.FourteenMaterialModelBuildsAndPublishes",
+	"Mantle.Vehicle.BodySplit.OverTheCapMaterialModelBuildsAndPublishes",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FMantleVehicleBodySplitBuildTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleBodySplitTestPrivate;
 	const TStrongObjectPtr<UStaticMesh> Strip(MakeStrip());
-	if (!TestTrue(TEXT("the 14-material strip is built"), Strip.IsValid() && Strip->GetRenderData() && Strip->GetRenderData()->LODResources.Num() > 0))
+	if (!TestTrue(TEXT("the over-the-cap strip is built"), Strip.IsValid() && Strip->GetRenderData() && Strip->GetRenderData()->LODResources.Num() > 0))
 	{
 		return false;
 	}
@@ -279,11 +279,11 @@ bool FMantleVehicleBodySplitBuildTest::RunTest(const FString& Parameters)
 	for (const FString& Note : Built.Notes)
 	{
 		TestFalse(TEXT("no note tells the creator to fix something before publishing"), Note.StartsWith(TEXT("Before you publish")));
-		bSaid = bSaid || (Note.Contains(TEXT("split it for you")) && Note.Contains(TEXT("14")));
+		bSaid = bSaid || (Note.Contains(TEXT("split it for you")) && Note.Contains(FString::FromInt(Materials)));
 	}
 	TestTrue(TEXT("and one says in plain words what was done"), bSaid);
 
-	// Its sections: the body within the cap, the rest in the part, all 14 and all 28 triangles.
+	// Its sections: the body within the cap, the rest in the part, all of them and every triangle.
 	USkeletalMesh* BodyMesh = Source->Body.LoadSynchronous();
 	if (!TestNotNull(TEXT("it has a body"), BodyMesh) || !TestEqual(TEXT("and one part"), Source->Parts.Num(), 1))
 	{
@@ -297,7 +297,7 @@ bool FMantleVehicleBodySplitBuildTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	TestTrue(*FString::Printf(TEXT("the body has at most 8 sections (%d)"), BodyGlb.MaterialNames.Num()), BodyGlb.MaterialNames.Num() <= FMantleVehicleLimits::MaxSections);
+	TestTrue(*FString::Printf(TEXT("the body has at most the cap of sections (%d)"), BodyGlb.MaterialNames.Num()), BodyGlb.MaterialNames.Num() <= FMantleVehicleLimits::MaxSections);
 	const UStaticMesh* PartMesh = Source->Parts[0].Mesh.LoadSynchronous();
 	if (!TestNotNull(TEXT("the part has a mesh"), PartMesh))
 	{
@@ -310,9 +310,9 @@ bool FMantleVehicleBodySplitBuildTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	TestTrue(TEXT("the part has at most 8 sections"), PartGlb.MaterialNames.Num() <= FMantleVehicleLimits::MaxPartMaterials);
-	TestEqual(TEXT("14 materials in all"), BodyGlb.MaterialNames.Num() + PartGlb.MaterialNames.Num(), 14);
-	TestEqual(TEXT("and all 28 triangles"), BodyTriangles + PartTriangles, 28);
+	TestTrue(TEXT("the part has at most the part cap of sections"), PartGlb.MaterialNames.Num() <= FMantleVehicleLimits::MaxPartMaterials);
+	TestEqual(TEXT("every material in all"), BodyGlb.MaterialNames.Num() + PartGlb.MaterialNames.Num(), Materials);
+	TestEqual(TEXT("and every triangle"), BodyTriangles + PartTriangles, 2 * Materials);
 	TSet<FString> Names;
 	for (const FString& Name : BodyGlb.MaterialNames)
 	{
@@ -322,7 +322,7 @@ bool FMantleVehicleBodySplitBuildTest::RunTest(const FString& Parameters)
 	{
 		Names.Add(Name);
 	}
-	TestEqual(TEXT("each material is in one of them"), Names.Num(), 14);
+	TestEqual(TEXT("each material is in one of them"), Names.Num(), Materials);
 
 	// Cleanup: the throwaway assets.
 	if (Source->Body.IsValid())
@@ -349,16 +349,16 @@ bool FMantleVehicleSplitPaintTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleBodySplitTestPrivate;
 	const TStrongObjectPtr<UStaticMesh> Strip(MakeStrip());
-	if (!TestTrue(TEXT("the 14-material strip is built"), Strip.IsValid() && Strip->GetRenderData() && Strip->GetRenderData()->LODResources.Num() > 0))
+	if (!TestTrue(TEXT("the over-the-cap strip is built"), Strip.IsValid() && Strip->GetRenderData() && Strip->GetRenderData()->LODResources.Num() > 0))
 	{
 		return false;
 	}
-	// The creator ticks three of the fourteen sections in the paint step, whichever the split keeps on the body and whichever it puts on a part.
+	// The creator ticks three of the sections in the paint step, whichever the split keeps on the body and whichever it puts on a part.
 	FMantleVehicleModelOptions Options;
 	Options.Folder = TEXT("/Temp/MantleBodySplitPaintTest");
 	Options.Name = TEXT("SplitPaintCar");
 	Options.bOverwrite = true;
-	const TArray<FString> Ticked = { TEXT("strip0"), TEXT("strip6"), TEXT("strip13") };
+	const TArray<FString> Ticked = { TEXT("strip0"), FString::Printf(TEXT("strip%d"), Materials / 2), FString::Printf(TEXT("strip%d"), Materials - 1) };
 	Options.PaintedSections = Ticked;
 	const FMantleVehicleBuildResult Built = FMantleVehicleBuilder::BuildFromModel(Strip.Get(), TEXT("sedan"), Options);
 	for (const FString& Problem : Built.Problems)
@@ -407,7 +407,7 @@ bool FMantleVehicleSplitPaintTest::RunTest(const FString& Parameters)
 	// The paint step ticking another section later moves it with the same helper, and unticking one takes it off.
 	TArray<FString> AllSections;
 	TArray<bool> Painted;
-	for (int32 Index = 0; Index < 14; ++Index)
+	for (int32 Index = 0; Index < Materials; ++Index)
 	{
 		AllSections.Add(FString::Printf(TEXT("strip%d"), Index));
 		Painted.Add(Index == 1);

@@ -428,7 +428,7 @@ bool FMantleAvatarContract::LoadFromDirectory(const FString& Directory, FMantleA
 	const TSharedPtr<FJsonObject> PlaceMesh = ObjectField(ObjectField(Limits, TEXT("placeAssets")), TEXT("staticMesh"));
 	Out.PlaceMeshMaxTriangles = IntField(PlaceMesh, TEXT("maxTriangles"), 500000);
 	Out.PlaceMeshMaxVertices = IntField(PlaceMesh, TEXT("maxVertices"), 1500000);
-	Out.PlaceMeshMaxSections = IntField(PlaceMesh, TEXT("maxSections"), 8);
+	Out.PlaceMeshMaxSections = IntField(PlaceMesh, TEXT("maxSections"), 64);
 
 	const TSharedPtr<FJsonObject> PlaceSound = ObjectField(ObjectField(Limits, TEXT("placeAssets")), TEXT("sound"));
 	Out.PlaceSoundMinSampleRate = IntField(PlaceSound, TEXT("minSampleRate"), 22050);
@@ -468,7 +468,7 @@ bool FMantleAvatarContract::LoadFromDirectory(const FString& Directory, FMantleA
 	// A place skeletal mesh on its own skeleton and a clip for it.
 	const TSharedPtr<FJsonObject> PlaceSkeletal = ObjectField(ObjectField(Limits, TEXT("placeAssets")), TEXT("skeletalMesh"));
 	Out.PlaceSkeletalMaxTriangles = IntField(PlaceSkeletal, TEXT("maxTriangles"), 100000);
-	Out.PlaceSkeletalMaxSections = IntField(PlaceSkeletal, TEXT("maxSections"), 8);
+	Out.PlaceSkeletalMaxSections = IntField(PlaceSkeletal, TEXT("maxSections"), 64);
 	Out.PlaceSkeletalMaxBones = IntField(PlaceSkeletal, TEXT("maxBones"), 256);
 	const TSharedPtr<FJsonObject> PlaceClip = ObjectField(ObjectField(Limits, TEXT("placeAssets")), TEXT("animClip"));
 	double ClipNumber = 0.0;

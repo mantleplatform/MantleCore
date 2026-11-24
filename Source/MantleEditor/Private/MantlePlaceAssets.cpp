@@ -3623,6 +3623,12 @@ void FMantlePlaceAssets::CheckSkeletalMesh(const USkeletalMesh* Mesh, const FStr
 			FString::Printf(TEXT("%s has %d material slots; a place skeletal mesh may have at most %d."), *Subject, Slots, Limits.MaxSkeletalSections),
 			FString::Printf(TEXT("Give it %d materials or fewer."), Limits.MaxSkeletalSections) });
 	}
+	else if (Slots > FMantlePlaceAssetLimits::MaterialsComfort)
+	{
+		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
+			FString::Printf(TEXT("%s draws %d materials."), *Subject, Slots),
+			TEXT("It publishes as it is. Each material is a separate draw, so fewer materials keep the place lighter.") });
+	}
 }
 
 void FMantlePlaceAssets::CheckClip(const UAnimSequence* Sequence, const FString& UsedBy, const FMantlePlaceAssetLimits& Limits,
@@ -5489,6 +5495,13 @@ void FMantlePlaceAssets::CheckMesh(const UStaticMesh* Mesh, const FString& UsedB
 		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, FString(),
 			FString::Printf(TEXT("%s has %d material slots; a place mesh may have at most %d."), *Subject, Slots.Num(), Limits.MaxSections),
 			FString::Printf(TEXT("Give it %d materials or fewer (Merge Actors can bake several into one)."), Limits.MaxSections) });
+	}
+	else if (Slots.Num() > FMantlePlaceAssetLimits::MaterialsComfort)
+	{
+		// Every material is a draw; a note to look, never a refusal.
+		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
+			FString::Printf(TEXT("%s draws %d materials."), *Subject, Slots.Num()),
+			TEXT("It publishes as it is. Each material is a separate draw, so fewer materials (Merge Actors can bake several into one) keep the place lighter.") });
 	}
 }
 

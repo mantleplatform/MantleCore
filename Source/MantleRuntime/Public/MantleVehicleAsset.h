@@ -692,7 +692,7 @@ struct MANTLERUNTIME_API FMantleVehicleLimits
 	static constexpr int32 MaxGears = 8;
 	static constexpr int32 MaxCollisionBoxes = 8;
 	/** placeAssets.vehicle.body.maxSections: one material per section at most. */
-	static constexpr int32 MaxSections = 8;
+	static constexpr int32 MaxSections = 64;
 	static constexpr int32 MaxBones = 128;
 	/** placeAssets.vehicle.body.maxTriangles and maxInfluencesPerVertex. */
 	static constexpr int32 MaxTriangles = 200000;
@@ -706,7 +706,7 @@ struct MANTLERUNTIME_API FMantleVehicleLimits
 	/** placeAssets.vehicle.maxParts: attached parts a vehicle may carry. */
 	static constexpr int32 MaxParts = 16;
 	/** placeAssets.staticMesh.maxSections: the materials a part may list, one per slot of its mesh. */
-	static constexpr int32 MaxPartMaterials = 8;
+	static constexpr int32 MaxPartMaterials = 64;
 	/** How far from 1 a part's rotation quaternion's length may be, and how near 0 its scale on an axis (the cook's partRules). */
 	static constexpr double PartRotationTolerance = 0.01;
 	static constexpr double PartMinScale = 0.001;

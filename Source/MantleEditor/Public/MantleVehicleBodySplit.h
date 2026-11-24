@@ -59,7 +59,7 @@ struct MANTLEEDITOR_API FMantleVehicleBodySplitResult
 };
 
 /**
- * Splits a body that draws more materials than a published vehicle's body may (FMantleVehicleLimits::MaxSections, 8) into the body and parts (#576 option b):
+ * Splits a body that draws more materials than a published vehicle's body may (FMantleVehicleLimits::MaxSections, 64) into the body and parts (#576 option b):
  * the body keeps the materials with the most triangles, up to the cap, and the triangles of the others become static-mesh pieces of at most MaxPartMaterials
  * materials each, one piece per bone they ride, which publish as the vehicle's parts. Every triangle keeps its material, its place and its bone, so the vehicle
  * looks as it did. The creator does nothing and needs no Unreal knowledge: the builder says what it did.
