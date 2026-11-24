@@ -515,12 +515,27 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	/** A WaterBody's collisionHeightOffset magnitude, cm. */
 	static constexpr double MaxWaterCollisionShift = 100000.0;
 
-	/** An ocean's collisionExtent and oceanExtent, and the Water Zone's zoneExtent: each axis, cm. */
+	/**
+	 * An ocean's collisionExtent and oceanExtent, and the Water Zone's zoneExtent: each axis, cm. 6.14 km is the largest zone the plugin's
+	 * water mesh covers with its own 24 m tiles: the mesh holds at most r.Water.WaterMesh.MaxDimensionInTiles (256) tiles across, twice the
+	 * next power of two of half the zone over the tile (UWaterMeshComponent::GetExtentInTiles), so a larger zone makes the plugin double its
+	 * tiles and halve the water's wave detail near the camera. The water info texture is stretched over the whole zone, so a zone this size
+	 * wants a larger textureResolution to keep its shores sharp.
+	 */
 	static constexpr double MinWaterExtent = 1.0;
-	static constexpr double MaxWaterExtent = 409600.0;
+	static constexpr double MaxWaterExtent = 614400.0;
 
 	/** The Water Zone's size when settings.water leaves zoneExtent out, each axis, cm. */
 	static constexpr double DefaultWaterZoneExtent = 51200.0;
+
+	/**
+	 * The Water Zone's water info texture, settings.water.textureResolution: [x, y] pixels, stretched over the zone (water height, ground
+	 * depth and flow, which shore foam, depth color and the waves' fade at the shore read). The default is the plugin's own (AWaterZone's
+	 * RenderTargetResolution). At 2048 the texture is 32 MB (RGBA16f, 8 bytes a pixel), 4 m a pixel across a 6.14 km zone.
+	 */
+	static constexpr int32 MinWaterTextureResolution = 1;
+	static constexpr int32 MaxWaterTextureResolution = 2048;
+	static constexpr int32 DefaultWaterTextureResolution = 512;
 
 	/** scripts[].name, 1 to this many characters. */
 	static constexpr int32 MaxScriptNameLength = 80;

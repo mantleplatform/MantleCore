@@ -569,6 +569,7 @@ namespace MantleCoverageSurveyPrivate
 			}
 		}
 		if (Fidelity.bAdditive) { Features.Add(TEXT("additive blending (the glow only: the base color has no part in it)")); }
+		if (Fidelity.Rim.bFound) { Features.Add(TEXT("Fresnel rim glow (brightest where the surface is seen edge-on)")); }
 		if (Fidelity.Glass.bFound)
 		{
 			Features.Add(FString::Printf(TEXT("scene-color refraction drawn as tinted see-through glass (opacity %.2f, %s tint)"), FMantleSeeThroughGlass::Opacity,
@@ -645,14 +646,19 @@ namespace MantleCoverageSurveyPrivate
 					Losses.Add(CoverageLossName(Loss, Analysis));
 				}
 			}
-			// #628: what an additive surface gives up in becoming Mantle's: it is drawn unlit, and a Fresnel rim glow is dropped.
+			// #628: what an additive surface gives up in becoming Mantle's: it is drawn unlit, and (F4) a Fresnel rim glow the rim key
+			// cannot carry is dropped, with its reason.
 			if (Analysis.Fidelity2.bAdditiveLit)
 			{
 				Losses.Add(TEXT("lit additive drawn unlit (lighting on the surface lost)"));
 			}
 			if (Analysis.Fidelity2.bAdditiveRim)
 			{
-				Losses.Add(TEXT("Fresnel rim glow dropped"));
+				Losses.Add(TEXT("Fresnel rim glow dropped (") + Analysis.Fidelity2.Rim.Why + TEXT(")"));
+			}
+			if (Analysis.Fidelity2.Rim.bFound && Analysis.Fidelity2.Rim.bNormalPin)
+			{
+				Losses.Add(TEXT("Fresnel rim glow follows the mesh normals, not its Normal input"));
 			}
 			if (Analysis.Fidelity2.bNormalFoamDropped)
 			{

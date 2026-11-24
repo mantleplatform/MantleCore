@@ -48,6 +48,40 @@ struct MANTLEEDITOR_API FMantleSeeThroughGlass
 	void Glow(double (&Out)[3]) const;
 };
 
+/**
+ * An additive material's Fresnel rim glow (F4), read from its graph: what the client's rim key draws, Color x pow(1 - max(0, N dot V), Power).
+ *
+ * Unreal's Fresnel is F = pow(1 - max(0, N dot V), Exponent) x (1 - BRF) + BRF (BRF: its base reflect fraction). The bake sees every surface
+ * face-on (MaterialBaking's ExportMaterialProxy makes the camera vector the vertex normal), where F = BRF, so for an additive output of
+ * Base + K x F the baked glow already holds Base + K x BRF. What it lacks is K x (1 - BRF) x pow(1 - N dot V, Exponent): Color is
+ * K x (1 - BRF), and Power the Exponent. Additive adds emissive x opacity, so a Fresnel in either is read.
+ */
+struct MANTLEEDITOR_API FMantleRimGlow
+{
+	/** A rim the client can draw was read: Color and Power hold it. */
+	bool bFound = false;
+
+	/** Linear RGB at a grazing angle; a channel may pass 1 (the document's strength carries the part over 1). */
+	double Color[3] = { 0.0, 0.0, 0.0 };
+
+	/** The Fresnel's exponent; the document holds it to 0..MaxPower (schema/material.schema.json rim.power). */
+	double Power = 5.0;
+	static constexpr double MaxPower = 64.0;
+
+	/** The Fresnel's Normal pin is wired (a normal map): the client's rim follows the mesh's own normals instead. */
+	bool bNormalPin = false;
+
+	/**
+	 * With the Fresnel in the opacity: the opacity the surface has face-on (its constant part plus K x BRF, 0..1), which the glow is
+	 * scaled by. The bake carries none (a Fresnel opacity does not bake to a constant), so without it the face publishes at full glow.
+	 * -1 when the opacity holds no Fresnel or its face-on value cannot be read.
+	 */
+	double FaceOnOpacity = -1.0;
+
+	/** Without bFound, why the rim cannot be published (it starts lower-case, to follow "because"); empty when the graph has no Fresnel. */
+	FString Why;
+};
+
 /** Reads what an emissive graph holds beyond what GLTFExporter's bake can carry (#628). */
 struct MANTLEEDITOR_API FMantleGlowMaterial
 {
@@ -60,13 +94,22 @@ struct MANTLEEDITOR_API FMantleGlowMaterial
 
 	/**
 	 * Whether Emissive's graph holds a Fresnel (the Fresnel node, or a called function named for one): a rim glow that
-	 * grows toward grazing angles. An additive material drops it and says so, rather than adding its average: the bake
-	 * sees the surface face-on, where a Fresnel is 0, so the baked glow already holds none of it; a constant average
-	 * would be a flat glow the creator never saw anywhere on the model; and over a sphere seen from afar the average is
-	 * 2 / ((p + 1)(p + 2)) of the color it multiplies, 2% at the power of 8 a rim glow usually uses and 7% at 4.
-	 * Emissive may be null.
+	 * grows toward grazing angles. The bake sees the surface face-on, where a Fresnel is its base reflect fraction, so the
+	 * baked glow holds only that much of it; ReadRim reads the rest for an additive material. Emissive may be null.
 	 */
 	static bool HasFresnel(const FExpressionInput* Emissive);
+
+	/**
+	 * F4: the Fresnel rim glow of an additive material whose emissive (Emissive) times opacity (Opacity, null or unconnected
+	 * for 1) is Base + K x F, with F one Fresnel node (or several with the same exponent and base reflect fraction) and K a
+	 * constant color: constants and Scalar/Vector Parameters as Context sets them, through Multiply, Divide, Add, Subtract,
+	 * One Minus, Linear Interpolate and reroutes. The Base part (anything without the Fresnel, textures included) is the bake's.
+	 * Out.bFound false with Out.Why set when a Fresnel is there but cannot be carried: it multiplies something that changes
+	 * across the surface (a texture), its edges are darker than its face, it is inside a material function, it goes through a
+	 * node not listed above, or its exponent or base reflect fraction is not a constant. False and Out.Why empty when neither
+	 * graph has a Fresnel. Game thread (reads the editor-only graph).
+	 */
+	static bool ReadRim(const UMaterialInterface* Context, const FExpressionInput* Emissive, const FExpressionInput* Opacity, FMantleRimGlow& Out);
 };
 
 class UTexture;

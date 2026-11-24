@@ -149,6 +149,8 @@ namespace MantleTargetFeaturesPrivate
 		Document.BaseColorFactor[3] = FMath::Clamp(Luminance * Document.EmissiveStrength, 0.0, 1.0);
 		Document.MetallicFactor = 0.0;
 		Document.RoughnessFactor = 1.0;
+		// The rim glow (F4) is additive only: a translucent document has none.
+		Document.bRim = false;
 	}
 }
 
