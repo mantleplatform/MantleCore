@@ -367,6 +367,7 @@ namespace MantleDevMinimapComparePrivate
 				{ TEXT('7'), { 0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000 } },
 				{ TEXT('8'), { 0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110 } },
 				{ TEXT('9'), { 0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100 } },
+				{ TEXT('\''), { 0b00100, 0b00100, 0b01000, 0b00000, 0b00000, 0b00000, 0b00000 } },
 				{ TEXT('.'), { 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b01100, 0b01100 } },
 				{ TEXT(','), { 0b00000, 0b00000, 0b00000, 0b00000, 0b01100, 0b00100, 0b01000 } },
 				{ TEXT(':'), { 0b00000, 0b01100, 0b01100, 0b00000, 0b01100, 0b01100, 0b00000 } },
@@ -650,8 +651,8 @@ namespace MantleDevMinimapComparePrivate
 		const FString Scale = FString::Printf(TEXT("SAME AREA AND SCALE: %.0f X %.0f M, %.2f M PER PIXEL, %d X %d PIXELS (%d X %d TILES). LEVEL LOAD %.1f S NOT COUNTED."),
 			Grid.Width * Grid.CmPerPixel / 100.0, Grid.Height * Grid.CmPerPixel / 100.0, Grid.CmPerPixel / 100.0, Grid.Width, Grid.Height, Grid.Columns, Grid.Rows,
 			LoadSeconds);
-		const FString TitleA = FString::Printf(TEXT("A  EPIC MINIMAP CAPTURE   %s"), *Seconds(EpicSeconds));
-		const FString TitleB = FString::Printf(TEXT("B  DRAWN MAP   %s"), *Seconds(DrawnSeconds));
+		const FString TitleA = FString::Printf(TEXT("A  EPIC'S BUILT-IN CAPTURE   %s"), *Seconds(EpicSeconds));
+		const FString TitleB = FString::Printf(TEXT("B  MANTLE DRAWN MAP   %s"), *Seconds(DrawnSeconds));
 		const FImage Full = SideBySide(Epic, Drawn, TitleA, TitleB, Scale);
 
 		FVector2D Center(Grid.Width * 0.5, Grid.Height * 0.5);
