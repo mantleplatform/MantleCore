@@ -1167,11 +1167,11 @@ bool FMantleEnvironmentSunShadeTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleEnvironmentInteriorExportTest,
-	"Mantle.Editor.EnvironmentExport.Interior",
+	FMantleEnvironmentIndoorExportTest,
+	"Mantle.Editor.EnvironmentExport.Indoor",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
-bool FMantleEnvironmentInteriorExportTest::RunTest(const FString& Parameters)
+bool FMantleEnvironmentIndoorExportTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleEnvironmentExportTestPrivate;
 	FTestWorld Test;
@@ -1190,19 +1190,51 @@ bool FMantleEnvironmentInteriorExportTest::RunTest(const FString& Parameters)
 	Grade->Settings.BloomIntensity = 2.0f;
 	Grade->Settings.bOverride_BloomThreshold = true;
 	Grade->Settings.BloomThreshold = 2.0f;
-
-	FMantlePlace Place;
 	TMap<const AActor*, FString> IdByActor;
+
+	// With no Mantle Place Settings the place is outdoors, however little sky the level has of its own: nothing in it is a guess.
+	{
+		FMantlePlace Place;
+		FMantleCoverage Coverage;
+		FMantleEnvironmentExport::Apply(Test.World, IdByActor, Place, Coverage);
+		TestFalse(TEXT("a level with no sun or sky and no Place Settings is outdoors"), Place.Settings.Environment.bNoOutdoors);
+		TestFalse(TEXT("so no outdoors key is written"), FMantlePlaceExporter::ToJson(Place).Contains(TEXT("\"outdoors\"")));
+		TestFalse(TEXT("and the report has no Indoor line"),
+			DetailsOf(Coverage, MantleCoverageCategory::Sky, EOutcome::Approximated).Contains(TEXT("indoor"))
+			|| DetailsOf(Coverage, MantleCoverageCategory::Sky, EOutcome::Dropped).Contains(TEXT("indoor")));
+	}
+
+	// Place Settings at its default is Outdoor too.
+	AMantlePlaceSettingsActor* Settings = Test.Spawn<AMantlePlaceSettingsActor>(TEXT("Settings"));
+	if (!TestNotNull(TEXT("place settings"), Settings))
+	{
+		return false;
+	}
+	TestTrue(TEXT("Place Settings starts at Outdoor"), Settings->IndoorOutdoor == EMantlePlaceIndoorOutdoor::Outdoor);
+	{
+		FMantlePlace Place;
+		Place.Settings.Environment = Settings->MakeEnvironmentSettings();
+		FMantleCoverage Coverage;
+		FMantleEnvironmentExport::Apply(Test.World, IdByActor, Place, Coverage);
+		TestFalse(TEXT("Place Settings at Outdoor keeps a level with no sky outdoors"), Place.Settings.Environment.bNoOutdoors);
+	}
+
+	// Indoor makes it indoor: outdoors false is written and read back, and the volume's look goes with it.
+	Settings->IndoorOutdoor = EMantlePlaceIndoorOutdoor::Indoor;
+	FMantlePlace Place;
+	Place.Settings.Environment = Settings->MakeEnvironmentSettings();
 	FMantleCoverage Coverage;
 	FMantleEnvironmentExport::Apply(Test.World, IdByActor, Place, Coverage);
 	const FMantleEnvironmentSettings& Environment = Place.Settings.Environment;
 	if (!FMantleTargetFeatures::Current().Reads(MantleClientFeatures::EnvironmentLighting))
 	{
-		AddInfo(TEXT("the target client does not read the lighting keys; the interior key is dropped"));
+		AddInfo(TEXT("the target client does not read the lighting keys; the indoor key is dropped"));
 		return true;
 	}
-	TestTrue(TEXT("a level with no environment of its own is an interior"), Environment.bNoOutdoors);
-	if (TestTrue(TEXT("the bloom threshold is carried: an interior keeps the look of its volume with its exposure"), Environment.BloomThreshold.IsSet()))
+	TestTrue(TEXT("Place Settings' Indoor makes the place indoor"), Environment.bNoOutdoors);
+	TestTrue(TEXT("and the report says Place Settings made it so"),
+		DetailsOf(Coverage, MantleCoverageCategory::Sky, EOutcome::Approximated).Contains(TEXT("Mantle Place Settings makes the place indoor")));
+	if (TestTrue(TEXT("the bloom threshold is carried: an indoor place keeps the look of its volume with its exposure"), Environment.BloomThreshold.IsSet()))
 	{
 		TestNearlyEqual(TEXT("as it is"), *Environment.BloomThreshold, 2.0, 0.001);
 	}
@@ -1214,32 +1246,23 @@ bool FMantleEnvironmentInteriorExportTest::RunTest(const FString& Parameters)
 	const FMantleParseResult Parsed = FMantlePlaceParser::ParseFromString(Json);
 	TestTrue(TEXT("the parser reads both back"), Parsed.Place.Settings.Environment.bNoOutdoors && Parsed.Place.Settings.Environment.BloomThreshold.IsSet());
 
-	// A level with an atmosphere is not an interior.
-	Grade->Settings.BloomThreshold = -1.0f;
+	// A sky of the level's own does not change it: Indoor stays indoor.
 	ASkyAtmosphere* Atmosphere = Test.Spawn<ASkyAtmosphere>(TEXT("Atmosphere"));
 	if (!TestNotNull(TEXT("a sky atmosphere"), Atmosphere))
 	{
 		return false;
 	}
-	FMantlePlace Outdoor;
-	FMantleCoverage OutdoorCoverage;
-	FMantleEnvironmentExport::Apply(Test.World, IdByActor, Outdoor, OutdoorCoverage);
-	TestFalse(TEXT("a level with its own sky is outdoors"), Outdoor.Settings.Environment.bNoOutdoors);
+	FMantlePlace WithSky;
+	WithSky.Settings.Environment = Settings->MakeEnvironmentSettings();
+	FMantleCoverage WithSkyCoverage;
+	FMantleEnvironmentExport::Apply(Test.World, IdByActor, WithSky, WithSkyCoverage);
+	TestTrue(TEXT("a level with its own sky that Place Settings makes indoor is indoor"), WithSky.Settings.Environment.bNoOutdoors);
 
-	// A sky Blueprint holds its sky light as a component on an ordinary actor: that is an outdoor environment too.
-	Atmosphere->Destroy();
-	AActor* SkyBlueprint = Test.Spawn<AActor>(TEXT("SkyBlueprint"));
-	if (!TestNotNull(TEXT("a Blueprint-style actor"), SkyBlueprint))
-	{
-		return false;
-	}
-	USkyLightComponent* SkyPart = NewObject<USkyLightComponent>(SkyBlueprint, TEXT("SkyLightPart"));
-	SkyBlueprint->SetRootComponent(SkyPart);
-	SkyPart->RegisterComponent();
-	FMantlePlace ComponentSky;
-	FMantleCoverage ComponentCoverage;
-	FMantleEnvironmentExport::Apply(Test.World, IdByActor, ComponentSky, ComponentCoverage);
-	TestFalse(TEXT("a sky light inside a Blueprint actor makes the level outdoors"), ComponentSky.Settings.Environment.bNoOutdoors);
+	// Importing a file back sets Place Settings: an indoor file to Indoor, a file with no outdoors key to Outdoor.
+	Settings->SetEnvironmentFrom(Parsed.Place.Settings.Environment);
+	TestTrue(TEXT("an indoor file imports as Indoor"), Settings->IndoorOutdoor == EMantlePlaceIndoorOutdoor::Indoor);
+	Settings->SetEnvironmentFrom(FMantleEnvironmentSettings());
+	TestTrue(TEXT("a file with no outdoors key imports as Outdoor"), Settings->IndoorOutdoor == EMantlePlaceIndoorOutdoor::Outdoor);
 	return true;
 }
 
@@ -1432,7 +1455,7 @@ bool FMantleEnvironmentInteriorKeepsExposureTest::RunTest(const FString& Paramet
 	using namespace MantleEnvironmentExportTestPrivate;
 	if (!FMantleTargetFeatures::Current().Reads(MantleClientFeatures::EnvironmentLighting))
 	{
-		AddInfo(TEXT("the target client does not read the lighting keys, so there is no interior"));
+		AddInfo(TEXT("the target client does not read the lighting keys, so nothing is indoor"));
 		return true;
 	}
 	const FMantleExposureProject Project = FMantleExposureProject::Current();
@@ -1454,19 +1477,27 @@ bool FMantleEnvironmentInteriorKeepsExposureTest::RunTest(const FString& Paramet
 		return Grade;
 	};
 
-	// A level with a volume and nothing else is an interior: its exposure travels as it did, and its bloom, saturation and tint with it.
+	// A level with a volume and nothing else that Mantle Place Settings makes indoor: its exposure travels as it did, and its bloom,
+	// saturation and tint with it.
 	{
 		FTestWorld Test;
 		if (!TestNotNull(TEXT("a test world"), Test.World) || !TestNotNull(TEXT("a volume"), AddGrade(Test)))
 		{
 			return false;
 		}
+		AMantlePlaceSettingsActor* Settings = Test.Spawn<AMantlePlaceSettingsActor>(TEXT("Settings"));
+		if (!TestNotNull(TEXT("place settings"), Settings))
+		{
+			return false;
+		}
+		Settings->IndoorOutdoor = EMantlePlaceIndoorOutdoor::Indoor;
 		FMantlePlace Place;
+		Place.Settings.Environment = Settings->MakeEnvironmentSettings();
 		TMap<const AActor*, FString> IdByActor;
 		FMantleCoverage Coverage;
 		FMantleEnvironmentExport::Apply(Test.World, IdByActor, Place, Coverage);
 		const FMantleEnvironmentSettings& Environment = Place.Settings.Environment;
-		TestTrue(TEXT("it is an interior"), Environment.bNoOutdoors);
+		TestTrue(TEXT("it is indoor"), Environment.bNoOutdoors);
 		if (TestTrue(TEXT("its exposure is the place's"), Environment.Exposure.IsSet()))
 		{
 			TestNearlyEqual(TEXT("with the volume's bias over the project's"), Environment.Exposure->Bias, 1.5, 0.001);
@@ -1479,7 +1510,7 @@ bool FMantleEnvironmentInteriorKeepsExposureTest::RunTest(const FString& Paramet
 		TestTrue(TEXT("the file writes the exposure"), Json.Contains(TEXT("\"exposure\"")));
 	}
 
-	// A level with a sun that Mantle Place Settings makes an interior keeps its exposure too.
+	// A level with a sun that Mantle Place Settings makes indoor keeps its exposure too.
 	{
 		FTestWorld Test;
 		if (!TestNotNull(TEXT("a test world"), Test.World) || !TestNotNull(TEXT("a volume"), AddGrade(Test)))
@@ -1492,11 +1523,11 @@ bool FMantleEnvironmentInteriorKeepsExposureTest::RunTest(const FString& Paramet
 		{
 			return false;
 		}
-		Settings->Outdoors = EMantlePlaceOutdoors::Interior;
+		Settings->IndoorOutdoor = EMantlePlaceIndoorOutdoor::Indoor;
 		Level.Place.Settings.Environment = Settings->MakeEnvironmentSettings();
 		FMantleCoverage Coverage;
 		FMantleEnvironmentExport::Apply(Test.World, Level.IdByActor, Level.Place, Coverage);
-		TestTrue(TEXT("the settings make it an interior"), Level.Place.Settings.Environment.bNoOutdoors);
+		TestTrue(TEXT("the settings make it indoor"), Level.Place.Settings.Environment.bNoOutdoors);
 		TestTrue(TEXT("and its exposure is carried"), Level.Place.Settings.Environment.Exposure.IsSet());
 		TestTrue(TEXT("with its bloom"), Level.Place.Settings.Environment.Bloom.IsSet());
 		// No directional light is a sun in an interior: the level's own lamp keeps its brightness, and no clock is made of its angle.
@@ -1864,7 +1895,7 @@ bool FMantleEnvironmentSunCapOnlyWherePublishedTest::RunTest(const FString& Para
 		bool bFill = false;
 		bool bSettings = false;
 		EMantlePlaceDirectSun DirectSun = EMantlePlaceDirectSun::Automatic;
-		EMantlePlaceOutdoors Outdoors = EMantlePlaceOutdoors::Automatic;
+		EMantlePlaceIndoorOutdoor IndoorOutdoor = EMantlePlaceIndoorOutdoor::Outdoor;
 		bool bSunBrightness = false;
 	};
 	// Taken from the limit, so the test holds whatever the cap is in the light units in use.
@@ -1914,7 +1945,7 @@ bool FMantleEnvironmentSunCapOnlyWherePublishedTest::RunTest(const FString& Para
 				return false;
 			}
 			Settings->DirectSun = Case.DirectSun;
-			Settings->Outdoors = Case.Outdoors;
+			Settings->IndoorOutdoor = Case.IndoorOutdoor;
 			Settings->bSetSunBrightness = Case.bSunBrightness;
 		}
 		OutErrors = 0;
@@ -1957,9 +1988,9 @@ bool FMantleEnvironmentSunCapOnlyWherePublishedTest::RunTest(const FString& Para
 	{
 		TestEqual(TEXT("a Sun Brightness in Place Settings replaces a sealed level's brightness, so nothing to refuse"), Count, 0);
 	}
-	if (Errors(FCase{ .bSettings = true, .Outdoors = EMantlePlaceOutdoors::Interior }, Count))
+	if (Errors(FCase{ .bSettings = true, .IndoorOutdoor = EMantlePlaceIndoorOutdoor::Indoor }, Count))
 	{
-		TestEqual(TEXT("an interior has no sun: its directional light is a lamp that keeps its brightness, so an over-cap one is refused"), Count, 1);
+		TestEqual(TEXT("an indoor place has no sun: its directional light is a lamp that keeps its brightness, so an over-cap one is refused"), Count, 1);
 	}
 	return true;
 }

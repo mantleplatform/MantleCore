@@ -252,7 +252,7 @@ FMantleEnvironmentSettings AMantlePlaceSettingsActor::MakeEnvironmentSettings() 
 	{
 		Out.bNoDirectSun = true;
 	}
-	if (Outdoors == EMantlePlaceOutdoors::Interior)
+	if (IndoorOutdoor == EMantlePlaceIndoorOutdoor::Indoor)
 	{
 		Out.bNoOutdoors = true;
 	}
@@ -336,7 +336,7 @@ void AMantlePlaceSettingsActor::SetEnvironmentFrom(const FMantleEnvironmentSetti
 	bSetSkyLightIntensity = Environment.SkyLightIntensity.IsSet();
 	SkyLightIntensity = Environment.SkyLightIntensity.Get(1.0);
 	DirectSun = Environment.bNoDirectSun ? EMantlePlaceDirectSun::Never : EMantlePlaceDirectSun::Automatic;
-	Outdoors = Environment.bNoOutdoors ? EMantlePlaceOutdoors::Interior : EMantlePlaceOutdoors::Automatic;
+	IndoorOutdoor = Environment.bNoOutdoors ? EMantlePlaceIndoorOutdoor::Indoor : EMantlePlaceIndoorOutdoor::Outdoor;
 	const uint32 Tint = Environment.ColorTint.Get(0xFFFFFF);
 	ColorTint = FColor(static_cast<uint8>((Tint >> 16) & 0xFF), static_cast<uint8>((Tint >> 8) & 0xFF), static_cast<uint8>(Tint & 0xFF), 255);
 	Saturation = Environment.Saturation.Get(1.0);

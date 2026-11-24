@@ -722,44 +722,30 @@ namespace MantleEnvironmentExportPrivate
 		return Actor && IsValid(Actor) && !Actor->HasAnyFlags(RF_Transient) && !Actor->ActorHasTag(FName(FMantleEnvironment::EnvironmentActorTag));
 	}
 
-	/** True when the actor owns a sky light, atmosphere, clouds, height fog or directional light as a component (a sky Blueprint). */
-	bool OwnsSkyComponent(const AActor* Actor)
-	{
-		return Actor->FindComponentByClass<USkyLightComponent>() || Actor->FindComponentByClass<USkyAtmosphereComponent>()
-			|| Actor->FindComponentByClass<UVolumetricCloudComponent>() || Actor->FindComponentByClass<UExponentialHeightFogComponent>()
-			|| Actor->FindComponentByClass<UDirectionalLightComponent>();
-	}
-
 	/**
-	 * Whether the place has an outdoor environment (the place file's settings.environment.outdoors): a level with no sun, sky
-	 * light, atmosphere, clouds or fog of its own is an interior, lit only by its own lights, and publishes as one so the client
-	 * adds none of Mantle's default sky. Mantle Place Settings can say Outdoors or Interior itself. Sets Environment.bNoOutdoors.
+	 * Whether the place is indoors (the place file's settings.environment.outdoors false): only what Mantle Place Settings' Indoor or
+	 * Outdoor says, Outdoor when the level has none. Nothing in the level is looked at. An indoor place is lit only by its own lights,
+	 * so the client adds none of Mantle's default sky. Sets Environment.bNoOutdoors.
 	 */
-	void MapOutdoors(UWorld* World, const bool bHasOutdoorEnvironment, FMantlePlace& Place, FMantleCoverage& Coverage, const bool bReadsLighting)
+	void MapOutdoors(UWorld* World, FMantlePlace& Place, FMantleCoverage& Coverage, const bool bReadsLighting)
 	{
 		const AMantlePlaceSettingsActor* PlaceSettings = World ? AMantlePlaceSettingsActor::Find(World) : nullptr;
-		const EMantlePlaceOutdoors Choice = PlaceSettings ? PlaceSettings->Outdoors : EMantlePlaceOutdoors::Automatic;
 		FMantleEnvironmentSettings& Environment = Place.Settings.Environment;
-		// MakeEnvironmentSettings already set it for Interior; Outdoors and Automatic start from Mantle's own sky.
-		const bool bInterior = Choice == EMantlePlaceOutdoors::Interior || (Choice == EMantlePlaceOutdoors::Automatic && !bHasOutdoorEnvironment);
 		Environment.bNoOutdoors = false;
-		if (!bInterior)
+		if (!PlaceSettings || PlaceSettings->IndoorOutdoor != EMantlePlaceIndoorOutdoor::Indoor)
 		{
 			return;
 		}
-		const TCHAR* Why = Choice == EMantlePlaceOutdoors::Interior
-			? TEXT("Mantle Place Settings makes the place an interior")
-			: TEXT("the level has no sun, sky light, atmosphere, clouds or fog, so it is an interior");
 		if (!bReadsLighting)
 		{
-			Coverage.Add(Cat::Sky, EOutcome::Dropped, TEXT("Interior"),
-				FString::Printf(TEXT("%s, so Mantle would add no sky of its own, but %s."), Why, FMantleTargetFeatures::NeedsNewerClient));
+			Coverage.Add(Cat::Sky, EOutcome::Dropped, TEXT("Indoor"),
+				FString::Printf(TEXT("Mantle Place Settings makes the place indoor, so Mantle would add no sky of its own, but %s."), FMantleTargetFeatures::NeedsNewerClient));
 			return;
 		}
 		Environment.bNoOutdoors = true;
-		Coverage.Add(Cat::Sky, EOutcome::Approximated, TEXT("Interior"),
-			FString::Printf(TEXT("%s, lit only by its own lights: Mantle adds no default sun, sky light, atmosphere, clouds or fog, and holds the weather at Clear; "
-				"set Outdoors to Outdoors in Mantle Place Settings to give it Mantle's sky."), Why));
+		Coverage.Add(Cat::Sky, EOutcome::Approximated, TEXT("Indoor"),
+			TEXT("Mantle Place Settings makes the place indoor, lit only by its own lights: Mantle adds no sun, sky light, atmosphere, clouds or fog, "
+				"and the weather stays clear. Set Indoor or Outdoor to Outdoor in Mantle Place Settings to give it Mantle's sky."));
 	}
 
 	/** The volume with the highest priority wins, an unbound one before a bounded one. */
@@ -843,7 +829,7 @@ namespace MantleEnvironmentExportPrivate
 				{
 					Environment.Exposure = Exposure;
 					Coverage.Add(Cat::PostProcess, EOutcome::Approximated, TEXT("Exposure"),
-						FString::Printf(TEXT("the level has no post-process volume, so the editor's default exposure is carried as the place's, since it is an interior or a sealed level; carried: %s."),
+						FString::Printf(TEXT("the level has no post-process volume, so the editor's default exposure is carried as the place's, since it is an indoor place or a sealed level; carried: %s."),
 							*FString::Join(ExposureCarried, TEXT(", "))));
 				}
 			}
@@ -1004,7 +990,7 @@ namespace MantleEnvironmentExportPrivate
 		const FString Extra = (Carried.Num() > 0 && !Primary->bUnbound) ? FString(TEXT("a bounded volume, so what is carried applies everywhere")) : FString();
 		ReportLook(Coverage, Cat::PostProcess, LabelOf(Primary), Carried.Num() > 0, FString::Join(Carried, TEXT(", ")), NotCarried,
 			bKeepsExposure
-				? TEXT("Mantle's own post-process is used for the rest; an interior or sealed level carries its volume's exposure, saturation, bloom and white balance, "
+				? TEXT("Mantle's own post-process is used for the rest; an indoor place or sealed level carries its volume's exposure, saturation, bloom and white balance, "
 					"which were tuned together with its own lights (to change them, set Exposure, Saturation, Bloom or Color Tint in Mantle Place Settings)")
 				: TEXT("Mantle's own post-process and exposure are used; the level's exposure, saturation, bloom and white balance are left out because they were tuned for a different sky "
 					"(to choose them on purpose, set Exposure, Saturation, Bloom or Color Tint in Mantle Place Settings, or use a script's Environment)"),
@@ -1560,20 +1546,11 @@ void FMantleEnvironmentExport::Apply(UWorld* World, const TMap<const AActor*, FS
 	TArray<const AVolumetricCloud*> Clouds;
 	TArray<const AExponentialHeightFog*> Fogs;
 	TArray<const APostProcessVolume*> Volumes;
-	// A sky built as a Blueprint (Ultra Dynamic Sky, an HDRI backdrop, a sky BP with its own sun) holds its parts as components
-	// on one actor, not as sky actors: it still gives the level an outdoor environment.
-	bool bSkyComponents = false;
 	if (World)
 	{
 		for (TActorIterator<AActor> It(World); It; ++It)
 		{
 			const AActor* Actor = *It;
-			// A sky Blueprint is an ordinary actor, so IsReported (sky and post-process actor classes only) never passes it:
-			// look at its components first, on any live, non-transient actor that is not Mantle's own default sky.
-			if (IsEnvironmentCandidate(Actor))
-			{
-				bSkyComponents = bSkyComponents || OwnsSkyComponent(Actor);
-			}
 			if (!IsReported(Actor))
 			{
 				continue;
@@ -1605,11 +1582,9 @@ void FMantleEnvironmentExport::Apply(UWorld* World, const TMap<const AActor*, FS
 	const bool bHasSun = Place.Entities.ContainsByPredicate([](const FMantleEntity& Entity) { return Entity.Type == EMantleEntityType::DirectionalLight; });
 	const bool bHasEnvironment = bHasSun || Atmospheres.Num() > 0 || SkyLights.Num() > 0 || Clouds.Num() > 0 || Fogs.Num() > 0 || Volumes.Num() > 0;
 
-	// A post-process volume alone is no outdoor environment: it carries the look, not a sky.
-	MapOutdoors(World, bHasSun || bSkyComponents || Atmospheres.Num() > 0 || SkyLights.Num() > 0 || Clouds.Num() > 0 || Fogs.Num() > 0,
-		Place, Coverage, bReadsLighting);
+	MapOutdoors(World, Place, Coverage, bReadsLighting);
 	MapDirectSun(World, IdByActor, Place, Coverage, bReadsLighting);
-	// The sun and its extra lights come after the interior and sealed checks above: in an interior (the level's or Mantle Place Settings')
+	// The sun and its extra lights come after the interior and sealed checks above: in an indoor place (Mantle Place Settings' Indoor)
 	// no directional light is a sun, so they stay the level's own lamps, as they are; a sealed level keeps its sun's brightness.
 	if (!Environment.bNoOutdoors)
 	{
@@ -1620,7 +1595,7 @@ void FMantleEnvironmentExport::Apply(UWorld* World, const TMap<const AActor*, FS
 		InteriorSettings && InteriorSettings->bSetSunBrightness)
 	{
 		Coverage.Add(Cat::Lights, EOutcome::Dropped, TEXT("Sun Brightness"),
-			TEXT("Mantle Place Settings sets a Sun Brightness, but this place is an interior, which has no sun: its directional lights are its own lamps and keep their own brightness."));
+			TEXT("Mantle Place Settings sets a Sun Brightness, but this place is indoor, which has no sun: its directional lights are its own lamps and keep their own brightness."));
 	}
 	MapPostProcess(Volumes, Environment, Coverage, bReadsEnvironment, bHasEnvironment, FMantleExposureProject::Current());
 
