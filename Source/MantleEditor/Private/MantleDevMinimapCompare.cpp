@@ -100,8 +100,18 @@ namespace MantleDevMinimapComparePrivate
 		return Projection;
 	}
 
+	/** How A is taken. The default is Epic's builder; the probe (Mantle.Dev.MinimapCaptureProbe) changes one thing at a time. */
+	struct FCaptureStyle
+	{
+		const TCHAR* Name = TEXT("epic");
+		ESceneCaptureSource Source = ESceneCaptureSource::SCS_SceneColorHDR;
+		bool bEpicShowFlags = true;
+		bool bCustomProjection = true;
+	};
+
 	/** One tile of A, Width x Height pixels over Bounds; the camera sits over Bounds' top looking down, +X right, +Y down. */
-	bool CaptureEpicTile(UWorld* World, const FBox& Bounds, int32 Width, int32 Height, TArray<FColor>& OutPixels, int32& OutWarmUps)
+	bool CaptureEpicTile(UWorld* World, const FBox& Bounds, int32 Width, int32 Height, TArray<FColor>& OutPixels, int32& OutWarmUps,
+		const FCaptureStyle& Style = FCaptureStyle())
 	{
 		UTextureRenderTarget2D* Target = NewObject<UTextureRenderTarget2D>(GetTransientPackage(), NAME_None, RF_Transient);
 		Target->ClearColor = FLinearColor::Transparent;
@@ -113,20 +123,24 @@ namespace MantleDevMinimapComparePrivate
 		USceneCaptureComponent2D* Camera = NewObject<USceneCaptureComponent2D>(GetTransientPackage(), NAME_None, RF_Transient);
 		Camera->TextureTarget = Target;
 		Camera->ProjectionType = ECameraProjectionMode::Orthographic;
-		Camera->CaptureSource = ESceneCaptureSource::SCS_SceneColorHDR;
-		Camera->OrthoWidth = Width;
-		Camera->bUseCustomProjectionMatrix = true;
+		Camera->CaptureSource = Style.Source;
+		// Epic's builder sets OrthoWidth to the pixel width and draws with its own projection; without it, the engine's ortho view of the bounds.
+		Camera->OrthoWidth = Style.bCustomProjection ? Width : static_cast<float>(Bounds.GetSize().X);
+		Camera->bUseCustomProjectionMatrix = Style.bCustomProjection;
 		Camera->CustomProjectionMatrix = TopView(Bounds, Width, Height);
 		Camera->bCaptureEveryFrame = false;
 		Camera->bCaptureOnMovement = false;
-		Camera->ShowFlags.Lighting = false;
-		Camera->ShowFlags.Atmosphere = false;
-		Camera->ShowFlags.PostProcessing = false;
-		Camera->ShowFlags.AntiAliasing = false;
-		Camera->ShowFlags.Fog = false;
-		Camera->ShowFlags.VolumetricFog = false;
-		Camera->ShowFlags.DynamicShadows = false;
-		Camera->ShowFlags.SkyLighting = false;
+		if (Style.bEpicShowFlags)
+		{
+			Camera->ShowFlags.Lighting = false;
+			Camera->ShowFlags.Atmosphere = false;
+			Camera->ShowFlags.PostProcessing = false;
+			Camera->ShowFlags.AntiAliasing = false;
+			Camera->ShowFlags.Fog = false;
+			Camera->ShowFlags.VolumetricFog = false;
+			Camera->ShowFlags.DynamicShadows = false;
+			Camera->ShowFlags.SkyLighting = false;
+		}
 		Camera->PostProcessSettings.bOverride_VignetteIntensity = true;
 		Camera->PostProcessSettings.VignetteIntensity = 0.0f;
 		Camera->SetWorldLocationAndRotation(FVector(Bounds.GetCenter().X, Bounds.GetCenter().Y, Bounds.GetCenter().Z + Bounds.GetExtent().Z),
@@ -690,6 +704,85 @@ namespace MantleDevMinimapComparePrivate
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_MINIMAP_COMPARE_DONE epic=%d saved=%d epicSeconds=%.3f drawnSeconds=%.3f"), bEpic ? 1 : 0, bSaved ? 1 : 0,
 			EpicSeconds, DrawnSeconds);
 	}
+
+	/** Diagnosis for a black A: one 512-pixel tile over the middle of the area, taken in five ways, each written and its brightest value logged. */
+	void Probe(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!World || Args.Num() < 1)
+		{
+			UE_LOG(LogMantle, Error, TEXT("MANTLE_MINIMAP_PROBE_FAILED usage: Mantle.Dev.MinimapCaptureProbe <Directory> with a level open"));
+			return;
+		}
+		IFileManager::Get().MakeDirectory(*Args[0], true);
+		FMantlePlaceWorldPartition::FLoadResult Loaded = FMantlePlaceWorldPartition::LoadAll(World);
+		Settle();
+		FBox Area(ForceInit);
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			TInlineComponentArray<UStaticMeshComponent*> Components(*It);
+			for (const UStaticMeshComponent* Component : Components)
+			{
+				if (Component && Component->IsRegistered() && Component->IsVisible() && Component->GetStaticMesh()
+					&& Component->Bounds.GetBox().GetExtent().GetMax() < MaxPieceHalfExtentCm)
+				{
+					Area += Component->Bounds.GetBox();
+				}
+			}
+		}
+		if (!Area.IsValid)
+		{
+			FMantlePlaceWorldPartition::ReleaseLoaded(World, Loaded);
+			UE_LOG(LogMantle, Error, TEXT("MANTLE_MINIMAP_PROBE_FAILED nothing to capture"));
+			return;
+		}
+		const FVector Center = Area.GetCenter();
+		const double Half = FMath::Min(Area.GetExtent().X, Area.GetExtent().Y) * 0.5;
+		const FBox Bounds(FVector(Center.X - Half, Center.Y - Half, Area.Min.Z), FVector(Center.X + Half, Center.Y + Half, Area.Max.Z + 10000.0));
+		constexpr int32 Size = 512;
+		const FCaptureStyle Styles[] = {
+			{ TEXT("1_epic_exact"), ESceneCaptureSource::SCS_SceneColorHDR, true, true },
+			{ TEXT("2_basecolor_epicflags"), ESceneCaptureSource::SCS_BaseColor, true, true },
+			{ TEXT("3_hdr_defaultflags"), ESceneCaptureSource::SCS_SceneColorHDR, false, true },
+			{ TEXT("4_finalldr_defaultflags"), ESceneCaptureSource::SCS_FinalColorLDR, false, true },
+			{ TEXT("5_hdr_epicflags_engineortho"), ESceneCaptureSource::SCS_SceneColorHDR, true, false },
+		};
+		for (const FCaptureStyle& Style : Styles)
+		{
+			TArray<FColor> Pixels;
+			int32 WarmUps = 0;
+			const double Started = FPlatformTime::Seconds();
+			const bool bRead = CaptureEpicTile(World, Bounds, Size, Size, Pixels, WarmUps, Style);
+			int32 Brightest = 0;
+			int64 Lit = 0;
+			for (FColor& Pixel : Pixels)
+			{
+				const int32 Most = FMath::Max3(Pixel.R, Pixel.G, Pixel.B);
+				Brightest = FMath::Max(Brightest, Most);
+				Lit += Most > 8 ? 1 : 0;
+				Pixel.A = 255;
+			}
+			FImage Image;
+			Image.Width = Size;
+			Image.Height = Size;
+			Image.Pixels = Pixels;
+			const FString File = FPaths::Combine(Args[0], FString::Printf(TEXT("probe_%s.png"), Style.Name));
+			const bool bSaved = bRead && Image.Save(File);
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_MINIMAP_PROBE %s read=%d saved=%d brightest=%d litPixels=%lld of %d seconds=%.2f"), Style.Name, bRead ? 1 : 0,
+				bSaved ? 1 : 0, Brightest, Lit, Size * Size, FPlatformTime::Seconds() - Started);
+		}
+		FMantlePlaceWorldPartition::ReleaseLoaded(World, Loaded);
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_MINIMAP_PROBE_DONE bounds x=%.0f..%.0f y=%.0f..%.0f z=%.0f..%.0f"), Bounds.Min.X, Bounds.Max.X, Bounds.Min.Y,
+			Bounds.Max.Y, Bounds.Min.Z, Bounds.Max.Z);
+	}
+
+	FAutoConsoleCommandWithWorldAndArgs GMantleDevMinimapProbeCommand(
+		TEXT("Mantle.Dev.MinimapCaptureProbe"),
+		TEXT("Mantle.Dev.MinimapCaptureProbe <Directory> -- the top-down capture over the middle of the open level taken five ways (Epic's settings, ")
+		TEXT("then one change each), to find what turns it black. MANTLE_MINIMAP_PROBE lines."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			Probe(Args, World);
+		}));
 
 	FAutoConsoleCommandWithWorldAndArgs GMantleDevMinimapCompareCommand(
 		TEXT("Mantle.Dev.MinimapCompare"),
