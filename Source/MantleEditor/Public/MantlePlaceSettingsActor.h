@@ -487,6 +487,8 @@ public:
 	 * Whether the place is outdoors or indoors. Outdoor (the default) gets Mantle's own sky, sun, clouds, fog, weather and day and night.
 	 * Indoor is lit only by the level's own lights: Mantle adds no sun, sky, clouds or fog, and the weather stays clear. Nothing in
 	 * the level changes this, so a level with no sun or sky of its own is still outdoors unless you choose Indoor.
+	 * Choose Indoor only for a place that should have no Mantle sky, sun or weather at all. Inside areas of an outdoor place look
+	 * right as long as their ceilings and walls block the sun: the camera adjusts its exposure on its own.
 	 * Indoor places need a Mantle client that reads the sky light setting to load.
 	 */
 	UPROPERTY(EditAnywhere, Category = "Mantle|Environment", meta = (DisplayName = "Indoor or Outdoor"))

@@ -33,6 +33,7 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
+#include "UObject/CoreRedirects.h"
 
 #include <limits>
 
@@ -1263,6 +1264,16 @@ bool FMantleEnvironmentIndoorExportTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("an indoor file imports as Indoor"), Settings->IndoorOutdoor == EMantlePlaceIndoorOutdoor::Indoor);
 	Settings->SetEnvironmentFrom(FMantleEnvironmentSettings());
 	TestTrue(TEXT("a file with no outdoors key imports as Outdoor"), Settings->IndoorOutdoor == EMantlePlaceIndoorOutdoor::Outdoor);
+
+	// A level saved with the old setting (Outdoors: Automatic, Outdoors or Interior) loads with the same choice, through the
+	// plugin's CoreRedirects (Config/DefaultMantleCore.ini).
+	const FCoreRedirectObjectName OldProperty(TEXT("/Script/MantleEditor.MantlePlaceSettingsActor.Outdoors"));
+	TestEqual(TEXT("the old Outdoors property loads as Indoor or Outdoor"),
+		FCoreRedirects::GetRedirectedName(ECoreRedirectFlags::Type_Property, OldProperty).ObjectName, GET_MEMBER_NAME_CHECKED(AMantlePlaceSettingsActor, IndoorOutdoor));
+	const UEnum* Choice = StaticEnum<EMantlePlaceIndoorOutdoor>();
+	TestEqual(TEXT("an old Interior loads as Indoor"), Choice->GetValueByName(TEXT("EMantlePlaceOutdoors::Interior")), static_cast<int64>(EMantlePlaceIndoorOutdoor::Indoor));
+	TestEqual(TEXT("an old Outdoors loads as Outdoor"), Choice->GetValueByName(TEXT("EMantlePlaceOutdoors::Outdoors")), static_cast<int64>(EMantlePlaceIndoorOutdoor::Outdoor));
+	TestEqual(TEXT("an old Automatic loads as Outdoor"), Choice->GetValueByName(TEXT("EMantlePlaceOutdoors::Automatic")), static_cast<int64>(EMantlePlaceIndoorOutdoor::Outdoor));
 	return true;
 }
 
