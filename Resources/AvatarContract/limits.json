@@ -83,7 +83,7 @@
     {
       "id": "accessory",
       "descriptorField": "wearing",
-      "comment": "Rigid meshes on sockets; any avatar of a supported appearance skeleton."
+      "comment": "Rigid meshes on sockets or, for the #136 slots, straight on a bone; any avatar of a supported appearance skeleton, except that face-bone slots need a MetaHuman face."
     },
     {
       "id": "emotes",
@@ -362,65 +362,65 @@
       "group": "accessory",
       "cap": 1,
       "source": "item",
-      "mechanism": "socket",
+      "mechanism": "bone",
       "itemClass": "rigid_accessory",
-      "socket": "acc_eyes",
-      "socketBone": "head",
-      "comment": "#136: glasses and goggles, split from acc_face (masks)."
+      "bone": "FACIAL_C_NoseBridge",
+      "mesh": "face",
+      "comment": "#136: glasses and goggles, split from acc_face (masks). Hangs straight from the face mesh's nose-bridge bone with no offset of its own, so only avatars with a MetaHuman face are offered it."
     },
     {
       "id": "acc_ear_l",
       "group": "accessory",
       "cap": 1,
       "source": "item",
-      "mechanism": "socket",
+      "mechanism": "bone",
       "itemClass": "rigid_accessory",
-      "socket": "acc_ear_l",
-      "socketBone": "head",
-      "comment": "#136: an earring on the left ear. A pair is two items (acc_ear_l and acc_ear_r) sharing the item setting pairId (itemSettings.pairId)."
+      "bone": "FACIAL_L_Ear",
+      "mesh": "face",
+      "comment": "#136: an earring on the left ear, hung straight from the face mesh's left ear bone (MetaHuman faces only). A pair is two items (acc_ear_l and acc_ear_r) sharing the item setting pairId (itemSettings.pairId)."
     },
     {
       "id": "acc_ear_r",
       "group": "accessory",
       "cap": 1,
       "source": "item",
-      "mechanism": "socket",
+      "mechanism": "bone",
       "itemClass": "rigid_accessory",
-      "socket": "acc_ear_r",
-      "socketBone": "head",
-      "comment": "#136: an earring on the right ear; the mirror of acc_ear_l's socket frame."
+      "bone": "FACIAL_R_Ear",
+      "mesh": "face",
+      "comment": "#136: an earring on the right ear, hung straight from the face mesh's right ear bone (MetaHuman faces only)."
     },
     {
       "id": "acc_nose",
       "group": "accessory",
       "cap": 1,
       "source": "item",
-      "mechanism": "socket",
+      "mechanism": "bone",
       "itemClass": "rigid_accessory",
-      "socket": "acc_nose",
-      "socketBone": "head",
-      "comment": "#136: a nose ring or stud."
+      "bone": "FACIAL_C_Nose",
+      "mesh": "face",
+      "comment": "#136: a nose ring or stud, hung straight from the face mesh's nose bone (MetaHuman faces only)."
     },
     {
       "id": "acc_wrist_l",
       "group": "accessory",
       "cap": 1,
       "source": "item",
-      "mechanism": "socket",
+      "mechanism": "bone",
       "itemClass": "rigid_accessory",
-      "socket": "acc_wrist_l",
-      "socketBone": "lowerarm_twist_01_l",
-      "comment": "#136: a watch or bracelet on the left wrist, hung from the forearm twist bone nearest the wrist so it follows the forearm's twist. lowerarm_twist_01 is the nearer one on the MetaHuman body (its DNA puts 0.8 of the hand's twist on it, 15.3 cm from the elbow against lowerarm_twist_02's 7.7 cm: client/Source/Mantle/Animation/MantleBodyCorrectivesData.inl). The UE5, UE4 (which has only _01) and UEFN Mannequins use the same name by assumption; the fixtures hold no bone positions, so the editor check of their sockets confirms it."
+      "bone": "hand_l",
+      "mesh": "body",
+      "comment": "#136: a watch or bracelet on the left wrist, hung straight from the body's left hand bone. Every supported body skeleton has it."
     },
     {
       "id": "acc_wrist_r",
       "group": "accessory",
       "cap": 1,
       "source": "item",
-      "mechanism": "socket",
+      "mechanism": "bone",
       "itemClass": "rigid_accessory",
-      "socket": "acc_wrist_r",
-      "socketBone": "lowerarm_twist_01_r",
+      "bone": "hand_r",
+      "mesh": "body",
       "comment": "#136: the right wrist; see acc_wrist_l."
     },
     {
@@ -428,21 +428,22 @@
       "group": "accessory",
       "cap": 1,
       "source": "item",
-      "mechanism": "socket",
+      "mechanism": "bone",
       "itemClass": "rigid_accessory",
-      "fingerSockets": {
-        "thumb_l": {"socket": "acc_ring_thumb_l", "socketBone": "thumb_01_l"},
-        "index_l": {"socket": "acc_ring_index_l", "socketBone": "index_01_l"},
-        "middle_l": {"socket": "acc_ring_middle_l", "socketBone": "middle_01_l"},
-        "ring_l": {"socket": "acc_ring_ring_l", "socketBone": "ring_01_l"},
-        "pinky_l": {"socket": "acc_ring_pinky_l", "socketBone": "pinky_01_l"},
-        "thumb_r": {"socket": "acc_ring_thumb_r", "socketBone": "thumb_01_r"},
-        "index_r": {"socket": "acc_ring_index_r", "socketBone": "index_01_r"},
-        "middle_r": {"socket": "acc_ring_middle_r", "socketBone": "middle_01_r"},
-        "ring_r": {"socket": "acc_ring_ring_r", "socketBone": "ring_01_r"},
-        "pinky_r": {"socket": "acc_ring_pinky_r", "socketBone": "pinky_01_r"}
+      "mesh": "body",
+      "fingerBones": {
+        "thumb_l": "thumb_02_l",
+        "index_l": "index_01_l",
+        "middle_l": "middle_01_l",
+        "ring_l": "ring_01_l",
+        "pinky_l": "pinky_01_l",
+        "thumb_r": "thumb_02_r",
+        "index_r": "index_01_r",
+        "middle_r": "middle_01_r",
+        "ring_r": "ring_01_r",
+        "pinky_r": "pinky_01_r"
       },
-      "comment": "#136: one ring slot (cap 1); the worn entry's finger (a fingerSockets key) picks which of the ten finger sockets it hangs from, so this slot has no single socket or socketBone. A ring's attach offset is relative to the chosen finger's socket."
+      "comment": "#136: one ring slot (cap 1). The worn entry's finger (a fingerBones key) picks which body finger bone the ring hangs from, so this slot has no single bone. The thumb uses thumb_02 because thumb_01 sits in the palm. A ring's attach offset is relative to that finger bone."
     },
     {
       "id": "emote",
