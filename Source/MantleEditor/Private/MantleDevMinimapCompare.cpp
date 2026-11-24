@@ -477,7 +477,7 @@ namespace MantleDevMinimapComparePrivate
 				Pieces.Add(FPiece{ Component });
 			}
 		}
-		const bool bAreaFromColliding = Colliding.IsValid;
+		const bool bAreaFromColliding = Colliding.IsValid != 0;
 		const FBox Area3D = bAreaFromColliding ? Colliding : Everything;
 		const int32 Landscapes = FMantleTerrainExport::CollectLandscapes(World).Num();
 		int32 WaterBodies = 0;
