@@ -32,6 +32,12 @@ namespace MantleVehicleConverterWheelsTestPrivate
 		FVector Position;
 	};
 
+	/** A car with more materials than a published body may draw, so the convert splits it. */
+	constexpr int32 PastTheLimit = FMantleVehicleLimits::MaxSections + 4;
+
+	/** Slots a car is padded with so its body has to split: one each, the biggest of the car, so they outrank glass, seats and the like for room on the body. */
+	constexpr int32 FillerSlots = FMantleVehicleLimits::MaxSections;
+
 	/** A car's skeleton: a root, then each wheel at its place; material m is m + 1 quads, riding bone m modulo the bones. */
 	USkeletalMesh* MakeCar(const TArray<FCarWheel>& Wheels, const int32 NumMaterials, FString& OutError, UMaterialInterface* WithMaterial = nullptr,
 		const TArray<FString>& SlotNames = TArray<FString>(), const TArray<UMaterialInterface*>& SlotMaterials = TArray<UMaterialInterface*>())
@@ -267,14 +273,14 @@ bool FMantleVehicleConverterMaterialsSplitTest::RunTest(const FString& Parameter
 {
 	using namespace MantleVehicleConverterWheelsTestPrivate;
 
-	// A car that draws 12 materials, where a published body may have 8: it converts, the body is a copy with 8 and the other 4 ride along as parts.
+	// A car that draws four materials more than a published body may: it converts, the body is a copy at the limit and the other four ride along as parts.
 	FString Error;
-	USkeletalMesh* Car = MakeCar(FourWheels(TEXT("B_FLWheel"), TEXT("B_FRWheel"), TEXT("B_RLWheel"), TEXT("B_RRWheel")), 12, Error);
+	USkeletalMesh* Car = MakeCar(FourWheels(TEXT("B_FLWheel"), TEXT("B_FRWheel"), TEXT("B_RLWheel"), TEXT("B_RRWheel")), PastTheLimit, Error);
 	if (!TestNotNull(*FString::Printf(TEXT("the car is made (%s)"), *Error), Car))
 	{
 		return false;
 	}
-	TestEqual(TEXT("the car has 12 materials"), Car->GetMaterials().Num(), 12);
+	TestEqual(TEXT("the car has the materials it was made with"), Car->GetMaterials().Num(), PastTheLimit);
 	UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
 	const FMantleVehicleConversion Conversion = FMantleVehicleConverter::Convert(Car, *Source);
 	TestTrue(*FString::Printf(TEXT("it converts (%s)"), *FString::Join(Conversion.Problems, TEXT(" "))), Conversion.bSuccess);
@@ -284,13 +290,13 @@ bool FMantleVehicleConverterMaterialsSplitTest::RunTest(const FString& Parameter
 		TestTrue(*FString::Printf(TEXT("the body has at most %d materials (%d)"), FMantleVehicleLimits::MaxSections, Body->GetMaterials().Num()),
 			Body->GetMaterials().Num() <= FMantleVehicleLimits::MaxSections);
 	}
-	TestEqual(TEXT("the car itself was not changed"), Car->GetMaterials().Num(), 12);
+	TestEqual(TEXT("the car itself was not changed"), Car->GetMaterials().Num(), PastTheLimit);
 	const int32 Split = Source->Parts.FilterByPredicate([](const FMantleVehicleSourcePart& Part) { return Part.FoundOn == FMantleVehicleBodySplit::FoundOn(); }).Num();
 	TestTrue(*FString::Printf(TEXT("the extra materials are parts (%d)"), Split), Split >= 1 && Split == Source->Parts.Num());
 	TestTrue(TEXT("each part is a mesh on a bone of the body"), Source->Parts.Num() > 0 && !Source->Parts[0].Mesh.IsNull() && !Source->Parts[0].Bone.IsNone());
 	TestTrue(TEXT("the notes say what was done, in one place"), Conversion.Notes.ContainsByPredicate([](const FString& Note)
 	{
-		return Note.Contains(TEXT("12 different materials")) && Note.Contains(TEXT("split it for you")) && Note.Contains(TEXT("nothing for you to do"));
+		return Note.Contains(*FString::Printf(TEXT("%d different materials"), PastTheLimit)) && Note.Contains(TEXT("split it for you")) && Note.Contains(TEXT("nothing for you to do"));
 	}));
 	TestTrue(TEXT("and which bones are the wheels"), Conversion.Notes.ContainsByPredicate([](const FString& Note) { return Note.StartsWith(TEXT("Wheels: ")); }));
 
@@ -372,13 +378,13 @@ bool FMantleVehicleConverterLightsTest::RunTest(const FString& Parameters)
 
 	// SUV04: the body has MI_Lights_Inst sections, and the Convert wrote no lights and split them off as parts (the split kept only the sections the vehicle already listed).
 	// Now a Convert finds them as the builder does on a model of its own (here by their names), writes them into Lights, and the split keeps them on the body.
-	// A 12-material car whose two smallest materials, the ones a split sends to parts first, are a headlight and a taillight.
+	// A car past the limit whose two smallest materials, the ones a split sends to parts first, are a headlight and a taillight.
 	TArray<FString> Names;
-	Names.SetNum(12);
+	Names.SetNum(PastTheLimit);
 	Names[0] = TEXT("SUV_Headlight");
 	Names[1] = TEXT("SUV_Taillight");
 	FString Error;
-	USkeletalMesh* Car = MakeCar(FourWheels(TEXT("B_FLWheel"), TEXT("B_FRWheel"), TEXT("B_RLWheel"), TEXT("B_RRWheel")), 12, Error, nullptr, Names);
+	USkeletalMesh* Car = MakeCar(FourWheels(TEXT("B_FLWheel"), TEXT("B_FRWheel"), TEXT("B_RLWheel"), TEXT("B_RRWheel")), PastTheLimit, Error, nullptr, Names);
 	if (!TestNotNull(*FString::Printf(TEXT("the car is made (%s)"), *Error), Car))
 	{
 		return false;
@@ -404,7 +410,7 @@ bool FMantleVehicleConverterLightsTest::RunTest(const FString& Parameters)
 	{
 		return Note.StartsWith(TEXT("Lights: ")) && Note.Contains(TEXT("SUV_Headlight")) && Note.Contains(TEXT("SUV_Taillight")) && Note.Contains(TEXT("your own model was not changed"));
 	}));
-	TestEqual(TEXT("the car itself was not changed"), Car->GetMaterials().Num(), 12);
+	TestEqual(TEXT("the car itself was not changed"), Car->GetMaterials().Num(), PastTheLimit);
 
 	// Converting again finds them again, the same; lights the creator set that the model has are kept.
 	const FMantleVehicleConversion Again = FMantleVehicleConverter::Convert(Car, *Source);
@@ -436,22 +442,22 @@ bool FMantleVehicleConverterSplitPaintTest::RunTest(const FString& Parameters)
 
 	// SUV04: its door shells are split-off parts that wear the body's paint. A second Convert (after the seats were set) found the model had a part of its own already
 	// and suggested no paint slot for any part, so the doors came out white. The split's own parts are made afresh each Convert and are suggested their paint every time.
-	// Twelve slots, each its own material that reads as paint (slots of one material are merged, so each is a material of its own).
+	// Slots past the limit, each its own material that reads as paint (slots of one material are merged, so each is a material of its own).
 	TArray<UMaterialInterface*> PaintMaterials;
-	for (int32 Slot = 0; Slot < 12; ++Slot)
+	for (int32 Slot = 0; Slot < PastTheLimit; ++Slot)
 	{
 		PaintMaterials.Add(NewPaintTintMaterial());
 	}
 	FString Error;
-	USkeletalMesh* Car = MakeCar(FourWheels(TEXT("B_FLWheel"), TEXT("B_FRWheel"), TEXT("B_RLWheel"), TEXT("B_RRWheel")), 12, Error, nullptr, TArray<FString>(), PaintMaterials);
+	USkeletalMesh* Car = MakeCar(FourWheels(TEXT("B_FLWheel"), TEXT("B_FRWheel"), TEXT("B_RLWheel"), TEXT("B_RRWheel")), PastTheLimit, Error, nullptr, TArray<FString>(), PaintMaterials);
 	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
 	if (!TestNotNull(*FString::Printf(TEXT("the car is made (%s)"), *Error), Car) || !TestNotNull(TEXT("a mesh for the model's own part"), Cube))
 	{
 		return false;
 	}
 	UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
-	// The body's paint is its biggest section's (mat11 stays on the body); the model already has a part of its own, which is not painted.
-	Source->Paint.Sections = { TEXT("mat11") };
+	// The body's paint is its biggest section's (the last mat stays on the body); the model already has a part of its own, which is not painted.
+	Source->Paint.Sections = { FString::Printf(TEXT("mat%d"), PastTheLimit - 1) };
 	FMantleVehicleSourcePart Own;
 	Own.Mesh = Cube;
 	Own.Bone = FName(TEXT("B_Car_Main"));
@@ -520,7 +526,7 @@ bool FMantleVehicleConverterPublishableSplitTest::RunTest(const FString& Paramet
 {
 	using namespace MantleVehicleConverterWheelsTestPrivate;
 
-	// SUV04's shape: 25 material slots where a body may draw 8. The body paint is three of them with the fewest triangles, and the lights, rims, glass and interior have more. A convert
+	// SUV04's shape: 25 material slots, padded with enough more to pass the body's limit. The body paint is three of them with the fewest triangles, and the lights, rims, glass and interior have more. A convert
 	// that sent the paint to parts, or named a light or a paint section the body does not have, was refused by the publish check (20 errors, nothing uploaded).
 	TArray<FString> Names;
 	TArray<UMaterialInterface*> Materials;
@@ -566,6 +572,11 @@ bool FMantleVehicleConverterPublishableSplitTest::RunTest(const FString& Paramet
 	if (!TestEqual(TEXT("25 slots"), Names.Num(), 25))
 	{
 		return false;
+	}
+	// Filler slots after them, each with more triangles than any of the 25: they take the room on the body that glass and the interior would.
+	for (int32 Filler = 0; Filler < FillerSlots; ++Filler)
+	{
+		Slot(*FString::Printf(TEXT("pad%d"), Filler));
 	}
 	FString Error;
 	USkeletalMesh* Car = MakeCar(FourWheels(TEXT("B_FLWheel"), TEXT("B_FRWheel"), TEXT("B_RLWheel"), TEXT("B_RRWheel")), Names.Num(), Error, nullptr, Names, Materials);
@@ -643,7 +654,8 @@ bool FMantleVehicleConverterMergedSlotsTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleConverterWheelsTestPrivate;
 
-	// SUV04: 25 material slots that are 9 materials (the body paint, the glass and the interior are one material each under six names, and so on). A body may draw 8, so a convert
+	// SUV04: 25 material slots that are 9 materials (the body paint, the glass and the interior are one material each under six names, and so on), padded with more slots of a
+	// material each so the body is past its limit. A convert
 	// that kept every slot sent the paint and the rim to parts, and rim swapping was lost. Merged first, the paint, each light and the rims fit on the body.
 	const auto NewMaterial = [](const bool bPaint)
 	{
@@ -700,6 +712,10 @@ bool FMantleVehicleConverterMergedSlotsTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+	for (int32 Filler = 0; Filler < FillerSlots; ++Filler)
+	{
+		Slots.Add({ FString::Printf(TEXT("pad%d"), Filler), nullptr, 0 });
+	}
 
 	FMantleSkinnedMesh Skin;
 	Skin.Bones.Add({ FName(TEXT("B_Car_Main")), INDEX_NONE });
@@ -749,7 +765,7 @@ bool FMantleVehicleConverterMergedSlotsTest::RunTest(const FString& Parameters)
 		else
 		{
 			// A few quads up the car, on the root, each slot at its own place.
-			for (int32 Each = 0; Each < 2 + Slot % 3; ++Each)
+			for (int32 Each = 0; Each < (Slot >= 25 ? 40 : 2 + Slot % 3); ++Each)
 			{
 				Quad(FVector(X, 0, 90), 0);
 				X += 15.f;
@@ -772,9 +788,9 @@ bool FMantleVehicleConverterMergedSlotsTest::RunTest(const FString& Parameters)
 	{
 		const FMantleVehicleConversion Conversion = FMantleVehicleConverter::Convert(Car, *Source);
 		TestTrue(*FString::Printf(TEXT("run %d converts (%s)"), Run, *FString::Join(Conversion.Problems, TEXT(" "))), Conversion.bSuccess);
-		TestTrue(TEXT("the notes say 25 slots use 9 materials, and what was merged"), Conversion.Notes.ContainsByPredicate([](const FString& Note)
+		TestTrue(TEXT("the notes say which slots use how many materials, and what was merged"), Conversion.Notes.ContainsByPredicate([](const FString& Note)
 		{
-			return Note.Contains(TEXT("25 material slots use 9 different materials")) && Note.Contains(TEXT("SUV04_Body: 5 slots")) && Note.Contains(TEXT("your own model was not changed"));
+			return Note.Contains(*FString::Printf(TEXT("%d material slots use %d different materials"), 25 + FillerSlots, 9 + FillerSlots)) && Note.Contains(TEXT("SUV04_Body: 5 slots")) && Note.Contains(TEXT("your own model was not changed"));
 		}));
 		USkeletalMesh* Body = Source->Body.LoadSynchronous();
 		if (!TestTrue(TEXT("its body is a copy of the car"), Body && Body != Car))
@@ -928,12 +944,12 @@ bool FMantleVehicleConverterLayersOnlyWhatTheModelMarksTest::RunTest(const FStri
 	{
 		TArray<FString> Names;
 		TArray<UMaterialInterface*> Materials;
-		for (int32 Slot = 0; Slot < 12; ++Slot)
+		for (int32 Slot = 0; Slot < PastTheLimit; ++Slot)
 		{
 			Names.Add(Slot < 4 ? FString::Printf(TEXT("Interior_%d"), Slot) : FString::Printf(TEXT("mat%d"), Slot));
 			Materials.Add(Slot < 4 ? NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient) : NewPaintTintMaterial());
 		}
-		USkeletalMesh* Car = MakeCar(FourWheels(TEXT("B_FLWheel"), TEXT("B_FRWheel"), TEXT("B_RLWheel"), TEXT("B_RRWheel")), 12, Error, nullptr, Names, Materials);
+		USkeletalMesh* Car = MakeCar(FourWheels(TEXT("B_FLWheel"), TEXT("B_FRWheel"), TEXT("B_RLWheel"), TEXT("B_RRWheel")), PastTheLimit, Error, nullptr, Names, Materials);
 		if (!TestNotNull(*FString::Printf(TEXT("the split car is made (%s)"), *Error), Car))
 		{
 			return false;
@@ -954,6 +970,60 @@ bool FMantleVehicleConverterLayersOnlyWhatTheModelMarksTest::RunTest(const FStri
 		TestTrue(TEXT("the interiors are split-off parts"), SplitParts > 0);
 		TestFalse(TEXT("none of their slots is on a paint layer"), bAnyLayerSlot);
 		TestFalse(TEXT("and the vehicle has no interior layer"), Source->Paint.Layers.ContainsByPredicate([](const FMantleVehicleSourcePaintLayer& Has) { return Has.Layer == EMantleVehicleSourcePaintLayer::Interior; }));
+		MantleVehicleScratchBody::Discard(Car);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleConverterBothLightHalvesTest,
+	"Mantle.Vehicle.Convert.BothHalvesOfALightStayOnTheBody",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleConverterBothLightHalvesTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleConverterWheelsTestPrivate;
+
+	// SUV04's lights come in two sections each (a second glow, Headlights and Headlights2). While the body has room, both are on it and both are listed for their kind; a body
+	// past the limit keeps them too when it has room (the limit is 64, and a light outranks the glass and the interior for it).
+	for (const int32 Slots : { 6, PastTheLimit })
+	{
+		TArray<FString> Names;
+		TArray<UMaterialInterface*> Materials;
+		Names.SetNum(Slots);
+		Materials.SetNumZeroed(Slots);
+		const TCHAR* const Lamps[4] = { TEXT("headlight_lens"), TEXT("headlight_lens2"), TEXT("taillight_lens"), TEXT("taillight_lens2") };
+		for (int32 Lamp = 0; Lamp < 4; ++Lamp)
+		{
+			Names[Lamp] = Lamps[Lamp];
+			Materials[Lamp] = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+		}
+		FString Error;
+		USkeletalMesh* Car = MakeCar(FourWheels(TEXT("B_FLWheel"), TEXT("B_FRWheel"), TEXT("B_RLWheel"), TEXT("B_RRWheel")), Slots, Error, nullptr, Names, Materials);
+		if (!TestNotNull(*FString::Printf(TEXT("the car of %d slots is made (%s)"), Slots, *Error), Car))
+		{
+			return false;
+		}
+		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
+		const FMantleVehicleConversion Conversion = FMantleVehicleConverter::Convert(Car, *Source);
+		TestTrue(*FString::Printf(TEXT("%d slots: it converts (%s)"), Slots, *FString::Join(Conversion.Problems, TEXT(" "))), Conversion.bSuccess);
+		TestTrue(*FString::Printf(TEXT("%d slots: both headlight sections are listed"), Slots), Source->Lights.Head.Contains(TEXT("headlight_lens")) && Source->Lights.Head.Contains(TEXT("headlight_lens2")));
+		TestTrue(*FString::Printf(TEXT("%d slots: both rear light sections are listed"), Slots), Source->Lights.Rear.Contains(TEXT("taillight_lens")) && Source->Lights.Rear.Contains(TEXT("taillight_lens2")));
+		USkeletalMesh* Body = Source->Body.LoadSynchronous();
+		if (TestNotNull(TEXT("it has a body"), Body))
+		{
+			const TArray<FString> OnBody = FMantleVehicleLights::SectionNames(Body->GetMaterials());
+			bool bAll = true;
+			for (const TCHAR* Lamp : Lamps)
+			{
+				bAll = bAll && OnBody.Contains(Lamp);
+			}
+			TestTrue(*FString::Printf(TEXT("%d slots: all four light sections are on the body"), Slots), bAll);
+		}
+		if (Body && Body != Car)
+		{
+			MantleVehicleScratchBody::Discard(Body);
+		}
 		MantleVehicleScratchBody::Discard(Car);
 	}
 	return true;

@@ -2385,8 +2385,8 @@ FMantleVehicleSlotMerge FMantleVehicleConverter::MergeIdenticalSlots(FMantleSkin
 			Said.Add(FString::Printf(TEXT("%s: %d slots"), *NamesAfter[Into.Key], Into.Value));
 		}
 	}
-	OutNotes.Add(FString::Printf(TEXT("%s's %d material slots use %d different materials, and a published body may draw only %d, so Mantle merged the slots that draw the same material into one section each (%s), leaving %d. They look as they did, your own model was not changed, and there is nothing for you to do."),
-		*ModelName, Merged.SlotsBefore, Distinct.Num() + Unnamed, FMantleVehicleLimits::MaxSections, *FString::Join(Said, TEXT("; ")), Merged.SlotsAfter));
+	OutNotes.Add(FString::Printf(TEXT("%s's %d material slots use %d different materials, and a published body draws one section for each material, so Mantle merged the slots that draw the same material into one section each (%s), leaving %d. They look as they did, your own model was not changed, and there is nothing for you to do."),
+		*ModelName, Merged.SlotsBefore, Distinct.Num() + Unnamed, *FString::Join(Said, TEXT("; ")), Merged.SlotsAfter));
 	return Merged;
 }
 

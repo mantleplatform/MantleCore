@@ -488,7 +488,9 @@ bool FMantleVehicleBodySplitKeepRankTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleBuilderHubsLightsTestPrivate;
 	// SUV04's shape: one paint slot, two glow groups of each of the five kinds of light, the rim section, glass and seats. The later the slot the more triangles it has, so the
-	// paint, the first lights and the rim have the fewest, and a split that went by triangles alone sent them to parts.
+	// paint, the first lights and the rim have the fewest, and a split that went by triangles alone sent them to parts. The cap is the test's own (8), so the lights contend for
+	// room however many materials a published body may draw.
+	constexpr int32 Cap = 8;
 	TArray<FString> Names = { TEXT("paint"), TEXT("headlight_lens"), TEXT("taillight_lens"), TEXT("reverselight_lens"), TEXT("signal_left"), TEXT("signal_right"),
 		TEXT("headlight_lens2"), TEXT("taillight_lens2"), TEXT("reverselight_lens2"), TEXT("signal_left2"), TEXT("signal_right2"), TEXT("WheelSet_07"), TEXT("glass"), TEXT("seats") };
 	FMantleSkinnedMesh Body;
@@ -513,9 +515,9 @@ bool FMantleVehicleBodySplitKeepRankTest::RunTest(const FString& Parameters)
 
 	FMantleVehicleBodyExtras Extras;
 	FMantleVehicleBodySplitResult Split;
-	TestTrue(TEXT("the body splits"), FMantleVehicleBodySplit::Split(Body, Materials, Extras, FMantleVehicleLimits::MaxSections, FMantleVehicleLimits::MaxPartMaterials, FMantleVehicleLimits::MaxParts, Split, Keep, &Rank));
+	TestTrue(TEXT("the body splits"), FMantleVehicleBodySplit::Split(Body, Materials, Extras, Cap, FMantleVehicleLimits::MaxPartMaterials, FMantleVehicleLimits::MaxParts, Split, Keep, &Rank));
 	const TArray<FString> Left = FMantleVehicleLights::SectionNames(Materials);
-	TestEqual(TEXT("the body draws what it may"), Left.Num(), FMantleVehicleLimits::MaxSections);
+	TestEqual(TEXT("the body draws what it may"), Left.Num(), Cap);
 	TestTrue(TEXT("the paint is on it"), Left.Contains(TEXT("paint")));
 	TestTrue(TEXT("so is each kind of light"), Left.Contains(TEXT("headlight_lens")) && Left.Contains(TEXT("taillight_lens")) && Left.Contains(TEXT("reverselight_lens"))
 		&& Left.Contains(TEXT("signal_left")) && Left.Contains(TEXT("signal_right")));
