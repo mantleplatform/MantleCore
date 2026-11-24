@@ -21,9 +21,11 @@ class UWorld;
  * else. The server builds each StaticMesh entity that has a physics block as an AMantlePhysicsProp:
  * a replicated, always-relevant actor with bReplicateMovement, so FRepMovement (with bRepPhysics
  * while it simulates) carries its pose and velocity and each client's copy is steered onto it by
- * the engine's physics replication. There is no client prediction of props: a client's copy
- * simulates locally between updates and is corrected toward the server's state. A body at rest
- * produces an unchanged FRepMovement, so a sleeping prop sends nothing.
+ * the engine's physics replication, in its predictive interpolation mode: the copy's velocities
+ * are driven toward the server's pose, extrapolated over the send interval, so it follows smoothly
+ * rather than simulating freely between updates and being pulled back at each one (a client has
+ * none of the server's joints, motors or grab handles). There is no client prediction of props.
+ * A body at rest produces an unchanged FRepMovement, so a sleeping prop sends nothing.
  *
  * A connected client builds the place from data like every other entity, so for a physics entity
  * it builds a plain placeholder (a Movable AStaticMeshActor with the entity's mesh and materials).

@@ -160,6 +160,15 @@ AMantlePhysicsProp::AMantlePhysicsProp(const FObjectInitializer& ObjectInitializ
 	bStaticMeshReplicateMovement = true;
 	bAlwaysRelevant = true;
 	SetNetUpdateFrequency(30.0f);
+	// A client's copy follows the server's pose by predictive interpolation: the engine drives its body's velocities
+	// toward the replicated pose (extrapolated over the send interval), instead of the default mode, which lets the
+	// copy simulate freely and pulls it back at each update. A client has none of the server's joints, motors or
+	// grab handles, so freely the copy drifts between updates and the default mode yanks it back thirty times a
+	// second, a pulse every player saw (the joints play test, 2026-11-23). AStaticMeshActor::PostInitializeComponents
+	// applies this (SetPhysicsReplicationMode); FBodyInstance::GetPhysicsReplicationMode reads it from the owner, and
+	// FPhysicsReplication's PredictiveInterpolation path does the following (PhysicsReplication.cpp). Other players'
+	// cars already replicate this way (AMantleVehicle::PhysicsReplicationModeFor).
+	StaticMeshPhysicsReplicationMode = EPhysicsReplicationMode::PredictiveInterpolation;
 	if (UStaticMeshComponent* Mesh = GetStaticMeshComponent())
 	{
 		Mesh->SetMobility(EComponentMobility::Movable);

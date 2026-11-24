@@ -193,4 +193,36 @@ bool FMantlePhysicsPropRegistryTest::RunTest(const FString&)
 	return true;
 }
 
+// A client's copy follows the server by predictive interpolation, not by simulating freely between updates (the joints
+// play test saw the default mode pull motor-driven props back thirty times a second). The engine reads the mode from the
+// actor (FBodyInstance::GetPhysicsReplicationMode), which AStaticMeshActor sets when its components are initialized.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantlePhysicsPropReplicationModeTest,
+	"Mantle.Runtime.PhysicsProp.FollowsTheServerByPredictiveInterpolation",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantlePhysicsPropReplicationModeTest::RunTest(const FString&)
+{
+	UWorld* World = MakeWorld();
+	if (!TestNotNull(TEXT("a world"), World)) { return false; }
+	// As a game world is: an actor's components are initialized as it spawns only once the world's actors are
+	// (AActor::PostActorConstruction), and that is where AStaticMeshActor applies the mode.
+	World->InitializeActorsForPlay(FURL());
+	AMantlePhysicsProp* Prop = World->SpawnActor<AMantlePhysicsProp>(FVector(0, 0, 500), FRotator::ZeroRotator);
+	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (TestNotNull(TEXT("a prop"), Prop) && TestNotNull(TEXT("the engine's cube"), Cube))
+	{
+		// A body (its owner is what the engine asks for the mode) only once the prop has a mesh.
+		Prop->GetStaticMeshComponent()->SetStaticMesh(Cube);
+		TestTrue(TEXT("its actor replicates physics by predictive interpolation"),
+			Prop->GetPhysicsReplicationMode() == EPhysicsReplicationMode::PredictiveInterpolation);
+		TestTrue(TEXT("and so does its body"),
+			Prop->GetStaticMeshComponent()->GetBodyInstance()->GetPhysicsReplicationMode() == EPhysicsReplicationMode::PredictiveInterpolation);
+		TestTrue(TEXT("at 30 updates a second"), FMath::IsNearlyEqual(Prop->GetNetUpdateFrequency(), 30.0f));
+		Prop->Destroy();
+	}
+	DestroyWorld(World);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
