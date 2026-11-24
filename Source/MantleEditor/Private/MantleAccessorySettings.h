@@ -19,27 +19,35 @@ enum class EMantleAccessoryAnchor : uint8
 /** #136: the bone an accessory slot's item hangs from, and on which mesh. Its socket sits at identity on that bone. */
 struct FMantleAccessoryBone
 {
-	/** On the face mesh (a face slot whose bone the face has); otherwise on the body. */
+	/** On the face mesh (a face slot); otherwise on the body. */
 	bool bOnFace = false;
 	FName Bone;
-	/** A face slot hung from the body's head bone instead: there is no face, or the face lacks the slot's bone (not a MetaHuman face). */
-	bool bFellBack = false;
+	/**
+	 * False for a face slot whose bone the face lacks (no face, or not a MetaHuman face): the slot does not exist on that avatar,
+	 * there is no fallback bone. Always true for a body slot (BoneInComponent still checks the body has its bone).
+	 */
+	bool bAvailable = true;
 };
 
 /** Creator corrections, keyed by source object path and accessory slot; never alter the source mesh. */
 struct FMantleAccessorySettings
 {
-	/** Where a face slot hangs when the slot's face bone is missing: the body's head, as before the face slots. */
-	static const TCHAR* FaceFallbackBone() { return TEXT("head"); }
-
 	/**
 	 * Where Slot's item hangs. A body slot: its bone on the body. A face slot (limits.json "mesh": "face": ears, eyes, nose): its
-	 * FACIAL_* bone on the face when FaceHasBone says the face has it, else the body's head (bFellBack). Pure (tested).
+	 * FACIAL_* bone on the face, available only when FaceHasBone says the face has it. Pure (tested).
 	 */
 	static FMantleAccessoryBone ResolveBone(const FMantleContractSlot& Slot, TFunctionRef<bool(FName)> FaceHasBone);
 
-	/** ResolveBone against a face mesh's own bones; Face may be null (no face: a face slot falls back to the head). */
+	/** ResolveBone against a face mesh's own bones; Face may be null (no face: a face slot is not available). */
 	static FMantleAccessoryBone ResolveBone(const FMantleContractSlot& Slot, const USkeletalMesh* Face);
+
+	/**
+	 * #136: whether Slot exists on avatars of the contract skeleton SkeletonId ("metahuman", "ue5mannequin" ...): its bone is on
+	 * that skeleton's fixture, or for a face slot on the MetaHuman face fixture ("metahuman_face"), which only MetaHuman avatars
+	 * carry. A slot with no bone (not an accessory) is always offered, and so is every slot on a skeleton the contract does not
+	 * list. Pure (tested).
+	 */
+	static bool SlotOffered(const FMantleAvatarContract& Contract, const FMantleContractSlot& Slot, const FString& SkeletonId);
 
 	/**
 	 * The bone Slot's item hangs from (ResolveBone), in component space in the reference pose: on Face for a face slot, on Body
@@ -54,7 +62,7 @@ struct FMantleAccessorySettings
 	static void Save(const FMantleCosmeticDraft& Draft, const FString& ConfigFile);
 	/**
 	 * Align standard Unreal component-space mesh axes to this avatar's neutral anchor, preserving location and scale. The anchor
-	 * is the slot's bone (BoneInComponent: a face slot's FACIAL_* bone on Face, else the head).
+	 * is the slot's bone (BoneInComponent: a face slot's FACIAL_* bone on Face). False when that bone is missing.
 	 */
 	static bool AlignToAvatarAxes(FMantleCosmeticDraft& Draft, const USkeletalMesh* Body, FString& OutError, const USkeletalMesh* Face = nullptr);
 

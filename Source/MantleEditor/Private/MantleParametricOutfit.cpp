@@ -1457,6 +1457,12 @@ bool FMantleParametricOutfit::RigidPivot(const FMantleAvatarContract& Contract, 
 		OutError = FString::Printf(TEXT("\"%s\" is not an accessory slot with a socket bone"), *Slot);
 		return false;
 	}
+	// #136: the ear, eye and nose slots hang from the MetaHuman face's bones, which an Outfit's body skeleton does not have.
+	if (Entry->IsOnFace())
+	{
+		OutError = FString::Printf(TEXT("An Outfit piece cannot go on \"%s\": that slot is worn on the MetaHuman face, and Outfits are made on the body. Export the piece as a static mesh and upload it as an accessory instead."), *Slot);
+		return false;
+	}
 	OutPivot.Bone = Entry->SocketBone;
 	// Only the hat socket has a per-avatar fit (FMantleHeadFit::HatSocket moves and scales it onto each cranium at upload).
 	OutPivot.bHeadFit = Entry->Socket == TEXT("acc_hat");

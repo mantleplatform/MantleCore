@@ -1439,7 +1439,9 @@ void SMantleCosmeticPanel::RefreshSlots()
 	const FMantleAvatarContract* Contract = FMantleAvatarContract::Get();
 	if (Contract)
 	{
-		for (const FString& Slot : CosmeticSlotOptions(*Contract, Draft.Class))
+		// #136: the slots that exist on the MetaHuman the panel previews and places on (its face carries the ear, eye and nose
+		// bones). The game offers each avatar only the slots its own skeleton has.
+		for (const FString& Slot : CosmeticSlotOptions(*Contract, Draft.Class, TEXT("metahuman")))
 		{
 			SlotOptions.Add(MakeShared<FString>(Slot));
 		}

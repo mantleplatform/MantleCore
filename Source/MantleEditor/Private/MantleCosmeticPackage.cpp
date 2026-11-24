@@ -1,6 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleCosmeticPackage.h"
 #include "MantleCosmeticItem.h"
+#include "MantleAccessorySettings.h"
 #include "MantleAvatarContract.h"
 #include "MantleHairColor.h"
 #include "MantleItemSettings.h"
@@ -42,7 +43,7 @@ const TCHAR* ContractItemClass(EMantleCosmeticClass Class)
 	}
 }
 
-TArray<FString> CosmeticSlotOptions(const FMantleAvatarContract& Contract, EMantleCosmeticClass Class)
+TArray<FString> CosmeticSlotOptions(const FMantleAvatarContract& Contract, EMantleCosmeticClass Class, const FString& SkeletonId)
 {
 	TArray<FString> Options;
 	if (Class == EMantleCosmeticClass::Overlay)
@@ -55,6 +56,12 @@ TArray<FString> CosmeticSlotOptions(const FMantleAvatarContract& Contract, EMant
 		// Hair items take the hair slots only; garments every other skinned slot.
 		const bool bHairSlot = Contract.HairSlots.Contains(Slot);
 		if (ItemClass == TEXT("skinned_garment") && bHairSlot != (Class == EMantleCosmeticClass::Hair))
+		{
+			continue;
+		}
+		// #136: a slot whose bone the skeleton (or, for ears, eyes and nose, its MetaHuman face) lacks does not exist on it.
+		const FMantleContractSlot* Entry = SkeletonId.IsEmpty() ? nullptr : Contract.FindSlot(Slot);
+		if (Entry && !FMantleAccessorySettings::SlotOffered(Contract, *Entry, SkeletonId))
 		{
 			continue;
 		}

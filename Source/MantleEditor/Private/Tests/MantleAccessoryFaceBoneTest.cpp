@@ -1,6 +1,8 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleAccessorySettings.h"
 #include "MantleAvatarContract.h"
+#include "MantleCosmeticPackage.h"
+#include "MantleParametricOutfit.h"
 
 #include "Dom/JsonObject.h"
 #include "HAL/FileManager.h"
@@ -15,9 +17,10 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// #136: the face slots (ears, eyes, nose) hang from the MetaHuman face skeleton's FACIAL_* bones on the face mesh, at identity;
-// without that bone (no face, or not a MetaHuman face) they fall back to the body's head. Body slots stay on the body. On a copy
-// of the plugin's own contract; no assets. The bone names here stand in until the lead's list lands in limits.json.
+// #136: the face slots (ears, eyes, nose) hang from the MetaHuman face skeleton's FACIAL_* bones on the face mesh, at identity.
+// There is no fallback: an avatar whose skeleton (or face) lacks a slot's bone does not have that slot, so the face slots exist
+// only with a MetaHuman face, while wrist and ring are on every body skeleton. On a copy of the plugin's own contract; no assets.
+// The bone names here (FACIAL_L_Ear, hand_l) stand in until the lead's list lands in limits.json.
 
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleAccessoryFaceBoneTestPrivate
@@ -64,9 +67,12 @@ bool FMantleAccessoryFaceBoneTest::RunTest(const FString& Parameters)
 	// limits.json's "mesh": "face" puts a slot's bone on the face; a slot without it is on the body.
 	const FString Directory = CopyContract([](const TSharedPtr<FJsonObject>& Slot, const FString& Id)
 	{
-		if (Id != TEXT("acc_ear_l")) return;
-		Slot->SetStringField(TEXT("mesh"), TEXT("face"));
-		Slot->SetStringField(TEXT("socketBone"), TEXT("FACIAL_L_Ear"));
+		if (Id == TEXT("acc_ear_l"))
+		{
+			Slot->SetStringField(TEXT("mesh"), TEXT("face"));
+			Slot->SetStringField(TEXT("socketBone"), TEXT("FACIAL_L_Ear"));
+		}
+		if (Id == TEXT("acc_wrist_l")) Slot->SetStringField(TEXT("socketBone"), TEXT("hand_l"));
 	});
 	if (!TestFalse(TEXT("the contract copies"), Directory.IsEmpty())) return false;
 	ON_SCOPE_EXIT { IFileManager::Get().DeleteDirectory(*Directory, false, true); };
@@ -74,8 +80,9 @@ bool FMantleAccessoryFaceBoneTest::RunTest(const FString& Parameters)
 	FString Error;
 	if (!TestTrue(FString::Printf(TEXT("the contract with a face slot loads (%s)"), *Error), FMantleAvatarContract::LoadFromDirectory(Directory, Contract, Error))) return false;
 	const FMantleContractSlot* Ear = Contract.FindSlot(TEXT("acc_ear_l"));
+	const FMantleContractSlot* Wrist = Contract.FindSlot(TEXT("acc_wrist_l"));
 	const FMantleContractSlot* Hat = Contract.FindSlot(TEXT("acc_hat"));
-	if (!TestNotNull(TEXT("acc_ear_l is there"), Ear) || !TestNotNull(TEXT("acc_hat is there"), Hat)) return false;
+	if (!TestNotNull(TEXT("acc_ear_l is there"), Ear) || !TestNotNull(TEXT("acc_wrist_l is there"), Wrist) || !TestNotNull(TEXT("acc_hat is there"), Hat)) return false;
 	TestTrue(TEXT("acc_ear_l is on the face"), Ear->IsOnFace());
 	TestEqual(TEXT("on its FACIAL bone"), Ear->SocketBone, FString(TEXT("FACIAL_L_Ear")));
 	TestFalse(TEXT("acc_hat, with no mesh, is on the body"), Hat->IsOnFace());
@@ -83,23 +90,49 @@ bool FMantleAccessoryFaceBoneTest::RunTest(const FString& Parameters)
 
 	// A face that has the bone carries the slot there.
 	const FMantleAccessoryBone OnFace = FMantleAccessorySettings::ResolveBone(*Ear, [&EarBone](FName Bone) { return Bone == EarBone; });
-	TestTrue(TEXT("with the bone on the face: on the face"), OnFace.bOnFace);
+	TestTrue(TEXT("with the bone on the face: available on the face"), OnFace.bAvailable && OnFace.bOnFace);
 	TestTrue(TEXT("on FACIAL_L_Ear"), OnFace.Bone == EarBone);
-	TestFalse(TEXT("not a fallback"), OnFace.bFellBack);
 
-	// A face without it (not a MetaHuman face), or no face at all: the body's head.
+	// A face without it (not a MetaHuman face), or no face at all: the slot is not there. No head fallback.
 	const FMantleAccessoryBone NoBone = FMantleAccessorySettings::ResolveBone(*Ear, [](FName) { return false; });
-	TestFalse(TEXT("a face without the bone: on the body"), NoBone.bOnFace);
-	TestTrue(TEXT("on the head"), NoBone.Bone == FName(FMantleAccessorySettings::FaceFallbackBone()));
-	TestTrue(TEXT("as a fallback"), NoBone.bFellBack);
+	TestFalse(TEXT("a face without the bone: not available"), NoBone.bAvailable);
+	TestTrue(TEXT("and not moved to the head"), NoBone.Bone == EarBone && NoBone.bOnFace);
 	const FMantleAccessoryBone NoFace = FMantleAccessorySettings::ResolveBone(*Ear, static_cast<const USkeletalMesh*>(nullptr));
-	TestTrue(TEXT("no face: the head on the body, as a fallback"), !NoFace.bOnFace && NoFace.bFellBack && NoFace.Bone == FName(TEXT("head")));
+	TestFalse(TEXT("no face: not available"), NoFace.bAvailable);
 	FTransform Nowhere;
-	TestFalse(TEXT("no face and no body: nothing to place on"), FMantleAccessorySettings::BoneInComponent(*Ear, nullptr, nullptr, Nowhere));
+	TestFalse(TEXT("no face: nowhere to place it"), FMantleAccessorySettings::BoneInComponent(*Ear, nullptr, nullptr, Nowhere));
 
-	// A body slot stays on its body bone even when the face has a bone of that name.
+	// A body slot stays on its body bone even when a face would have a bone of that name.
 	const FMantleAccessoryBone HatBone = FMantleAccessorySettings::ResolveBone(*Hat, [](FName) { return true; });
-	TestTrue(TEXT("acc_hat stays on the body's head"), !HatBone.bOnFace && !HatBone.bFellBack && HatBone.Bone == FName(*Hat->SocketBone));
+	TestTrue(TEXT("acc_hat stays on the body's head"), HatBone.bAvailable && !HatBone.bOnFace && HatBone.Bone == FName(*Hat->SocketBone));
+
+	// Offered per skeleton: the ear needs the MetaHuman face, so only a MetaHuman avatar has it; the wrist and the hat are on every
+	// body skeleton.
+	TestTrue(TEXT("the ear is offered on a MetaHuman"), FMantleAccessorySettings::SlotOffered(Contract, *Ear, TEXT("metahuman")));
+	for (const TCHAR* Mannequin : { TEXT("ue5mannequin"), TEXT("ue4mannequin"), TEXT("uefnmannequin") })
+	{
+		TestFalse(FString::Printf(TEXT("the ear is hidden on %s"), Mannequin), FMantleAccessorySettings::SlotOffered(Contract, *Ear, Mannequin));
+	}
+	for (const TCHAR* Skeleton : { TEXT("metahuman"), TEXT("ue5mannequin"), TEXT("ue4mannequin"), TEXT("uefnmannequin") })
+	{
+		TestTrue(FString::Printf(TEXT("the wrist is offered on %s"), Skeleton), FMantleAccessorySettings::SlotOffered(Contract, *Wrist, Skeleton));
+		TestTrue(FString::Printf(TEXT("the hat is offered on %s"), Skeleton), FMantleAccessorySettings::SlotOffered(Contract, *Hat, Skeleton));
+	}
+
+	// The panel's slot list follows it: the ear is in the MetaHuman list and not in a mannequin's.
+	const TArray<FString> OnMetaHuman = CosmeticSlotOptions(Contract, EMantleCosmeticClass::Accessory, TEXT("metahuman"));
+	const TArray<FString> OnMannequin = CosmeticSlotOptions(Contract, EMantleCosmeticClass::Accessory, TEXT("ue5mannequin"));
+	TestTrue(TEXT("the MetaHuman slot list has the ear"), OnMetaHuman.Contains(TEXT("acc_ear_l")));
+	TestFalse(TEXT("the mannequin slot list does not"), OnMannequin.Contains(TEXT("acc_ear_l")));
+	TestTrue(TEXT("both have the wrist and the hat"), OnMannequin.Contains(TEXT("acc_wrist_l")) && OnMannequin.Contains(TEXT("acc_hat")) && OnMetaHuman.Contains(TEXT("acc_wrist_l")));
+	TestTrue(TEXT("with no skeleton every slot is listed"), CosmeticSlotOptions(Contract, EMantleCosmeticClass::Accessory).Contains(TEXT("acc_ear_l")));
+
+	// An Outfit piece cannot go on a face slot: a clear refusal.
+	FMantleParametricOutfit::FRigidPivot Pivot;
+	FString Refusal;
+	TestFalse(TEXT("an Outfit piece on the ear is refused"), FMantleParametricOutfit::RigidPivot(Contract, TEXT("acc_ear_l"), Pivot, Refusal));
+	TestTrue(FString::Printf(TEXT("saying why (%s)"), *Refusal), Refusal.Contains(TEXT("face")));
+	TestTrue(TEXT("an Outfit piece on the hat is not"), FMantleParametricOutfit::RigidPivot(Contract, TEXT("acc_hat"), Pivot, Refusal));
 
 	// A mesh that is neither body nor face fails the contract, naming the slot.
 	const FString Broken = CopyContract([](const TSharedPtr<FJsonObject>& Slot, const FString& Id)

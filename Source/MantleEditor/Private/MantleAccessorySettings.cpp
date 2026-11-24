@@ -51,12 +51,9 @@ FMantleAccessoryBone FMantleAccessorySettings::ResolveBone(const FMantleContract
 	Out.Bone = FName(*Slot.SocketBone);
 	if (Slot.IsOnFace())
 	{
-		Out.bOnFace = !Slot.SocketBone.IsEmpty() && FaceHasBone(Out.Bone);
-		if (!Out.bOnFace)
-		{
-			Out.Bone = FName(FaceFallbackBone());
-			Out.bFellBack = true;
-		}
+		// No fallback: a face without the slot's bone does not have the slot.
+		Out.bOnFace = true;
+		Out.bAvailable = !Slot.SocketBone.IsEmpty() && FaceHasBone(Out.Bone);
 	}
 	return Out;
 }
@@ -66,13 +63,25 @@ FMantleAccessoryBone FMantleAccessorySettings::ResolveBone(const FMantleContract
 	return ResolveBone(Slot, [Face](FName Bone) { return Face && Face->GetRefSkeleton().FindBoneIndex(Bone) != INDEX_NONE; });
 }
 
+bool FMantleAccessorySettings::SlotOffered(const FMantleAvatarContract& Contract, const FMantleContractSlot& Slot, const FString& SkeletonId)
+{
+	if (Slot.SocketBone.IsEmpty()) return true;
+	const FMantleContractSkeleton* Skeleton = Contract.FindSkeleton(SkeletonId);
+	if (!Skeleton) return true;
+	const FName Bone(*Slot.SocketBone);
+	if (!Slot.IsOnFace()) return Skeleton->Find(Bone) != INDEX_NONE;
+	// The face slots' bones are on the MetaHuman face, which only a MetaHuman avatar wears.
+	const FMantleContractSkeleton* Face = Contract.FindSkeleton(TEXT("metahuman_face"));
+	return SkeletonId == TEXT("metahuman") && Face && Face->Find(Bone) != INDEX_NONE;
+}
+
 bool FMantleAccessorySettings::BoneInComponent(const FMantleContractSlot& Slot, const USkeletalMesh* Body, const USkeletalMesh* Face, FTransform& Out,
 	FMantleAccessoryBone* OutResolved)
 {
 	const FMantleAccessoryBone Resolved = ResolveBone(Slot, Face);
 	if (OutResolved) *OutResolved = Resolved;
 	const USkeletalMesh* Mesh = Resolved.bOnFace ? Face : Body;
-	if (!Mesh) return false;
+	if (!Resolved.bAvailable || !Mesh) return false;
 	const FReferenceSkeleton& Reference = Mesh->GetRefSkeleton();
 	const TArray<FTransform>& Pose = Reference.GetRefBonePose();
 	int32 Bone = Reference.FindBoneIndex(Resolved.Bone);
@@ -95,12 +104,14 @@ bool FMantleAccessorySettings::AlignToAvatarAxes(FMantleCosmeticDraft& Draft, co
 		if (OutError.IsEmpty()) OutError = TEXT("Choose a MetaHuman body and an accessory slot to align its axes.");
 		return false;
 	}
-	// The slot's bone: on the face for a face slot (its FACIAL_* bone, else the head), on the body otherwise.
+	// The slot's bone: on the face for a face slot (its FACIAL_* bone), on the body otherwise.
 	FTransform Component;
 	FMantleAccessoryBone Resolved;
 	if (!BoneInComponent(*Point, Body, Face, Component, &Resolved))
 	{
-		OutError = FString::Printf(TEXT("The chosen MetaHuman has no %s attachment bone."), *Resolved.Bone.ToString());
+		OutError = Resolved.bOnFace
+			? FString::Printf(TEXT("This slot is worn on a MetaHuman face, and the chosen face has no %s bone."), *Resolved.Bone.ToString())
+			: FString::Printf(TEXT("The chosen MetaHuman has no %s attachment bone."), *Resolved.Bone.ToString());
 		return false;
 	}
 	FQuat Rotation = Component.GetRotation().Inverse();

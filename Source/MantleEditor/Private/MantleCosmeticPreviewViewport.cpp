@@ -237,10 +237,16 @@ bool SMantleCosmeticPreviewViewport::ShowAccessory(UStaticMesh* Mesh, const FStr
 	const FMantleAvatarContract* Contract = FMantleAvatarContract::Get();
 	const FMantleContractSlot* Point = Contract ? Contract->Slots.FindByPredicate([&Slot](const FMantleContractSlot& Entry) { return Entry.Id == Slot && Entry.Group == TEXT("accessory"); }) : nullptr;
 	const USkeletalMesh* Body = GetShownBody();
-	// #136: the slot's bone, and on which mesh: a face slot (ears, eyes, nose) on the shown face's FACIAL_* bone, or on the
-	// body's head when the face lacks it or none is shown; every other slot on the body, as before.
+	// #136: the slot's bone, and on which mesh: a face slot (ears, eyes, nose) on the shown face's FACIAL_* bone, every other
+	// slot on the body, as before. A face slot on a face without its bone does not exist there: nothing is shown.
 	const FMantleAccessoryBone Resolved = Point ? FMantleAccessorySettings::ResolveBone(*Point, GetShownFace()) : FMantleAccessoryBone();
 	USkeletalMeshComponent* Carrier = Resolved.bOnFace ? FaceComponent.Get() : BodyComponent.Get();
+	if (Mesh && Point && Body && !Resolved.bAvailable)
+	{
+		AccessoryComponent->SetVisibility(false);
+		OutError = FString::Printf(TEXT("%s is worn on a MetaHuman face, and the shown face has no %s bone."), *Slot, *Resolved.Bone.ToString());
+		return false;
+	}
 	if (!Mesh || !Point || !Body || Carrier->GetBoneIndex(Resolved.Bone) == INDEX_NONE)
 	{
 		AccessoryComponent->SetVisibility(false);

@@ -59,11 +59,12 @@ namespace MantleDevRenderAccessoryPrivate
 		FMantleAccessoryBone Resolved;
 		if (!FMantleAccessorySettings::BoneInComponent(*Point, Body.BodyMesh.Get(), Body.FaceMesh.Get(), Socket, &Resolved))
 		{
-			UE_LOG(LogMantleRenderAccessory, Error, TEXT("MANTLE_RENDER_ACCESSORY worn FAILED: %s has no %s bone"), *BodyId, *Resolved.Bone.ToString());
+			UE_LOG(LogMantleRenderAccessory, Error, TEXT("MANTLE_RENDER_ACCESSORY worn FAILED: %s's %s has no %s bone, so %s is not offered on it"), *BodyId,
+				Resolved.bOnFace ? TEXT("face") : TEXT("body"), *Resolved.Bone.ToString(), *Slot);
 			return;
 		}
-		UE_LOG(LogMantleRenderAccessory, Display, TEXT("MANTLE_RENDER_ACCESSORY %s hangs from %s on the %s%s"), *Slot, *Resolved.Bone.ToString(),
-			Resolved.bOnFace ? TEXT("face") : TEXT("body"), Resolved.bFellBack ? TEXT(" (its face bone is missing, so the head)") : TEXT(""));
+		UE_LOG(LogMantleRenderAccessory, Display, TEXT("MANTLE_RENDER_ACCESSORY %s hangs from %s on the %s"), *Slot, *Resolved.Bone.ToString(),
+			Resolved.bOnFace ? TEXT("face") : TEXT("body"));
 		const FTransform Worn = Placed * Attach * Socket;
 		const FBox WornBox = Shown->GetBoundingBox().TransformBy(Worn);
 		// The small slots also get close-ups framed on the socket: a box a little over the slot's reach around it, with the worn mesh.
