@@ -205,6 +205,9 @@ bool FMantlePhysicsPropReplicationModeTest::RunTest(const FString&)
 {
 	UWorld* World = MakeWorld();
 	if (!TestNotNull(TEXT("a world"), World)) { return false; }
+	// As a game world is: an actor's components are initialized as it spawns only once the world's actors are
+	// (AActor::PostActorConstruction), and that is where AStaticMeshActor applies the mode.
+	World->InitializeActorsForPlay(FURL());
 	AMantlePhysicsProp* Prop = World->SpawnActor<AMantlePhysicsProp>(FVector(0, 0, 500), FRotator::ZeroRotator);
 	if (TestNotNull(TEXT("a prop"), Prop))
 	{
