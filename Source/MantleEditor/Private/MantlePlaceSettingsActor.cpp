@@ -1,13 +1,20 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantlePlaceSettingsActor.h"
 #include "MantleEnvironmentOverride.h"
+#include "MantleMinimap.h"
+#include "MantlePng.h"
+#include "MantleRuntime.h"
 #include "MantlePlaceLimits.h"
 #include "MantlePlaceTypes.h"
+#include "MantlePlaceWorldPartition.h"
 #include "MantlePlayStyle.h"
 
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "HAL/FileManager.h"
 #include "LevelEditorViewport.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 #include "ScopedTransaction.h"
 
 #define LOCTEXT_NAMESPACE "Mantle"
@@ -100,6 +107,7 @@ void AMantlePlaceSettingsActor::ApplyTo(UWorld* World, FMantleSettings& Out)
 		Out.Placing = Settings->MakePlacingSettings();
 		Out.PlayStyle = Settings->MakePlayStyle();
 		Out.WorldItems = Settings->MakeWorldItemsSettings();
+		Out.Minimap = Settings->MakeMinimapSettings();
 	}
 }
 
@@ -325,6 +333,89 @@ void AMantlePlaceSettingsActor::SetWorldItemsFrom(const FMantleWorldItemsSetting
 	bSaveWorldItems = WorldItems.Persistence == EMantleWorldItemsPersistence::Server;
 }
 
+// The Minimap enums mirror the runtime's member for member, so a cast maps one onto the other (#167).
+static_assert(static_cast<int32>(EMantlePlaceMinimapShape::Square) == static_cast<int32>(EMantleMinimapShape::Square),
+	"EMantlePlaceMinimapShape must list EMantleMinimapShape's members in the same order");
+static_assert(static_cast<int32>(EMantlePlaceMinimapAnchor::BottomRight) == static_cast<int32>(EMantleMinimapAnchor::BottomRight),
+	"EMantlePlaceMinimapAnchor must list EMantleMinimapAnchor's members in the same order");
+static_assert(static_cast<int32>(EMantlePlaceMinimapRotate::North) == static_cast<int32>(EMantleMinimapRotate::North),
+	"EMantlePlaceMinimapRotate must list EMantleMinimapRotate's members in the same order");
+static_assert(static_cast<int32>(EMantlePlaceMinimapPlayers::Off) == static_cast<int32>(EMantleMinimapPlayers::Off),
+	"EMantlePlaceMinimapPlayers must list EMantleMinimapPlayers's members in the same order");
+
+FMantleMinimapSettings AMantlePlaceSettingsActor::MakeMinimapSettings() const
+{
+	auto Clamped = [](double Value, double Min, double Max, double Default)
+	{
+		return FMath::IsFinite(Value) ? FMath::Clamp(Value, Min, Max) : Default;
+	};
+	const FMantleMinimapSettings Defaults;
+	FMantleMinimapSettings Out;
+	Out.bEnabled = bShowMinimap;
+	Out.Shape = static_cast<EMantleMinimapShape>(MinimapShape);
+	Out.Anchor = static_cast<EMantleMinimapAnchor>(MinimapAnchor);
+	Out.Offset = FVector2D(Clamped(MinimapOffset.X, -FMantlePlaceLimits::MaxMinimapOffset, FMantlePlaceLimits::MaxMinimapOffset, Defaults.Offset.X),
+		Clamped(MinimapOffset.Y, -FMantlePlaceLimits::MaxMinimapOffset, FMantlePlaceLimits::MaxMinimapOffset, Defaults.Offset.Y));
+	Out.Size = Clamped(MinimapSize, FMantlePlaceLimits::MinMinimapSize, FMantlePlaceLimits::MaxMinimapSize, Defaults.Size);
+	Out.bRim = bMinimapRim;
+	Out.Rotate = static_cast<EMantleMinimapRotate>(MinimapRotate);
+	Out.Range = Clamped(MinimapRange, FMantlePlaceLimits::MinMinimapRange, FMantlePlaceLimits::MaxMinimapRange, Defaults.Range);
+	Out.bFullMap = bMinimapFullMap;
+	Out.Players = static_cast<EMantleMinimapPlayers>(MinimapPlayers);
+	return Out;
+}
+
+void AMantlePlaceSettingsActor::SetMinimapFrom(const FMantleMinimapSettings& Minimap)
+{
+	bShowMinimap = Minimap.bEnabled;
+	MinimapShape = static_cast<EMantlePlaceMinimapShape>(Minimap.Shape);
+	MinimapAnchor = static_cast<EMantlePlaceMinimapAnchor>(Minimap.Anchor);
+	MinimapOffset = Minimap.Offset;
+	MinimapSize = Minimap.Size;
+	bMinimapRim = Minimap.bRim;
+	MinimapRotate = static_cast<EMantlePlaceMinimapRotate>(Minimap.Rotate);
+	MinimapRange = Minimap.Range;
+	bMinimapFullMap = Minimap.bFullMap;
+	MinimapPlayers = static_cast<EMantlePlaceMinimapPlayers>(Minimap.Players);
+}
+
+FMantleThumbnailChoice AMantlePlaceSettingsActor::MapPictureChoice() const
+{
+	FMantleThumbnailChoice Choice;
+	Choice.Mode = EMantleThumbnailMode::Custom;
+	Choice.Texture = MapPictureTexture;
+	Choice.ImageFile = MapPictureFile;
+	return Choice;
+}
+
+void AMantlePlaceSettingsActor::ShowMapPicture()
+{
+	UWorld* World = GetWorld();
+	FMantleMinimapPicture Picture;
+	FString Error;
+	// The whole level, as Publish draws it: every World Partition cell loaded for the drawing, and let go again.
+	FMantlePlaceWorldPartition::FLoadResult Loaded = FMantlePlaceWorldPartition::LoadAll(World);
+	const bool bMade = FMantleMinimap::Make(World, Picture, Error);
+	FMantlePlaceWorldPartition::ReleaseLoaded(World, Loaded);
+	if (!bMade)
+	{
+		UE_LOG(LogMantle, Warning, TEXT("The map picture could not be made: %s."), *Error);
+		return;
+	}
+	const FString File = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("Mantle") / TEXT("Minimap") / (World->GetName() + TEXT(".png")));
+	IFileManager::Get().MakeDirectory(*FPaths::GetPath(File), /*Tree*/ true);
+	if (!FFileHelper::SaveArrayToFile(FMantlePng::EncodeRGBA8(Picture.Grid.Width, Picture.Grid.Height, Picture.Pixels), *File))
+	{
+		UE_LOG(LogMantle, Warning, TEXT("The map picture could not be saved to %s."), *File);
+		return;
+	}
+	// What a creator making their own picture needs: its size, its shape and the box it must cover.
+	UE_LOG(LogMantle, Display, TEXT("Map picture saved to %s: %d x %d pixels covering %.0f x %.0f m, X %.0f to %.0f and Y %.0f to %.0f (cm); north (-Y) is at the top. %s"),
+		*File, Picture.Grid.Width, Picture.Grid.Height, Picture.Grid.Width * Picture.Grid.CmPerPixel / 100.0, Picture.Grid.Height * Picture.Grid.CmPerPixel / 100.0,
+		Picture.Grid.MinX, Picture.Grid.MaxX, Picture.Grid.MinY, Picture.Grid.MaxY, *Picture.Warning);
+	FPlatformProcess::LaunchFileInDefaultExternalApplication(*File);
+}
+
 void AMantlePlaceSettingsActor::SetEnvironmentFrom(const FMantleEnvironmentSettings& Environment)
 {
 	bSetClockTime = Environment.ClockTime.IsSet();
@@ -383,6 +474,7 @@ void AMantlePlaceSettingsActor::SetFrom(UWorld* World, const FMantleSettings& Se
 		Actor->SetPlacingFrom(Settings.Placing);
 		Actor->SetPlayStyleFrom(Settings.PlayStyle);
 		Actor->SetWorldItemsFrom(Settings.WorldItems);
+		Actor->SetMinimapFrom(Settings.Minimap);
 	}
 }
 

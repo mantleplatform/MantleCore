@@ -692,6 +692,13 @@ struct MANTLEEDITOR_API FMantlePlaceAssetSet
 	/** #786: the key of the converted texture in Textures that is the place's catalog picture; empty when there is none. */
 	FString Thumbnail;
 
+	/**
+	 * #167: the place's map picture (settings.minimap.image): the keys of its tiles' converted textures in Textures, rows top (north,
+	 * MinY) to bottom, and the world box (cm) the whole picture covers. Empty when there is none.
+	 */
+	TArray<TArray<FString>> MinimapTiles;
+	FBox2D MinimapBounds = FBox2D(ForceInit);
+
 	bool HasErrors() const;
 
 	const FMantleConvertedMesh* FindMesh(const FString& Key) const;
@@ -1155,6 +1162,12 @@ public:
 	 * without a picture rather than not at all.
 	 */
 	bool ConvertThumbnail(TConstArrayView<FColor> Pixels, int32 Width, int32 Height, FMantlePlaceAssetSet& Out);
+
+	/**
+	 * #167: one tile of the place's map picture, Width x Height opaque pixels, as a color-role PNG texture (cooked to BC1, the GPU format
+	 * of an opaque color map). Never JPEG (it rings around the drawn map's flat colors). OutKey is the texture's key in Out.Textures.
+	 */
+	bool ConvertMinimapTile(TConstArrayView<FColor> Pixels, int32 Width, int32 Height, FMantlePlaceAssetSet& Out, FString& OutKey);
 
 	/**
 	 * A landscape (#466, FMantleTerrainExport): its heights as MHF1 (a landscape larger than one heightfield is cut into

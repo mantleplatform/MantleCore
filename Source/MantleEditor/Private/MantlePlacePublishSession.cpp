@@ -1,6 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantlePlacePublishSession.h"
 #include "MantlePlaceThumbnail.h"
+#include "MantleMinimap.h"
 #include "MantleApiClient.h"
 #include "MantleAttribution.h"
 #include "MantleCheck.h"
@@ -371,7 +372,8 @@ bool FMantleLevelPublishSource::Prepare(FMantleValidationResult& OutValidation, 
 
 int32 FMantleLevelPublishSource::NumConversionSteps() const
 {
-	return FMantlePlaceAssetConverter::NumDependencySteps(Dependencies) + UIImages.Num() + (bThumbnailStep ? 1 : 0);
+	// The map picture (#167) is always a step: drawing it needs no renderer.
+	return FMantlePlaceAssetConverter::NumDependencySteps(Dependencies) + UIImages.Num() + (bThumbnailStep ? 1 : 0) + 1;
 }
 
 FString FMantleLevelPublishSource::ConversionStepName(int32 Step) const
@@ -386,8 +388,12 @@ FString FMantleLevelPublishSource::ConversionStepName(int32 Step) const
 	{
 		return UIImages[UIImage].Key;
 	}
-	// The place's thumbnail (#786), last.
-	return bThumbnailStep && UIImage == UIImages.Num() ? FString(TEXT("Place thumbnail")) : FString();
+	// The place's thumbnail (#786), then its map picture (#167), last.
+	if (bThumbnailStep && UIImage == UIImages.Num())
+	{
+		return TEXT("Place thumbnail");
+	}
+	return UIImage == UIImages.Num() + (bThumbnailStep ? 1 : 0) ? FString(TEXT("Map picture")) : FString();
 }
 
 void FMantleLevelPublishSource::Convert(int32 Step, FMantlePlaceAssetSet& Set)
@@ -430,6 +436,13 @@ void FMantleLevelPublishSource::Convert(int32 Step, FMantlePlaceAssetSet& Set)
 				FString::Printf(TEXT("The place's thumbnail could not be taken (%s), so it publishes without a picture."), *Error),
 				TEXT("Publish again; if it keeps happening, choose another thumbnail in the Publish window's Thumbnail section.") });
 		}
+		return;
+	}
+	// The map picture (#167): drawn from the level (or the creator's own), cut into tiles, texture uploads like the rest. A picture
+	// that cannot be made is a warning: the place publishes with a minimap that shows no map. Made once per publish, like the thumbnail.
+	if (UIImage == UIImages.Num() + (bThumbnailStep ? 1 : 0) && Set.MinimapTiles.Num() == 0)
+	{
+		FMantleMinimap::Convert(World.Get(), *Converter, Set);
 	}
 }
 

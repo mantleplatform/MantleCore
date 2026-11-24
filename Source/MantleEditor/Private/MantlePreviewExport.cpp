@@ -4,6 +4,7 @@
 #include "MantlePlaceSecrets.h"
 #include "MantleAssetStore.h"
 #include "MantlePlaceAssetConverter.h"
+#include "MantleMinimap.h"
 #include "MantlePlaceExporter.h"
 #include "MantlePreviewShared.h"
 #include "MantleCoverageSurvey.h"
@@ -1018,6 +1019,8 @@ namespace MantlePreviewExportPrivate
 		{
 			Converter.ConvertUIImage(Image.Path, Image.DiskPath, Set);
 		}
+		// The map picture (#167), made as Publish makes it: its tiles cook with the textures and the place names their ids.
+		FMantleMinimap::Convert(World, Converter, Set);
 		PreviewAddIssueLines(Set.Issues, Result.Errors, Result.Warnings);
 		if (Set.HasErrors())
 		{

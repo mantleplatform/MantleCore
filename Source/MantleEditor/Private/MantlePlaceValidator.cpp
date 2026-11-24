@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantlePlaceValidator.h"
+#include "MantleMinimap.h"
 #include "MantleActorDecompose.h"
 #include "MantleAssetLibrary.h"
 #include "MantleBrushBake.h"
@@ -2067,6 +2068,8 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World)
 
 	// #450: the loop below only sees loaded actors; a World Partition level with unloaded cells is refused.
 	FMantlePlaceWorldPartition::CheckLevel(World, Result.Issues);
+	// #167: the creator's own map picture, when they chose one: readable, and its shape against the map's.
+	FMantleMinimap::Check(World, Result.Issues);
 
 	int32 PlayerStarts = 0;
 	int32 Publishable = 0;
