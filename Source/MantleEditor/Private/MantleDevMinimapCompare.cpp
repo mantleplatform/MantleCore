@@ -3,7 +3,8 @@
 // Maintainer command (#167, the map style gate): Mantle.Dev.MinimapCompare <Directory> [CropX CropY]
 // Makes the open level's map picture two ways over the same area at the same scale, times each, and writes them side by side:
 //   A  Epic's minimap capture: the settings of the engine's World Partition minimap builder (FWorldPartitionMiniMapHelper::
-//      CaptureBoundsMiniMapToTexture: top-down orthographic, unlit, no fog, atmosphere, shadows or post process, scene color),
+//      CaptureBoundsMiniMapToTexture: top-down orthographic, unlit, no fog, atmosphere, shadows or post process, base color: the
+//      helper's default; the builder's HDR scene color reads back black here),
 //      tile by tile, 30 frames after each camera move. The engine function itself fakes an engine tick per frame, which cannot run
 //      inside the editor's own tick, so its camera and settings are rebuilt here and the frames are taken as the place thumbnail
 //      takes them.
@@ -104,7 +105,9 @@ namespace MantleDevMinimapComparePrivate
 	struct FCaptureStyle
 	{
 		const TCHAR* Name = TEXT("epic");
-		ESceneCaptureSource Source = ESceneCaptureSource::SCS_SceneColorHDR;
+		// The helper's default source (CaptureBoundsMiniMapToTexture's short form). The builder's SCS_SceneColorHDR reads back all black
+		// into this 8-bit target in the editor (the probe, 2026-11-24: brightest 0 whatever the flags or projection).
+		ESceneCaptureSource Source = ESceneCaptureSource::SCS_BaseColor;
 		bool bEpicShowFlags = true;
 		bool bCustomProjection = true;
 	};
