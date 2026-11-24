@@ -5707,7 +5707,7 @@ void FMantlePlaceAssets::CheckMaterialsCompile(const TArray<FMantleGatheredMater
 	{
 		const UMaterialInterface* Owner = Job.Owner.Get();
 		TArray<FString> Errors;
-		bool bFailed = false;
+		bool bNoShaderMap = false;
 		for (const FMaterialResourceForCooking& Cooking : Job.Resources)
 		{
 			const FMaterialResource* Resource = Cooking.Resource.GetReference();
@@ -5717,7 +5717,6 @@ void FMantlePlaceAssets::CheckMaterialsCompile(const TArray<FMantleGatheredMater
 			}
 			for (const FString& Error : Resource->GetCompileErrors())
 			{
-				bFailed = true;
 				// One line each, without the engine's repeated blank lines.
 				FString Line = Error.TrimStartAndEnd().Replace(TEXT("\r"), TEXT("")).Replace(TEXT("\n"), TEXT(" "));
 				if (Line.Len() > 300)
@@ -5726,9 +5725,12 @@ void FMantlePlaceAssets::CheckMaterialsCompile(const TArray<FMantleGatheredMater
 				}
 				Errors.AddUnique(Line);
 			}
-			bFailed = bFailed || !Resource->GetGameThreadShaderMap();
+			bNoShaderMap = bNoShaderMap || !Resource->GetGameThreadShaderMap();
 		}
-		if (!Owner || !bFailed)
+		// Unreal's own compile errors are a broken material (an error). No shader map and no errors is only "could not confirm"
+		// (a compile that did not finish, a material the engine skips on this platform), which must not block a publish.
+		const bool bFailed = Errors.Num() > 0;
+		if (!Owner || (!bFailed && !bNoShaderMap))
 		{
 			continue;
 		}
@@ -5754,7 +5756,9 @@ void FMantlePlaceAssets::CheckMaterialsCompile(const TArray<FMantleGatheredMater
 				Through.Num() > 4 ? *FString::Printf(TEXT(" and %d more"), Through.Num() - 4) : TEXT(""));
 		}
 
-		FString What = FString::Printf(TEXT("Unreal cannot compile material %s, so it would publish as a grey checkerboard"), *Quoted(Owner));
+		FString What = bFailed
+			? FString::Printf(TEXT("Unreal cannot compile material %s, so it would publish as a grey checkerboard"), *Quoted(Owner))
+			: FString::Printf(TEXT("Mantle could not confirm that material %s compiles"), *Quoted(Owner));
 		if (!Instances.IsEmpty() || UsedBy.Num() > 0)
 		{
 			What += TEXT(" (");
@@ -5778,7 +5782,14 @@ void FMantlePlaceAssets::CheckMaterialsCompile(const TArray<FMantleGatheredMater
 		}
 		else
 		{
-			What += TEXT(" Unreal gave no reason; its Output Log has the details.");
+			What += TEXT(" If it shows Unreal's grey checkerboard in the editor, it would publish that way.");
+		}
+
+		if (!bFailed)
+		{
+			OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(), What,
+				FString::Printf(TEXT("Open %s in Unreal's Material Editor and check it draws normally, with no errors in the Output Log. If it does, there is nothing to fix."), *Quoted(Owner)) });
+			continue;
 		}
 
 		FString Remedy = FString::Printf(TEXT("Open %s in Unreal's Material Editor, fix the node the message names (for a missing input, connect it, or remove the node), and save it."), *Quoted(Owner));
