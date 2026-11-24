@@ -28,7 +28,7 @@ namespace MantleDevPictureBudgetPrivate
 		return static_cast<int64>(GRHIGlobals.ReservedResources.VirtualSize);
 	}
 
-	void LogMemory(const TCHAR* Command, const TCHAR* When, const FString& Picture)
+	void LogPictureMemory(const TCHAR* Command, const TCHAR* When, const FString& Picture)
 	{
 		const FPlatformMemoryStats Stats = FPlatformMemory::GetStats();
 		UE_LOG(LogMantleDevPictureBudget, Display, TEXT("MANTLE_PICTURE_MEMORY %s %s picture=%d reservedGB=%.2f physicalGB=%.2f %s"), Command, When,
@@ -66,14 +66,14 @@ bool FMantleDevPictureBudget::Begin(const TCHAR* Command, const FString& Picture
 	{
 		return false;
 	}
-	LogMemory(Command, TEXT("before"), Picture);
+	LogPictureMemory(Command, TEXT("before"), Picture);
 	return true;
 }
 
 void FMantleDevPictureBudget::End(const TCHAR* Command, const FString& Picture)
 {
 	using namespace MantleDevPictureBudgetPrivate;
-	LogMemory(Command, TEXT("after"), Picture);
+	LogPictureMemory(Command, TEXT("after"), Picture);
 	++GPicturesTaken;
 }
 
