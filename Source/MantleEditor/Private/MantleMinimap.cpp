@@ -234,7 +234,7 @@ namespace MantleMinimapPrivate
 		}
 		TArray<FVector> Points;
 		TArray<double> HalfWidths;
-		SampleWaterSpline(Body, Body.Type != EMantleWaterBodyKind::River, Points, HalfWidths);
+		SampleWaterSpline(Body, Body.Type == EMantleWaterBodyKind::River ? Body.bClosedLoop : true, Points, HalfWidths);
 		for (int32 Index = 0; Index < Points.Num(); ++Index)
 		{
 			const double Grow = Body.Type == EMantleWaterBodyKind::River ? HalfWidths[Index] : 0.0;
@@ -623,7 +623,12 @@ bool FMantleMinimap::Draw(UWorld* World, FMantleMinimapPicture& Out, FString& Ou
 		Out.Grid.Width, Out.Grid.Height, Out.Grid.CmPerPixel / 100.0, Out.Grid.Columns, Out.Grid.Rows, FPlatformTime::Seconds() - Started, AreaSeconds,
 		ReadSeconds, DrawSeconds, ShadeSeconds, Meshes.Meshes.Num(), Meshes.Draws.Num(), SplineMeshes, Landscapes, Water.Bodies.Num(),
 		MeshTriangles + LandscapeTriangles + WaterTriangles, Meshes.Unreadable);
-	return Out.IsValid();
+	if (!Out.IsValid())
+	{
+		OutError = TEXT("the drawn picture came out the wrong size");
+		return false;
+	}
+	return true;
 }
 
 FString FMantleMinimap::DescribeShape(int32 Width, int32 Height, const FMantleMinimapGrid& Grid)

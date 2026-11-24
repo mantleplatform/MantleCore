@@ -391,6 +391,10 @@ FMantleThumbnailChoice AMantlePlaceSettingsActor::MapPictureChoice() const
 void AMantlePlaceSettingsActor::ShowMapPicture()
 {
 	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
 	FMantleMinimapPicture Picture;
 	FString Error;
 	// The whole level, as Publish draws it: every World Partition cell loaded for the drawing, and let go again.

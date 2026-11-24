@@ -301,7 +301,8 @@ public:
 	virtual bool MakeCellIndex(const TMap<FString, FMantleCellFileRef>& FilesByKey, FMantlePlaceUpload& OutIndex, FString& OutMessage) override;
 	virtual bool WriteRoot(const FMantleCellRoot& Index, FString& OutPlaceJson, FString& OutMessage) override;
 	virtual int32 NumConversionSteps() const override;
-	virtual int32 NumNonContentSteps() const override { return bThumbnailStep ? 1 : 0; }
+	/** The thumbnail (when taken) and the map picture (#167, always) are the place's own pictures, not project content. */
+	virtual int32 NumNonContentSteps() const override { return (bThumbnailStep ? 1 : 0) + 1; }
 	virtual FString ConversionStepName(int32 Step) const override;
 	virtual void Convert(int32 Step, FMantlePlaceAssetSet& Set) override;
 	virtual FString DescribeConversion() const override;
