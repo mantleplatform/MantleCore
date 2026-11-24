@@ -80,6 +80,20 @@ namespace MantleVehicleConverterWheelsTestPrivate
 		return FMantleVehicleChassisMesh::Create(Body, TEXT("/Temp/MantleConvertWheelsTest"), Name, OutError, &Materials);
 	}
 
+	/** A material that reads as car paint (it has a Paint Tint parameter): a slot drawn with it is suggested the vehicle's paint. */
+	UMaterial* NewPaintTintMaterial()
+	{
+		UMaterial* Material = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+		UMaterialExpressionVectorParameter* Tint = NewObject<UMaterialExpressionVectorParameter>(Material);
+		Tint->Material = Material;
+		Tint->ParameterName = TEXT("Paint Tint");
+		Tint->DefaultValue = FLinearColor(0.1f, 0.2f, 0.7f);
+		Tint->UpdateParameterGuid(true, false);
+		Material->GetExpressionCollection().AddExpression(Tint);
+		Material->UpdateCachedExpressionData();
+		return Material;
+	}
+
 	TArray<FCarWheel> FourWheels(const TCHAR* FL, const TCHAR* FR, const TCHAR* RL, const TCHAR* RR)
 	{
 		return { { FL, FVector(130, -80, 35) }, { FR, FVector(130, 80, 35) }, { RL, FVector(-130, -80, 35) }, { RR, FVector(-130, 80, 35) } };
@@ -422,13 +436,14 @@ bool FMantleVehicleConverterSplitPaintTest::RunTest(const FString& Parameters)
 
 	// SUV04: its door shells are split-off parts that wear the body's paint. A second Convert (after the seats were set) found the model had a part of its own already
 	// and suggested no paint slot for any part, so the doors came out white. The split's own parts are made afresh each Convert and are suggested their paint every time.
-	UMaterialInterface* Painted = UMaterial::GetDefaultMaterial(MD_Surface);
-	if (!TestNotNull(TEXT("the engine's default material"), Painted))
+	// Twelve slots, each its own material that reads as paint (slots of one material are merged, so each is a material of its own).
+	TArray<UMaterialInterface*> PaintMaterials;
+	for (int32 Slot = 0; Slot < 12; ++Slot)
 	{
-		return false;
+		PaintMaterials.Add(NewPaintTintMaterial());
 	}
 	FString Error;
-	USkeletalMesh* Car = MakeCar(FourWheels(TEXT("B_FLWheel"), TEXT("B_FRWheel"), TEXT("B_RLWheel"), TEXT("B_RRWheel")), 12, Error, Painted);
+	USkeletalMesh* Car = MakeCar(FourWheels(TEXT("B_FLWheel"), TEXT("B_FRWheel"), TEXT("B_RLWheel"), TEXT("B_RRWheel")), 12, Error, nullptr, TArray<FString>(), PaintMaterials);
 	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
 	if (!TestNotNull(*FString::Printf(TEXT("the car is made (%s)"), *Error), Car) || !TestNotNull(TEXT("a mesh for the model's own part"), Cube))
 	{
