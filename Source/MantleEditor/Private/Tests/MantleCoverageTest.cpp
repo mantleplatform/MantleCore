@@ -3,6 +3,7 @@
 #include "MantleCoverageSurvey.h"
 #include "MantleEnvironmentExport.h"
 #include "MantlePlaceExporter.h"
+#include "MantlePlaceSettingsActor.h"
 #include "MantlePlaceValidator.h"
 #include "MantleTargetFeatures.h"
 
@@ -343,12 +344,25 @@ bool FMantleCoveragePostProcessVolumeTest::RunTest(const FString& Parameters)
 
 	const FMantleExportResult Exported = FMantlePlaceExporter::Export(Test.World, FMantleExportOptions());
 	TestFalse(TEXT("Export has no error about it"), ErrorMentions(Exported, TEXT("PostProcessVolume")));
-	// An auto-exposure project's default exposure is carried as the place's, so the volume is then approximated, not dropped.
+	// With no Mantle Place Settings the place is outdoor, which carries none of the level's exposure: the volume is dropped.
+	TestEqual(TEXT("an outdoor place lists it as dropped"),
+		Exported.Coverage.Count(MantleCoverageCategory::PostProcess, EOutcome::Dropped), static_cast<int64>(1));
+	TestEqual(TEXT("and nothing of it as approximated"),
+		Exported.Coverage.Count(MantleCoverageCategory::PostProcess, EOutcome::Approximated), static_cast<int64>(0));
+
+	// An indoor place carries the level's exposure. An auto-exposure project's exposure is then the place's, so the volume is approximated, not dropped.
+	AMantlePlaceSettingsActor* Settings = Test.Spawn<AMantlePlaceSettingsActor>(TEXT("Settings"));
+	if (!TestNotNull(TEXT("place settings"), Settings))
+	{
+		return false;
+	}
+	Settings->IndoorOutdoor = EMantlePlaceIndoorOutdoor::Indoor;
+	const FMantleExportResult Indoor = FMantlePlaceExporter::Export(Test.World, FMantleExportOptions());
 	const bool bExposureCarried = FMantleExposureProject::Current().bAuto;
-	TestEqual(TEXT("the report lists it as dropped, when no exposure of it is carried"),
-		Exported.Coverage.Count(MantleCoverageCategory::PostProcess, EOutcome::Dropped), static_cast<int64>(bExposureCarried ? 0 : 1));
+	TestEqual(TEXT("an indoor place lists it as dropped, when no exposure of it is carried"),
+		Indoor.Coverage.Count(MantleCoverageCategory::PostProcess, EOutcome::Dropped), static_cast<int64>(bExposureCarried ? 0 : 1));
 	TestEqual(TEXT("and as approximated when one is"),
-		Exported.Coverage.Count(MantleCoverageCategory::PostProcess, EOutcome::Approximated), static_cast<int64>(bExposureCarried ? 1 : 0));
+		Indoor.Coverage.Count(MantleCoverageCategory::PostProcess, EOutcome::Approximated), static_cast<int64>(bExposureCarried ? 1 : 0));
 	return true;
 }
 
