@@ -263,6 +263,13 @@ bool FMantleHairHatSourceKeyTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the key names the rule version"), BaseKey.Contains(FString::Printf(TEXT("hathair-v%d"), FMantleHairHatSource::RuleVersion)));
 	TestTrue(TEXT("the key names the slot and the mesh"), BaseKey.Contains(TEXT("acc_hat=hat-a")));
 	TestEqual(TEXT("the same hat is the same key"), FMantleHairHatSource::KeyFor(MakeArrayView(&Base, 1)), BaseKey);
+	// The dev comparison's rule b is a fit of its own; rule a keeps the key fits have always had.
+	TestEqual(TEXT("rule a is the default key"), FMantleHairHatSource::KeyFor(MakeArrayView(&Base, 1), EMantleHairHatAim::PokingThrough), BaseKey);
+	const FString CardsKey = FMantleHairHatSource::KeyFor(MakeArrayView(&Base, 1), EMantleHairHatAim::UnderHatCards);
+	TestNotEqual(TEXT("rule b is another key"), CardsKey, BaseKey);
+	TestTrue(TEXT("rule b's key says so"), CardsKey.Contains(FString::Printf(TEXT("hathair-v%d-cards["), FMantleHairHatSource::RuleVersion)));
+	TestTrue(TEXT("no hat, no key piece under rule b either"),
+		FMantleHairHatSource::KeyFor(TConstArrayView<FMantleHairHatSource>(), EMantleHairHatAim::UnderHatCards).IsEmpty());
 
 	const auto KeyOf = [](const FMantleHairHatSource& Source) { return FMantleHairHatSource::KeyFor(MakeArrayView(&Source, 1)); };
 

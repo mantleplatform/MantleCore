@@ -102,8 +102,11 @@ struct MANTLERUNTIME_API FMantleHairHatSource
 	/** "slot=meshHash/rule/placementHash"; a hood has no placement: "slot=fitIdentity/rule/hood". */
 	FString KeyPiece() const;
 
-	/** The hair fit key's hat part: ":hathair-v<RuleVersion>[piece;piece]", empty for no sources. */
-	static FString KeyFor(TConstArrayView<FMantleHairHatSource> Sources);
+	/**
+	 * The hair fit key's hat part: ":hathair-v<RuleVersion>[piece;piece]", empty for no sources. Aim UnderHatCards (the dev
+	 * comparison, rule b) makes it ":hathair-v<RuleVersion>-cards[...]"; the default aim's key is unchanged.
+	 */
+	static FString KeyFor(TConstArrayView<FMantleHairHatSource> Sources, EMantleHairHatAim Aim = EMantleHairHatAim::PokingThrough);
 
 	/** Bone's transform in the component space of Body's reference pose; false when Body has no such bone or no pose. */
 	static bool BoneComponentTransform(const FMantleSkinnedMesh& Body, FName Bone, FTransform& Out);
@@ -117,14 +120,17 @@ struct MANTLERUNTIME_API FMantleHairHatSource
 	/**
 	 * The hat step on a hair the head fit made (Hair, in Body's reference space): the sources' triangles placed in that space,
 	 * the head centre from Face's skin, then FMantleHairHatFit::Fit on every LOD, moving the points that poke through and
-	 * cutting out triangles that poke entirely (bFacialHair: nothing is moved, only cut). Hair is left as it was when this
-	 * returns false (Error says why) or when nothing changed. Any thread.
+	 * cutting out triangles that poke entirely (bFacialHair: nothing is moved, only cut). Aim is FMantleHairHatFitParams::Aim
+	 * (scalp hair only; the dev comparison passes UnderHatCards). Hair is left as it was when this returns false (Error says
+	 * why) or when nothing changed. Any thread.
 	 */
 	static bool Apply(TConstArrayView<FMantleHairHatSource> Sources, const FMantleSkinnedMesh& Body, const FMantleSkinnedMesh& Face,
-		bool bFacialHair, FMantleSkinnedMesh& Hair, FMantleHairHatStats& Stats, FString& Error);
+		bool bFacialHair, FMantleSkinnedMesh& Hair, FMantleHairHatStats& Stats, FString& Error,
+		EMantleHairHatAim Aim = EMantleHairHatAim::PokingThrough);
 
 	/** Apply with the hat and the head skin already triangle lists in Hair's space (Apply's second half; the tests' door). */
 	static bool ApplyTriangles(TConstArrayView<FVector3f> HatPositions, TConstArrayView<uint32> HatIndices,
 		TConstArrayView<FVector3f> ScalpPositions, TConstArrayView<uint32> ScalpIndices,
-		bool bFacialHair, FMantleSkinnedMesh& Hair, FMantleHairHatStats& Stats, FString& Error);
+		bool bFacialHair, FMantleSkinnedMesh& Hair, FMantleHairHatStats& Stats, FString& Error,
+		EMantleHairHatAim Aim = EMantleHairHatAim::PokingThrough);
 };

@@ -173,15 +173,13 @@ namespace MantleHairHatFitPrivate
 	}
 
 	/**
-	 * Speck clean-up: the hair is split into connected cards (triangles that share a point, points at the same spot count as
-	 * shared, as the head fit's weld does). A card with SpeckAreaShare or more of its area dropped loses the rest, unless it holds
-	 * more than SpeckMaxCardShare of all the triangles. Adds the extra triangles to Drop; returns how many.
+	 * The hair's cards: union-find over its vertices, where triangles that share a point are joined and points at the same spot
+	 * count as shared (as the head fit's weld does). A vertex's card is FindRoot(Parent, vertex).
 	 */
-	int32 DropSpecks(const FMantleSkinnedMeshLOD& Hair, TArray<uint8>& Drop)
+	void WeldCards(const FMantleSkinnedMeshLOD& Hair, TArray<int32>& Parent)
 	{
 		const int32 NumVertices = Hair.Positions.Num();
 		const int32 NumTriangles = Hair.Indices.Num() / 3;
-		TArray<int32> Parent;
 		Parent.SetNumUninitialized(NumVertices);
 		TArray<int32> Order;
 		Order.Reserve(NumVertices);
@@ -216,6 +214,19 @@ namespace MantleHairHatFitPrivate
 				Union(Parent, Hair.Indices[T * 3], Hair.Indices[T * 3 + 2]);
 			}
 		}
+	}
+
+	/**
+	 * Speck clean-up: the hair is split into cards (WeldCards). A card with SpeckAreaShare or more of its area dropped loses the
+	 * rest, unless it holds more than SpeckMaxCardShare of all the triangles. Adds the extra triangles to Drop; returns how many.
+	 */
+	int32 DropSpecks(const FMantleSkinnedMeshLOD& Hair, TArray<uint8>& Drop)
+	{
+		const int32 NumVertices = Hair.Positions.Num();
+		const int32 NumTriangles = Hair.Indices.Num() / 3;
+		const TArray<FVector3f>& P = Hair.Positions;
+		TArray<int32> Parent;
+		WeldCards(Hair, Parent);
 
 		TArray<double> TotalArea, DroppedArea;
 		TArray<int32> TriangleCount;
@@ -258,6 +269,63 @@ namespace MantleHairHatFitPrivate
 			}
 		}
 		return Added;
+	}
+
+	/**
+	 * UnderHatCards: the hair is split into cards (WeldCards); a card with more than CardHiddenShare of its points under the hat
+	 * (Under[V], per vertex) has all its triangles put in Drop. Each vertex a triangle uses counts once toward its card. Returns
+	 * how many cards were hidden.
+	 */
+	int32 HideCardsUnderHat(const FMantleSkinnedMeshLOD& Hair, const TArray<uint8>& Under, TArray<uint8>& Drop)
+	{
+		const int32 NumVertices = Hair.Positions.Num();
+		const int32 NumTriangles = Hair.Indices.Num() / 3;
+		TArray<int32> Parent;
+		WeldCards(Hair, Parent);
+
+		TArray<uint8> Used;
+		Used.SetNumZeroed(NumVertices);
+		for (int32 T = 0; T < NumTriangles; ++T)
+		{
+			if (TriangleIsValid(Hair.Indices, T, NumVertices))
+			{
+				Used[Hair.Indices[T * 3]] = 1;
+				Used[Hair.Indices[T * 3 + 1]] = 1;
+				Used[Hair.Indices[T * 3 + 2]] = 1;
+			}
+		}
+		// Per card (indexed by its root vertex): its points, and those under the hat.
+		TArray<int32> Points, PointsUnder;
+		Points.SetNumZeroed(NumVertices);
+		PointsUnder.SetNumZeroed(NumVertices);
+		for (int32 V = 0; V < NumVertices; ++V)
+		{
+			if (Used[V])
+			{
+				const int32 Card = FindRoot(Parent, V);
+				++Points[Card];
+				PointsUnder[Card] += Under[V] ? 1 : 0;
+			}
+		}
+		TArray<uint8> Hidden;
+		Hidden.SetNumZeroed(NumVertices);
+		int32 NumHidden = 0;
+		for (int32 Card = 0; Card < NumVertices; ++Card)
+		{
+			if (Points[Card] > 0 && static_cast<float>(PointsUnder[Card]) > FMantleHairHatFit::CardHiddenShare * static_cast<float>(Points[Card]))
+			{
+				Hidden[Card] = 1;
+				++NumHidden;
+			}
+		}
+		for (int32 T = 0; T < NumTriangles; ++T)
+		{
+			if (TriangleIsValid(Hair.Indices, T, NumVertices) && Hidden[FindRoot(Parent, Hair.Indices[T * 3])])
+			{
+				Drop[T] = 1;
+			}
+		}
+		return NumHidden;
 	}
 }
 
@@ -460,6 +528,8 @@ void FMantleHairHatFit::Fit(const FMantleSkinnedMeshLOD& Hair, const TConstArray
 	}
 
 	const bool bPullIn = !Params.bFacialHair;
+	// Rule b drops whole cards; facial hair keeps the poke test, drop only, whatever the aim.
+	const bool bCards = Params.Aim == EMantleHairHatAim::UnderHatCards && !Params.bFacialHair;
 	const FVector3f Centre = Params.HeadCentre;
 
 	FMantleHairHatGrid HatGrid;
@@ -493,6 +563,9 @@ void FMantleHairHatFit::Fit(const FMantleSkinnedMeshLOD& Hair, const TConstArray
 	Verdicts.SetNum(NumVertices);
 	TArray<uint8> Moved;
 	Moved.SetNumZeroed(NumVertices);
+	// UnderHatCards: the hat covers the point (its ray meets the hat, inside or poking out through it).
+	TArray<uint8> Under;
+	Under.SetNumZeroed(NumVertices);
 	for (int32 V = 0; V < NumVertices; ++V)
 	{
 		const FVector3f Rel = Hair.Positions[V] - Centre;
@@ -503,6 +576,7 @@ void FMantleHairHatFit::Fit(const FMantleSkinnedMeshLOD& Hair, const TConstArray
 		}
 		const FVector3f Direction = Rel / Length;
 		const float HatCm = HatHit(Direction);
+		Under[V] = HatCm > 0.0f ? 1 : 0;
 		FVertexVerdict Verdict = Judge(Length, HatCm, -1.0f);
 		if (Verdict.bPokes && bPullIn)
 		{
@@ -516,22 +590,31 @@ void FMantleHairHatFit::Fit(const FMantleSkinnedMeshLOD& Hair, const TConstArray
 		Verdicts[V] = Verdict;
 	}
 
-	// 2. A triangle goes when all three corners are lost.
+	// 2. What goes.
 	TArray<uint8> Drop;
 	Drop.SetNumZeroed(NumTriangles);
-	for (int32 T = 0; T < NumTriangles; ++T)
+	if (bCards)
 	{
-		if (!TriangleIsValid(Hair.Indices, T, NumVertices))
-		{
-			continue;
-		}
-		Drop[T] = CornerIsLost(Verdicts[Hair.Indices[T * 3]], Params.bFacialHair)
-			&& CornerIsLost(Verdicts[Hair.Indices[T * 3 + 1]], Params.bFacialHair)
-			&& CornerIsLost(Verdicts[Hair.Indices[T * 3 + 2]], Params.bFacialHair);
+		// Rule b: a card mostly under the hat goes whole; every other card stays whole, with the pull-in above.
+		Out.CardsHidden = HideCardsUnderHat(Hair, Under, Drop);
 	}
-	if (Params.bDropSpecks)
+	else
 	{
-		Out.TrianglesDroppedAsSpecks = DropSpecks(Hair, Drop);
+		// Rule a: a triangle goes when all three corners are lost.
+		for (int32 T = 0; T < NumTriangles; ++T)
+		{
+			if (!TriangleIsValid(Hair.Indices, T, NumVertices))
+			{
+				continue;
+			}
+			Drop[T] = CornerIsLost(Verdicts[Hair.Indices[T * 3]], Params.bFacialHair)
+				&& CornerIsLost(Verdicts[Hair.Indices[T * 3 + 1]], Params.bFacialHair)
+				&& CornerIsLost(Verdicts[Hair.Indices[T * 3 + 2]], Params.bFacialHair);
+		}
+		if (Params.bDropSpecks)
+		{
+			Out.TrianglesDroppedAsSpecks = DropSpecks(Hair, Drop);
+		}
 	}
 	// A moved point counts when a triangle that stays uses it (the points of dropped triangles are put back below).
 	TArray<uint8> Counted;

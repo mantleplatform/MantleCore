@@ -129,6 +129,51 @@ namespace MantleHairHatFitTestPrivate
 		return Out;
 	}
 
+	/** Rule b (EMantleHairHatAim::UnderHatCards): whole cards mostly under the hat are hidden, the rest pulled in. */
+	FMantleHairHatFitResult RunCards(const FMantleSkinnedMeshLOD& Hair, const FSoup& Hat, const FSoup& Scalp, const bool bFacial = false, const bool bBrute = false)
+	{
+		FMantleHairHatFitParams Params;
+		Params.Aim = EMantleHairHatAim::UnderHatCards;
+		Params.bFacialHair = bFacial;
+		Params.bBruteForce = bBrute;
+		Params.HeadCentre = FVector3f::ZeroVector;
+		FMantleHairHatFitResult Out;
+		FMantleHairHatFit::Fit(Hair, Hat.P, Hat.I, Scalp.P, Scalp.I, Params, Out);
+		return Out;
+	}
+
+	/**
+	 * A card: a strip along polar angle, one row of two points (azimuth Phi -/+ 1 degree) per (theta, radius) in Rows, the
+	 * rows joined by two triangles each, sharing their indices. Returns the index of its first point; its triangles follow
+	 * the hair's earlier ones.
+	 */
+	int32 AddCardStrip(FMantleSkinnedMeshLOD& Hair, const float PhiDeg, const TArray<FVector2f>& Rows)
+	{
+		const int32 First = Hair.Positions.Num();
+		for (const FVector2f& Row : Rows)
+		{
+			Hair.Positions.Add(Sph(Row.X, PhiDeg - 1.0f, Row.Y));
+			Hair.Positions.Add(Sph(Row.X, PhiDeg + 1.0f, Row.Y));
+		}
+		for (int32 Row = 0; Row + 1 < Rows.Num(); ++Row)
+		{
+			const uint32 A = First + Row * 2, B = A + 1, C = A + 2, D = A + 3;
+			Hair.Indices.Append({ A, B, C, B, D, C });
+		}
+		return First;
+	}
+
+	/** The triangles from First up to (not including) End, as a list. */
+	TArray<int32> TriangleRange(const int32 First, const int32 End)
+	{
+		TArray<int32> Out;
+		for (int32 T = First; T < End; ++T)
+		{
+			Out.Add(T);
+		}
+		return Out;
+	}
+
 	/** The distance from the head centre to the first hit of a soup along the ray through Point; negative for none. */
 	float HitAlong(const FSoup& Soup, const FVector3f& Point)
 	{
@@ -647,6 +692,161 @@ bool FMantleHairHatFitHeadCentreTest::RunTest(const FString& Parameters)
 	TestNearlyEqual(TEXT("an unused point does not raise the top"), Same.Z, 12.0f, 1.e-3f);
 
 	TestEqual(TEXT("no skin, no centre"), FMantleHairHatFit::HeadCentreFromSkin(TArray<FVector3f>(), TArray<uint32>()), FVector3f::ZeroVector);
+	return true;
+}
+
+// Rule b (EMantleHairHatAim::UnderHatCards, the #389 plan as first written), for the side-by-side comparison with rule a.
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleHairHatFitCardsDomeTest,
+	"Mantle.Runtime.HairHatFit.RuleB.DomeCards",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleHairHatFitCardsDomeTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleHairHatFitTestPrivate;
+
+	const FSoup Scalp = Head();
+	const FSoup Hat = Dome(HatRadiusCm, 100.0f);
+	FMantleSkinnedMeshLOD Hair;
+	// A (points 0-5, triangles 0-3): wholly under the dome, tucked 0.7 cm inside it.
+	AddCardStrip(Hair, 0.0f, { FVector2f(30.0f, 9.3f), FVector2f(35.0f, 9.3f), FVector2f(40.0f, 9.3f) });
+	// B (points 6-11, triangles 4-5): two loose triangles welded by one shared spot. The first is below the dome's rim; the
+	// second has that spot and two points under the dome. Alone the second would be mostly under the hat; welded, the card is
+	// 2 of 6 points under it and stays.
+	AddTri(Hair, Sph(115.0f, 100.0f, 11.0f), Sph(115.0f, 110.0f, 11.0f), Sph(125.0f, 100.0f, 11.0f));
+	AddTri(Hair, Sph(115.0f, 100.0f, 11.0f), Sph(90.0f, 100.0f, 9.3f), Sph(90.0f, 110.0f, 9.3f));
+	// C (points 12-17, triangles 6-9): crosses the rim, one row of two (of three) under the dome and poking 0.3 cm out of it.
+	AddCardStrip(Hair, 200.0f, { FVector2f(95.0f, 10.3f), FVector2f(110.0f, 11.0f), FVector2f(120.0f, 11.0f) });
+	// D (points 18-23, triangles 10-13): crosses the rim with two rows of three poking through the dome: mostly under the hat.
+	AddCardStrip(Hair, 300.0f, { FVector2f(80.0f, 10.3f), FVector2f(90.0f, 10.3f), FVector2f(110.0f, 11.0f) });
+
+	for (const int32 V : { 6, 7, 8, 14, 15, 16, 17, 22, 23 })
+	{
+		TestTrue(TEXT("the points below the rim meet no hat"), HitAlong(Hat, Hair.Positions[V]) < 0.0f);
+	}
+	for (const int32 V : { 0, 1, 2, 3, 4, 5, 10, 11, 12, 13, 18, 19, 20, 21 })
+	{
+		TestTrue(TEXT("the points under the dome meet it"), HitAlong(Hat, Hair.Positions[V]) > 0.0f);
+	}
+
+	const FMantleHairHatFitResult Result = RunCards(Hair, Hat, Scalp);
+	TestEqual(TEXT("rule b: the card under the dome and the card mostly under it go whole"), Result.DroppedTriangles,
+		TArray<int32>({ 0, 1, 2, 3, 10, 11, 12, 13 }));
+	TestEqual(TEXT("rule b: two cards hidden"), Result.CardsHidden, 2);
+	TestEqual(TEXT("rule b: the dropped triangles are counted"), Result.TrianglesDropped, 8);
+	TestTrue(TEXT("rule b: only the crossing card's poking row moved (the hidden card's points are put back)"), OnlyMoved(Hair, Result, { 12, 13 }));
+	TestEqual(TEXT("rule b: two points pulled"), Result.PointsPulled, 2);
+	for (const int32 V : { 12, 13 })
+	{
+		TestNearlyEqual(TEXT("rule b: the crossing card's points under the hat end 0.5 cm under it"), Result.Positions[V].Size(),
+			HitAlong(Hat, Hair.Positions[V]) - 0.5f, 2.e-3f);
+		TestTrue(TEXT("rule b: pulled along its ray"), FVector3f::DotProduct(Result.Positions[V].GetSafeNormal(), Hair.Positions[V].GetSafeNormal()) > 0.99999f);
+	}
+
+	// Rule a on the same hair: nothing is tucked deep enough to drop or far enough out to cut; both poking rows are pulled in.
+	const FMantleHairHatFitResult RuleA = Run(Hair, Hat, Scalp);
+	TestEqual(TEXT("rule a: nothing dropped"), RuleA.TrianglesDropped, 0);
+	TestEqual(TEXT("rule a: no cards"), RuleA.CardsHidden, 0);
+	TestTrue(TEXT("rule a: the poking rows of C and D moved"), OnlyMoved(Hair, RuleA, { 12, 13, 18, 19, 20, 21 }));
+	TestEqual(TEXT("rule a: six points pulled"), RuleA.PointsPulled, 6);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleHairHatFitCardsBrimTest,
+	"Mantle.Runtime.HairHatFit.RuleB.BrimCards",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleHairHatFitCardsBrimTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleHairHatFitTestPrivate;
+
+	const FSoup Scalp = Head();
+	const FSoup Hat = BrimHat();
+	FMantleSkinnedMeshLOD Hair;
+	// E (points 0-5, triangles 0-3): hanging below the brim: its rays leave through the hat's open bottom.
+	AddCardStrip(Hair, 0.0f, { FVector2f(115.0f, 12.0f), FVector2f(125.0f, 12.0f), FVector2f(135.0f, 12.0f) });
+	// F (points 6-11, triangles 4-7): crosses the brim; one row of three pokes 0.3 cm out of the crown, two hang below the brim.
+	AddCardStrip(Hair, 120.0f, { FVector2f(95.0f, 10.3f), FVector2f(110.0f, 12.0f), FVector2f(120.0f, 12.0f) });
+	// G (points 12-17, triangles 8-11): crosses the brim with two rows of three through the crown: mostly under the hat.
+	AddCardStrip(Hair, 240.0f, { FVector2f(70.0f, 10.3f), FVector2f(85.0f, 10.3f), FVector2f(115.0f, 12.0f) });
+
+	for (const int32 V : { 0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 16, 17 })
+	{
+		TestTrue(TEXT("hair below the brim meets no hat"), HitAlong(Hat, Hair.Positions[V]) < 0.0f);
+	}
+	for (const int32 V : { 6, 7, 12, 13, 14, 15 })
+	{
+		TestTrue(TEXT("hair through the crown meets the hat"), HitAlong(Hat, Hair.Positions[V]) > 0.0f);
+	}
+
+	const FMantleHairHatFitResult Result = RunCards(Hair, Hat, Scalp);
+	TestEqual(TEXT("rule b: only the card mostly under the hat goes, its part below the brim too"), Result.DroppedTriangles, TriangleRange(8, 12));
+	TestEqual(TEXT("rule b: one card hidden"), Result.CardsHidden, 1);
+	TestTrue(TEXT("rule b: hair below the brim and the crossing card's outside part are untouched"), OnlyMoved(Hair, Result, { 6, 7 }));
+	TestEqual(TEXT("rule b: two points pulled"), Result.PointsPulled, 2);
+	for (const int32 V : { 6, 7 })
+	{
+		TestNearlyEqual(TEXT("rule b: the crossing card's inside points end 0.5 cm under the crown"), Result.Positions[V].Size(),
+			HitAlong(Hat, Hair.Positions[V]) - 0.5f, 2.e-3f);
+	}
+
+	// Rule a keeps every card and pulls in both poking rows.
+	const FMantleHairHatFitResult RuleA = Run(Hair, Hat, Scalp);
+	TestEqual(TEXT("rule a: nothing dropped"), RuleA.TrianglesDropped, 0);
+	TestTrue(TEXT("rule a: the poking rows of F and G moved"), OnlyMoved(Hair, RuleA, { 6, 7, 12, 13, 14, 15 }));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleHairHatFitCardsRulesTest,
+	"Mantle.Runtime.HairHatFit.RuleB.FacialHairGridAndDefault",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleHairHatFitCardsRulesTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleHairHatFitTestPrivate;
+
+	TestTrue(TEXT("the default aim is rule a"), FMantleHairHatFitParams().Aim == EMantleHairHatAim::PokingThrough);
+
+	const FSoup Scalp = Head();
+	{
+		// Facial hair ignores the aim: the poke test, drop only.
+		const FSoup Hat = Dome(HatRadiusCm, 100.0f);
+		const FMantleSkinnedMeshLOD Hair = DomeHair();
+		const FMantleHairHatFitResult AsCards = RunCards(Hair, Hat, Scalp, true);
+		const FMantleHairHatFitResult AsPoke = Run(Hair, Hat, Scalp, EMantleHairHatRule::UnderIt, true);
+		TestEqual(TEXT("facial hair: the same drops under either aim"), AsCards.DroppedTriangles, AsPoke.DroppedTriangles);
+		TestTrue(TEXT("facial hair: nothing moves under either aim"), SamePositions(AsCards.Positions, Hair.Positions));
+		TestEqual(TEXT("facial hair: no cards hidden"), AsCards.CardsHidden, 0);
+	}
+	{
+		// Scattered strips under a brim hat: grid and brute force give the very same rule b answer, and some of each outcome shows.
+		const FSoup Hat = BrimHat(32);
+		FRandomStream Random(20261124);
+		FMantleSkinnedMeshLOD Hair;
+		for (int32 Card = 0; Card < 120; ++Card)
+		{
+			const float Theta = Random.FRandRange(0.0f, 150.0f);
+			const float Phi = Random.FRandRange(0.0f, 360.0f);
+			const float Length = Random.FRandRange(10.0f, 50.0f);
+			TArray<FVector2f> Rows;
+			for (int32 Row = 0; Row < 5; ++Row)
+			{
+				Rows.Add(FVector2f(Theta + Length * static_cast<float>(Row) / 4.0f, Random.FRandRange(9.2f, 11.5f)));
+			}
+			AddCardStrip(Hair, Phi, Rows);
+		}
+		const FMantleHairHatFitResult A = RunCards(Hair, Hat, Scalp);
+		const FMantleHairHatFitResult B = RunCards(Hair, Hat, Scalp, false, true);
+		TestTrue(TEXT("scattered strips: some cards hidden"), A.CardsHidden > 0 && A.CardsHidden < 120);
+		TestTrue(TEXT("scattered strips: some points pulled"), A.PointsPulled > 0);
+		TestEqual(TEXT("scattered strips: a hidden card is 8 triangles"), A.TrianglesDropped, A.CardsHidden * 8);
+		TestTrue(TEXT("grid and brute force: same positions"), SamePositions(A.Positions, B.Positions));
+		TestEqual(TEXT("grid and brute force: same drops"), A.DroppedTriangles, B.DroppedTriangles);
+		TestEqual(TEXT("grid and brute force: same cards"), A.CardsHidden, B.CardsHidden);
+	}
 	return true;
 }
 

@@ -16,6 +16,24 @@ enum class EMantleHairHatRule : uint8
 };
 
 /**
+ * What the UnderIt rule aims at in scalp hair (#389). Facial hair ignores it: beards always get the poke test, drop only.
+ * PokingThrough is the rule the game uses; UnderHatCards is the plan's first wording, kept so the two can be compared by eye
+ * (a dev-only switch picks it, see FMantleCosmeticCache).
+ */
+enum class EMantleHairHatAim : uint8
+{
+	/** Rule a: the hair that pokes out through the hat is pulled in under it; a triangle goes only when all three of its corners are lost. */
+	PokingThrough,
+	/**
+	 * Rule b: a point is under the hat when its ray from the head centre meets the hat (it lies inside the hat or pokes out
+	 * through it). A card (welded, connected triangles) with more than CardHiddenShare of its points under the hat is hidden
+	 * whole; every other card stays whole, its points under the hat pulled in to PullInCm under it (as rule a moves them).
+	 * Hair the hat does not cover (below the brim, through an open top) is never moved.
+	 */
+	UnderHatCards
+};
+
+/**
  * Directions from one origin, sorted into a cube-map grid, so "the first triangle a ray from the origin meets" looks at a
  * few triangles instead of all of them. Every ray of a fit starts at the head centre, so the one grid serves them all.
  * Each triangle is listed in every cell its projection from the origin can touch (the bounding box of the projected,
@@ -54,6 +72,9 @@ struct FMantleHairHatFitParams
 {
 	EMantleHairHatRule Rule = EMantleHairHatRule::UnderIt;
 
+	/** What UnderIt does to scalp hair; PokingThrough unless a dev comparison asks for UnderHatCards. */
+	EMantleHairHatAim Aim = EMantleHairHatAim::PokingThrough;
+
 	/** Beards: the poke test with drop only (nothing is pulled in), and HideAll never hides them whole. Eyebrows and lashes are
 	 *  never fitted under a hat (the caller leaves them out). */
 	bool bFacialHair = false;
@@ -85,6 +106,9 @@ struct FMantleHairHatFitResult
 	/** How many of the dropped triangles are speck clean-up. */
 	int32 TrianglesDroppedAsSpecks = 0;
 
+	/** UnderHatCards: the cards hidden whole (their triangles are in DroppedTriangles). */
+	int32 CardsHidden = 0;
+
 	/** What the fit took, in milliseconds. */
 	double Ms = 0.0;
 };
@@ -95,6 +119,8 @@ struct FMantleHairHatFitResult
  * Hair inside an opaque hat is already unseen, so the job is the hair that pokes through. For each hair point a ray goes from
  * the head centre through the point and takes the first place it meets the hat; Judge says what to do with the answer.
  * The thresholds are named constants and Judge / CornerIsLost hold all the decisions, so a different rule is a small change.
+ * FMantleHairHatFitParams::Aim picks what is dropped: triangles poking wholly through (the default) or whole cards mostly
+ * under the hat (EMantleHairHatAim::UnderHatCards); the rays, Judge and the pull-in are the same for both.
  */
 class MANTLERUNTIME_API FMantleHairHatFit
 {
@@ -113,6 +139,8 @@ public:
 	static constexpr float SpeckAreaShare = 0.95f;
 	/** ...unless the "card" holds more than this share of the hair's triangles (a solid hair shell is one giant card). */
 	static constexpr float SpeckMaxCardShare = 0.10f;
+	/** UnderHatCards: a card with more than this share of its points under the hat is hidden whole. */
+	static constexpr float CardHiddenShare = 0.5f;
 	/** The head centre is this far below the top of the head skin, ... */
 	static constexpr float HeadCentreBelowTopCm = 7.0f;
 	/** ...with X and Y the average of the skin points in this much of the top. */

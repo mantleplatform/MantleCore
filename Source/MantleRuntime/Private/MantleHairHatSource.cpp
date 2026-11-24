@@ -232,7 +232,7 @@ FString FMantleHairHatSource::KeyPiece() const
 	return FString::Printf(TEXT("%s=%s/%s/%08x"), *SlotId, *MeshHash, MantleHairHatSourcePrivate::RuleName(Rule), PlacementHash());
 }
 
-FString FMantleHairHatSource::KeyFor(const TConstArrayView<FMantleHairHatSource> Sources)
+FString FMantleHairHatSource::KeyFor(const TConstArrayView<FMantleHairHatSource> Sources, const EMantleHairHatAim Aim)
 {
 	if (Sources.IsEmpty())
 	{
@@ -243,7 +243,9 @@ FString FMantleHairHatSource::KeyFor(const TConstArrayView<FMantleHairHatSource>
 	{
 		Pieces.Add(Source.KeyPiece());
 	}
-	return FString::Printf(TEXT(":hathair-v%d[%s]"), RuleVersion, *FString::Join(Pieces, TEXT(";")));
+	// The default aim's key is the one fits have always had; the dev comparison's rule b is a fit of its own.
+	const TCHAR* AimSuffix = Aim == EMantleHairHatAim::UnderHatCards ? TEXT("-cards") : TEXT("");
+	return FString::Printf(TEXT(":hathair-v%d%s[%s]"), RuleVersion, AimSuffix, *FString::Join(Pieces, TEXT(";")));
 }
 
 bool FMantleHairHatSource::BoneComponentTransform(const FMantleSkinnedMesh& Body, const FName Bone, FTransform& Out)
@@ -334,7 +336,7 @@ bool FMantleHairHatSource::ReadMesh(TArray<FVector3f>& OutPositions, TArray<uint
 
 bool FMantleHairHatSource::ApplyTriangles(const TConstArrayView<FVector3f> HatPositions, const TConstArrayView<uint32> HatIndices,
 	const TConstArrayView<FVector3f> ScalpPositions, const TConstArrayView<uint32> ScalpIndices,
-	const bool bFacialHair, FMantleSkinnedMesh& Hair, FMantleHairHatStats& Stats, FString& Error)
+	const bool bFacialHair, FMantleSkinnedMesh& Hair, FMantleHairHatStats& Stats, FString& Error, const EMantleHairHatAim Aim)
 {
 	if (HatIndices.Num() < 3 || ScalpIndices.Num() < 3)
 	{
@@ -342,6 +344,7 @@ bool FMantleHairHatSource::ApplyTriangles(const TConstArrayView<FVector3f> HatPo
 	}
 	FMantleHairHatFitParams Params;
 	Params.Rule = EMantleHairHatRule::UnderIt;
+	Params.Aim = Aim;
 	Params.bFacialHair = bFacialHair;
 	// Every ray starts from the same point inside the head, whatever the LOD.
 	Params.HeadCentre = FMantleHairHatFit::HeadCentreFromSkin(ScalpPositions, ScalpIndices);
@@ -412,7 +415,7 @@ bool FMantleHairHatSource::ApplyTriangles(const TConstArrayView<FVector3f> HatPo
 }
 
 bool FMantleHairHatSource::Apply(const TConstArrayView<FMantleHairHatSource> Sources, const FMantleSkinnedMesh& Body, const FMantleSkinnedMesh& Face,
-	const bool bFacialHair, FMantleSkinnedMesh& Hair, FMantleHairHatStats& Stats, FString& Error)
+	const bool bFacialHair, FMantleSkinnedMesh& Hair, FMantleHairHatStats& Stats, FString& Error, const EMantleHairHatAim Aim)
 {
 	using namespace MantleHairHatSourcePrivate;
 	Stats = FMantleHairHatStats();
@@ -497,7 +500,7 @@ bool FMantleHairHatSource::Apply(const TConstArrayView<FMantleHairHatSource> Sou
 		Error = TEXT("the wearer's face has no head skin to fit the hair under a hat against");
 		return Finish(false, Error);
 	}
-	const bool bResult = ApplyTriangles(HatPositions, HatIndices, ScalpPositions, ScalpIndices, bFacialHair, Hair, Stats, Error);
+	const bool bResult = ApplyTriangles(HatPositions, HatIndices, ScalpPositions, ScalpIndices, bFacialHair, Hair, Stats, Error, Aim);
 	Stats.bApplied = bResult;
 	return Finish(bResult, Error);
 }
