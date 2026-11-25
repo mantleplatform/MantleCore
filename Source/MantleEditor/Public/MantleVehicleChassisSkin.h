@@ -348,6 +348,9 @@ struct MANTLEEDITOR_API FMantleVehicleChassisSkin
 	/** The six parts that open, in the order the window lists them. */
 	static TConstArrayView<EMantleVehicleHingePart> HingeParts();
 
+	/** Whether Part is a door (the four of them), not the hood or the trunk. A vehicle with no inside leaves every door shut and still opens the other two. */
+	static bool IsDoorPart(EMantleVehicleHingePart Part) { return Part != EMantleVehicleHingePart::Hood && Part != EMantleVehicleHingePart::Trunk; }
+
 	/** A part's name in plain words, for the window and the notes: "Driver door", "Hood". */
 	static FText HingeLabel(EMantleVehicleHingePart Part);
 

@@ -992,4 +992,84 @@ bool FMantleVehicleHingesPublishTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleHiddenRidersHingesTest,
+	"Mantle.Vehicle.ChassisSkin.HiddenRidersShutDoors",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleHiddenRidersHingesTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleChassisSkinTestPrivate;
+	using namespace MantleVehicleHingeTestPrivate;
+	FMantleChassisSpec Spec;
+	FMantleVehicleAsset Gray;
+	if (!Load(*this, TEXT("sedan"), Spec, Gray))
+	{
+		return false;
+	}
+	// The same car as the all-six test: a body with a bone for each door, the hood and the trunk.
+	const TArray<FMantleVehiclePartSlot> Slots = FMantleVehicleChassisSkin::PartSlots(Spec, Gray.Body);
+	const FMantleVehicleModel Model = HingeCar();
+	FMantleVehicleModelMap Map;
+	Map.Hinges = FMantleVehicleChassisSkin::SuggestHinges(Model);
+	const FMantleVehicleModelPlacement Placement = FMantleVehicleChassisSkin::FitPlacement(Spec, Gray.Body, Model, 0.0, Map);
+	FMantleVehicleSkinned Skinned;
+	FString Error;
+	if (!TestTrue(*FString::Printf(TEXT("the model skins (%s)"), *Error), FMantleVehicleChassisSkin::Skin(Gray.Body, Slots, Model, Placement, Map, Skinned, Error)))
+	{
+		return false;
+	}
+	const FString MeshName = FString::Printf(TEXT("HiddenRidersBody%s"), *FGuid::NewGuid().ToString(EGuidFormats::Digits).Left(8));
+	USkeletalMesh* Mesh = FMantleVehicleChassisMesh::Create(Skinned.Body, TEXT("/Temp/MantleHingeTest"), MeshName, Error, &Skinned.Materials, &Skinned.Extras);
+	if (!TestNotNull(*FString::Printf(TEXT("the body becomes a mesh (%s)"), *Error), Mesh))
+	{
+		return false;
+	}
+	ON_SCOPE_EXIT
+	{
+		if (USkeleton* Skeleton = Mesh->GetSkeleton())
+		{
+			Skeleton->ClearFlags(RF_Public | RF_Standalone);
+			Skeleton->MarkAsGarbage();
+		}
+		Mesh->ClearFlags(RF_Public | RF_Standalone);
+		Mesh->MarkAsGarbage();
+	};
+	const auto MakeSource = [Mesh]()
+	{
+		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
+		Source->Body = Mesh;
+		Source->Tuning.bSeatLocation = true;
+		Source->Tuning.bPassengerSeat = true;
+		return Source;
+	};
+	const auto DoorsOpen = [](const FMantleVehicleSourceTuning& T) { return T.bHasDriverDoor || T.bHasPassengerDoor || T.bRearLeftDoor || T.bRearRightDoor; };
+	const auto AllDoorsOpen = [](const FMantleVehicleSourceTuning& T) { return T.bHasDriverDoor && T.bHasPassengerDoor && T.bRearLeftDoor && T.bRearRightDoor; };
+
+	// At build time: riders already hidden, so the doors are left shut and the hood and trunk open. The note says why.
+	UMantleVehicleSource* Hidden = MakeSource();
+	Hidden->Tuning.bHideDriver = Hidden->Tuning.bHidePassenger = true;
+	TArray<FString> Notes;
+	FMantleVehicleBuilder::ApplyHinges(*Hidden, Skinned.Hinges, Notes);
+	TestFalse(TEXT("no door has a hinge when the riders are hidden"), DoorsOpen(Hidden->Tuning));
+	TestTrue(TEXT("the hood and the trunk still open"), Hidden->Tuning.bHood && Hidden->Tuning.bTrunk);
+	TestTrue(TEXT("the build says the doors stay shut"), Notes.ContainsByPredicate([](const FString& Note) { return Note.Contains(TEXT("Doors stay shut")); }));
+
+	// Negative control, so that the silence above means something: the same car with the riders shown gets its four doors.
+	UMantleVehicleSource* Shown = MakeSource();
+	Notes.Reset();
+	FMantleVehicleBuilder::ApplyHinges(*Shown, Skinned.Hinges, Notes);
+	TestTrue(TEXT("with the riders shown all four doors open"), AllDoorsOpen(Shown->Tuning));
+
+	// After the build: ticking the box clears the doors and keeps the hood and trunk; unticking it brings the doors back from the body's bones.
+	FMantleVehicleBuilder::SetHiddenRiders(*Shown, nullptr, true);
+	TestFalse(TEXT("hiding the riders clears every door"), DoorsOpen(Shown->Tuning));
+	TestTrue(TEXT("hiding the riders keeps the hood and the trunk"), Shown->Tuning.bHood && Shown->Tuning.bTrunk && Shown->Tuning.HoodLid.Bone != NAME_None && Shown->Tuning.TrunkLid.Bone != NAME_None);
+	FMantleVehicleBuilder::SetHiddenRiders(*Shown, nullptr, false);
+	TestTrue(TEXT("showing the riders again gives all four doors back"), AllDoorsOpen(Shown->Tuning));
+	TestEqual(TEXT("the driver door is on its bone again"), Shown->Tuning.DriverDoor.Bone.ToString(), FString(TEXT("door_dside_f")));
+	TestTrue(TEXT("the hood and the trunk are still there"), Shown->Tuning.bHood && Shown->Tuning.bTrunk);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

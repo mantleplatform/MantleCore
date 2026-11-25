@@ -1888,7 +1888,7 @@ void FMantleVehicleConverter::AddHinges(const FMantleVehicleModel& Model, const 
 		bool bDoorsLeft = false;
 		for (const TPair<EMantleVehicleHingePart, FName>& Candidate : Wanted.Bones)
 		{
-			const bool bDoor = Candidate.Key != EMantleVehicleHingePart::Hood && Candidate.Key != EMantleVehicleHingePart::Trunk;
+			const bool bDoor = FMantleVehicleChassisSkin::IsDoorPart(Candidate.Key);
 			if (bDoor && !Refused.Contains(Candidate.Key))
 			{
 				Refused.AddUnique(Candidate.Key);
