@@ -4161,16 +4161,38 @@ TSharedPtr<const FMantleBakeMesh> FMantleBakeMesh::FromSection(const FMantleGlbM
 		return nullptr;
 	}
 	const bool bTangents = Mesh.Tangents.Num() == NumVertices;
-	// A mesh with no second UV set reads its UV0 there, as the engine does. A second set that does not cover the vertices is a reader that
-	// lost it on the way (a merged tire did), never a mesh without one: refused out loud, not baked by UV0 (SUV04's lamps came out dark).
-	if (!Mesh.UV1s.IsEmpty() && Mesh.UV1s.Num() != NumVertices)
+	// A mesh with no second UV set: the material reads UV0 there, as the engine does, which is what a bake on a card draws. Nothing to bake
+	// over its triangles (a FiveM car's glTF materials name a UV1 they never get, and its prints are mostly triangles with no UV area,
+	// which the packer turned into non-finite places the cook refused). A second set that does not cover the vertices is a reader that lost
+	// it on the way (a merged tire did): refused out loud, not baked by UV0 (SUV04's lamps came out dark).
+	if (Mesh.UV1s.IsEmpty())
+	{
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_UV_BAKE section %d of %s: the mesh has no second UV set, so its material reads UV0 there; it bakes on a card"),
+			MaterialIndex, *Mesh.Name);
+		return nullptr;
+	}
+	if (Mesh.UV1s.Num() != NumVertices)
 	{
 		UE_LOG(LogMantle, Error, TEXT("MANTLE_UV_BAKE section %d of %s: its second UV set has %d entries for %d vertices; it is not baked over its triangles"),
 			MaterialIndex, *Mesh.Name, Mesh.UV1s.Num(), NumVertices);
 		return nullptr;
 	}
-	const bool bUV1 = Mesh.UV1s.Num() == NumVertices;
 	const bool bColors = Mesh.Colors.Num() == NumVertices;
+	// A non-finite value in what the bake reads or the layout is made from would reach the published mesh (the cook refuses it).
+	{
+		int32 NonFinite = 0;
+		for (const int32 Vertex : Vertices)
+		{
+			NonFinite += Mesh.Positions[Vertex].ContainsNaN() || Mesh.Normals[Vertex].ContainsNaN() || Mesh.UVs[Vertex].ContainsNaN()
+				|| Mesh.UV1s[Vertex].ContainsNaN() ? 1 : 0;
+		}
+		if (NonFinite > 0)
+		{
+			UE_LOG(LogMantle, Warning, TEXT("MANTLE_UV_BAKE section %d of %s: %d of its %d vertices hold a non-finite position, normal or UV; it bakes on a card"),
+				MaterialIndex, *Mesh.Name, NonFinite, Vertices.Num());
+			return nullptr;
+		}
+	}
 	for (const int32 Vertex : Vertices)
 	{
 		Out->Positions.Add(Mesh.Positions[Vertex]);
@@ -4180,7 +4202,7 @@ TSharedPtr<const FMantleBakeMesh> FMantleBakeMesh::FromSection(const FMantleGlbM
 			Out->Tangents.Add(Mesh.Tangents[Vertex]);
 		}
 		Out->UV0s.Add(Mesh.UVs[Vertex]);
-		Out->UV1s.Add(bUV1 ? Mesh.UV1s[Vertex] : Mesh.UVs[Vertex]);
+		Out->UV1s.Add(Mesh.UV1s[Vertex]);
 		if (bColors)
 		{
 			Out->Colors.Add(Mesh.Colors[Vertex]);
@@ -4228,6 +4250,27 @@ TSharedPtr<const FMantleBakeMesh> FMantleBakeMesh::FromSection(const FMantleGlbM
 		{
 			Packer.CommitPackedUVs();
 			bPacked = View.Output.Num() == Out->Indices.Num();
+			// Unreal's packer can place a corner at a non-finite UV (LayoutUV.cpp scales charts by their UV area, and a chart with none
+			// divides by zero); the published mesh would carry it and the cook refuses the vehicle. Such a layout is not used.
+			int32 NonFinite = 0;
+			for (const FVector2f& Place : View.Output)
+			{
+				NonFinite += Place.ContainsNaN() ? 1 : 0;
+			}
+			if (bPacked && NonFinite > 0)
+			{
+				int32 NoUvArea = 0;
+				for (int32 Corner = 0; Corner + 2 < Out->Indices.Num(); Corner += 3)
+				{
+					const FVector2f A = Out->UV0s[Out->Indices[Corner]];
+					const FVector2f B = Out->UV0s[Out->Indices[Corner + 1]];
+					const FVector2f C = Out->UV0s[Out->Indices[Corner + 2]];
+					NoUvArea += FMath::Abs(FVector2f::CrossProduct(B - A, C - A)) < UE_SMALL_NUMBER ? 1 : 0;
+				}
+				UE_LOG(LogMantle, Warning, TEXT("MANTLE_UV_BAKE section %d of %s: the packer placed %d of %d corners at a non-finite UV (%d of its %d triangles have no UV area)"),
+					MaterialIndex, *Mesh.Name, NonFinite, View.Output.Num(), NoUvArea, Out->Indices.Num() / 3);
+				bPacked = false;
+			}
 		}
 		if (!bPacked)
 		{
@@ -4326,8 +4369,8 @@ TSharedPtr<const FMantleBakeMesh> FMantleBakeMesh::FromSection(const FMantleGlbM
 	uint8 Digest[FSHA1::DigestSize];
 	Sha.GetHash(Digest);
 	Out->Hash = BytesToHex(Digest, 8).ToLower();
-	UE_LOG(LogMantle, Log, TEXT("MANTLE_UV_BAKE section %d of %s: %d triangles, %s; its UV0 draws %.1f%% of its texels twice; baked by %s, %.1f%% of that layout drawn twice, %d vertex copies for bow-tie corners%s; hash %s"),
-		MaterialIndex, *Mesh.Name, Out->Indices.Num() / 3, bUV1 ? TEXT("UV1 from the mesh") : TEXT("no second UV set (UV0 read in its place)"), 100.0 * Uv0Overlap, Out->bOwnLayout ? TEXT("a layout of its own") : (bMayRelayout ? TEXT("its UV0") : TEXT("its UV0 (other things read it)")),
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_UV_BAKE section %d of %s: %d triangles, UV1 from the mesh; its UV0 draws %.1f%% of its texels twice; baked by %s, %.1f%% of that layout drawn twice, %d vertex copies for bow-tie corners%s; hash %s"),
+		MaterialIndex, *Mesh.Name, Out->Indices.Num() / 3, 100.0 * Uv0Overlap, Out->bOwnLayout ? TEXT("a layout of its own") : (bMayRelayout ? TEXT("its UV0") : TEXT("its UV0 (other things read it)")),
 		100.0 * Out->LayoutOverlap(), Split,
 		Unsplit > 0 ? *FString::Printf(TEXT(", %d corner(s) left unsplit (a section of several primitives)"), Unsplit) : TEXT(""), *Out->Hash);
 	return Out;

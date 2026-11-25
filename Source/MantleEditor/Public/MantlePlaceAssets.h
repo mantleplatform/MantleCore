@@ -415,8 +415,9 @@ struct MANTLEEDITOR_API FMantleBakeMesh
 
 	/**
 	 * The section of Mesh drawn with material MaterialIndex (every primitive of it), set up for a bake: laid out by its UV0, or by a layout of
-	 * its own when bMayRelayout and its UV0 overlaps itself. Null when it has no triangles (it then bakes on a card, as before); a layout the
-	 * packer cannot make keeps UV0. The same mesh gives the same layout and Hash every time.
+	 * its own when bMayRelayout and its UV0 overlaps itself. Null (it then bakes on a card, as before) when it has no triangles, when the mesh
+	 * has no second UV set (the material reads UV0 there, which the card draws), or when a position, normal or UV it reads is not finite; a
+	 * layout the packer cannot make, or makes with a non-finite place, keeps UV0. The same mesh gives the same layout and Hash every time.
 	 */
 	static TSharedPtr<const FMantleBakeMesh> FromSection(const FMantleGlbMesh& Mesh, int32 MaterialIndex, bool bMayRelayout = true);
 
