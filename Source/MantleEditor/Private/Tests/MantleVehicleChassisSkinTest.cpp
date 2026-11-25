@@ -1072,7 +1072,7 @@ bool FMantleVehicleHiddenRidersHingesTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-#endif // WITH_DEV_AUTOMATION_TESTS
+
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleVehicleSkinSteeringWheelTest,
@@ -1161,4 +1161,4 @@ bool FMantleVehicleSkinSteeringWheelTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-#endif
+#endif // WITH_DEV_AUTOMATION_TESTS
