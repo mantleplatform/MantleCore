@@ -157,6 +157,7 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("lights/beams/*/direction/*"), -1.0, 1.0 },
 		{ TEXT("liveryUV"), 0.0, 0.0 },
 		{ TEXT("defaultLivery"), 0.0, 7.0 },
+		{ TEXT("liveryGlow/*/strength"), 0.0, 100.0 },
 		// (b) suspension linkage.
 		{ TEXT("linkage/*/weight"), 0.0, 1.0 },
 		// Item 2 attached parts.
