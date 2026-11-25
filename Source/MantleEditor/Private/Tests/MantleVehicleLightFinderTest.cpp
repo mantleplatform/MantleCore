@@ -12,6 +12,8 @@
 #include "Engine/Texture2D.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionAdd.h"
+#include "Materials/MaterialExpressionConstant.h"
+#include "Materials/MaterialExpressionLinearInterpolate.h"
 #include "Materials/MaterialExpressionMultiply.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
@@ -160,6 +162,48 @@ namespace MantleVehicleLightsTestPrivate
 			Emissive = Second;
 		}
 		Material->GetEditorOnlyData()->EmissiveColor.Connect(0, Emissive);
+		Material->UpdateCachedExpressionData();
+		return Material;
+	}
+
+	/** Every cell of MakeGlowTexture's 4x4. */
+	TArray<FIntPoint> AllCells()
+	{
+		TArray<FIntPoint> Cells;
+		for (int32 Y = 0; Y < 4; ++Y)
+		{
+			for (int32 X = 0; X < 4; ++X)
+			{
+				Cells.Add(FIntPoint(X, Y));
+			}
+		}
+		return Cells;
+	}
+
+	/**
+	 * An interior as SUV04 makes it: emissive = Multiply(Lerp(A = 0, B = a color picture, Alpha = a mask's red), Scalar "EmissiveStrength" 2). The picture is white
+	 * all over; the mask is white only at MaskCells. OutPicture and OutMask are the two textures.
+	 */
+	UMaterial* MakeMaskedMaterial(const TArray<FIntPoint>& MaskCells, UTexture2D*& OutPicture, UTexture2D*& OutMask)
+	{
+		UMaterial* Material = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+		OutPicture = MakeGlowTexture(Material, TEXT("T_Interior_BaseColor"), FColor::White, AllCells());
+		OutMask = MakeGlowTexture(Material, TEXT("T_Interior_Masks"), FColor::White, MaskCells);
+		UMaterialExpressionConstant* Zero = AddNode<UMaterialExpressionConstant>(Material);
+		Zero->R = 0.f;
+		UMaterialExpressionLinearInterpolate* Lerp = AddNode<UMaterialExpressionLinearInterpolate>(Material);
+		Lerp->A.Connect(0, Zero);
+		Lerp->B.Connect(0, AddSample(Material, TEXT("BaseTexture"), OutPicture));
+		// Output 1 of a texture sample is its red.
+		Lerp->Alpha.Connect(1, AddSample(Material, TEXT("TextureMasks"), OutMask));
+		UMaterialExpressionScalarParameter* Strength = AddNode<UMaterialExpressionScalarParameter>(Material);
+		Strength->ParameterName = TEXT("EmissiveStrength");
+		Strength->DefaultValue = 2.f;
+		Strength->UpdateParameterGuid(true, false);
+		UMaterialExpressionMultiply* Multiply = AddNode<UMaterialExpressionMultiply>(Material);
+		Multiply->A.Connect(0, Lerp);
+		Multiply->B.Connect(0, Strength);
+		Material->GetEditorOnlyData()->EmissiveColor.Connect(0, Multiply);
 		Material->UpdateCachedExpressionData();
 		return Material;
 	}
@@ -508,6 +552,64 @@ bool FMantleVehicleLightsGlowTexturesTest::RunTest(const FString& Parameters)
 	{
 		TestTrue(TEXT("it keeps its one texture"), TextureOf(Head, TEXT("Lights")) == SingleTexture);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleLightsGlowMaskTest,
+	"Mantle.Vehicle.Lights.GlowMask",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleLightsGlowMaskTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleLightsTestPrivate;
+	const int32 Head = static_cast<int32>(EMantleLightKind::Head);
+	const int32 Reverse = static_cast<int32>(EMantleLightKind::Reverse);
+
+	// Read finds the mask: the picture lerped in by the mask is the glow, the mask's red is the mask.
+	UTexture2D* Picture = nullptr;
+	UTexture2D* Mask = nullptr;
+	UMaterial* OneSpot = MakeMaskedMaterial({ FIntPoint(2, 2) }, Picture, Mask);
+	FMantleMaterialGlow Glow;
+	TestTrue(TEXT("the masked material glows"), FMantleMaterialGlow::Read(OneSpot, Glow));
+	TestTrue(TEXT("the picture is the glow texture"), Glow.Texture == Picture);
+	TestEqual(TEXT("and the only one"), Glow.Textures.Num(), 1);
+	TestTrue(TEXT("the mask is the mask"), Glow.MaskTexture == Mask);
+	TestTrue(TEXT("read by its red"), Glow.MaskChannel == EMantleGlowMaskChannel::R);
+	TestEqual(TEXT("over the first UV set"), Glow.MaskUV, 0);
+
+	// A material with no mask reads as before.
+	TestTrue(TEXT("a lights material glows"), FMantleMaterialGlow::Read(MakeLightsMaterial(false), Glow));
+	TestTrue(TEXT("it has no mask"), Glow.MaskTexture == nullptr);
+	TestEqual(TEXT("and its one glow texture"), Glow.Textures.Num(), 1);
+
+	// The finder: the picture is white everywhere, the mask only at the back right quad, which then alone is lit (white at the back is a reverse light).
+	FMantleSkinnedMesh Body;
+	TArray<FSkeletalMaterial> Materials;
+	MakeBody(Body, Materials, TEXT("M_Body"));
+	LayUVs(Body);
+	Materials[0].MaterialInterface = OneSpot;
+	const FMantleVehicleLightGuess Masked = FMantleVehicleLights::Find(Body, Materials, false);
+	TestEqual(TEXT("only the quad the mask lights glows"), Masked.Triangles[Reverse], TArray<int32>({ 6, 7 }));
+	TestTrue(TEXT("nothing else is a light"), Masked.Triangles[Head].IsEmpty() && Masked.WholeSlots[Head].IsEmpty() && Masked.WholeSlots[Reverse].IsEmpty()
+		&& Masked.Triangles[static_cast<int32>(EMantleLightKind::Rear)].IsEmpty());
+
+	// A mask that lights more than the share a masked glow may (here 6 of 10 triangles) is a picture, not lights: the triangles stay on the body.
+	UMaterial* Wide = MakeMaskedMaterial({ FIntPoint(0, 0), FIntPoint(2, 2) }, Picture, Mask);
+	Materials[0].MaterialInterface = Wide;
+	const FMantleVehicleLightGuess Rejected = FMantleVehicleLights::Find(Body, Materials, false);
+	TestFalse(TEXT("too wide a masked glow finds no light"), Rejected.FoundAny());
+
+	// A lens switched off in the model (its intensity at 0) still glows where its texture says: the front quads.
+	UMaterial* Lens = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+	UMaterialExpressionMultiply* Switched = AddSwitched(Lens, AddSample(Lens, TEXT("Lights"), MakeGlowTexture(Lens, TEXT("T_Lens_emissive"), FColor::White, { FIntPoint(0, 0) })), TEXT("LightIntensity"));
+	Lens->GetEditorOnlyData()->EmissiveColor.Connect(0, Switched);
+	Lens->UpdateCachedExpressionData();
+	TestTrue(TEXT("the lens glows"), FMantleMaterialGlow::Read(Lens, Glow));
+	TestTrue(TEXT("with no mask"), Glow.MaskTexture == nullptr);
+	TestEqual(TEXT("its switch is listed off"), Glow.OffScalars.Num(), 1);
+	Materials[0].MaterialInterface = Lens;
+	TestEqual(TEXT("a switched-off lens is on, as before"), FMantleVehicleLights::Find(Body, Materials, false).Triangles[Head], TArray<int32>({ 0, 1, 2, 3 }));
 	return true;
 }
 

@@ -9,6 +9,7 @@
 #include "HAL/IConsoleManager.h"
 #include "ImageCore.h"
 #include "MantleGlowMaterial.h"
+#include "MantleRuntime.h"
 #include "MantleSkinnedMesh.h"
 #include "MantleVehicleChassisMesh.h"
 #include "MantleVehicleConverter.h"
@@ -28,6 +29,13 @@ namespace MantleVehicleLightsPrivate
 
 	/** How bright (0..1, the brightest channel) a glow texture must be under a triangle for the triangle to glow: the dark of a glow texture is near 0. */
 	constexpr float GlowThreshold = 0.3f;
+
+	/**
+	 * The most of a material's triangles that may glow when its glow is only a mask or the car's own color picture (no glow-specific texture to say where): more than
+	 * this share is the whole surface lit by a picture that is not a glow, not lights, and the material's triangles stay on the body. Measured on SUV04: interior vs
+	 * lens (see PR).
+	 */
+	constexpr float MaxMaskedGlowShare = 0.25f;
 
 	/** How far toward the end (of the half length, 0 the middle, 1 the end) a white or red spot must be to be a headlight, rear or reverse light. */
 	constexpr float EndShare = 0.35f;
@@ -88,15 +96,35 @@ namespace MantleVehicleLightsPrivate
 			return Pixels.Num() == Width * Height && Pixels.Num() > 0;
 		}
 
-		/** The color at a UV, the texture repeating (a model may lay its UVs over 1..2, as the Fab Hatchback does). */
-		FLinearColor At(const FVector2f& UV) const
+		/** The pixel at a UV, the texture repeating (a model may lay its UVs over 1..2, as the Fab Hatchback does). */
+		const FColor& PixelAt(const FVector2f& UV) const
 		{
 			const float U = UV.X - FMath::FloorToFloat(UV.X);
 			const float V = UV.Y - FMath::FloorToFloat(UV.Y);
 			const int32 X = FMath::Clamp(static_cast<int32>(U * Width), 0, Width - 1);
 			const int32 Y = FMath::Clamp(static_cast<int32>(V * Height), 0, Height - 1);
-			const FColor& Pixel = Pixels[Y * Width + X];
+			return Pixels[Y * Width + X];
+		}
+
+		/** The color at a UV. */
+		FLinearColor At(const FVector2f& UV) const
+		{
+			const FColor& Pixel = PixelAt(UV);
 			return FLinearColor(Pixel.R / 255.f, Pixel.G / 255.f, Pixel.B / 255.f);
+		}
+
+		/** A mask's value (0..1) at a UV: the channel it is read by (RGB is the brightest of the three). */
+		float MaskAt(const FVector2f& UV, const EMantleGlowMaskChannel Channel) const
+		{
+			const FColor& Pixel = PixelAt(UV);
+			switch (Channel)
+			{
+			case EMantleGlowMaskChannel::R: return Pixel.R / 255.f;
+			case EMantleGlowMaskChannel::G: return Pixel.G / 255.f;
+			case EMantleGlowMaskChannel::B: return Pixel.B / 255.f;
+			case EMantleGlowMaskChannel::A: return Pixel.A / 255.f;
+			default: return FMath::Max3(Pixel.R, Pixel.G, Pixel.B) / 255.f;
+			}
 		}
 	};
 
@@ -201,8 +229,11 @@ namespace MantleVehicleLightsPrivate
 	/**
 	 * The glow under a triangle, read at its middle, halfway to each corner and halfway to each edge's middle, and the UV it was read at. A colored glow wins over a
 	 * white one (a lens laid over a red tail light and a white reverse light reads as the tail light, the bigger of the two on a car); else the brightest.
+	 * A glow with a mask (Mask, read by Channel at the same UV: the mesh has one UV set, so the mask's own UV index has nothing else to point at) shows only
+	 * where the mask does: each sample is the glow times the mask there.
 	 */
-	FLinearColor GlowUnder(const FMantleSkinnedMeshLOD& LOD, const int32 Triangle, const FGlowImage& Image, FVector2f& OutUV)
+	FLinearColor GlowUnder(const FMantleSkinnedMeshLOD& LOD, const int32 Triangle, const FGlowImage& Image, FVector2f& OutUV, const FGlowImage* Mask = nullptr,
+		const EMantleGlowMaskChannel Channel = EMantleGlowMaskChannel::RGB)
 	{
 		int32 C[3];
 		Corners(LOD, Triangle, C);
@@ -222,7 +253,11 @@ namespace MantleVehicleLightsPrivate
 		OutUV = Middle;
 		for (const FVector2f& UV : Samples)
 		{
-			const FLinearColor Here = Image.At(UV);
+			FLinearColor Here = Image.At(UV);
+			if (Mask)
+			{
+				Here *= Mask->MaskAt(UV, Channel);
+			}
 			if (Brightest(Here) < GlowThreshold)
 			{
 				continue;
@@ -236,6 +271,24 @@ namespace MantleVehicleLightsPrivate
 			}
 		}
 		return Best;
+	}
+
+	/** The pixels of a glow's mask; null for a glow with none, or (bUnreadable set) one Mantle cannot read (no source data), where nothing is guessed. */
+	const FGlowImage* MaskImageOf(const FMantleMaterialGlow& Glow, TMap<UTexture*, TSharedPtr<FGlowImage>>& Images, bool& bUnreadable)
+	{
+		bUnreadable = false;
+		if (!Glow.MaskTexture)
+		{
+			return nullptr;
+		}
+		TSharedPtr<FGlowImage>& Cached = Images.FindOrAdd(Glow.MaskTexture);
+		if (!Cached.IsValid())
+		{
+			Cached = MakeShared<FGlowImage>();
+			Cached->Read(Glow.MaskTexture);
+		}
+		bUnreadable = Cached->Pixels.Num() == 0;
+		return bUnreadable ? nullptr : Cached.Get();
 	}
 
 	/**
@@ -292,7 +345,7 @@ namespace MantleVehicleLightsPrivate
 	 * lights it as a kind, by the color and position Classify reads.
 	 */
 	void KindsFromTextures(const FMantleSkinnedMeshLOD& LOD, const TArray<int32>& Triangles, const FMantleMaterialGlow& Glow, const FBox3f& Bounds,
-		TMap<UTexture*, TSharedPtr<FGlowImage>>& Images, TArray<TOptional<EMantleLightKind>>& Kind)
+		TMap<UTexture*, TSharedPtr<FGlowImage>>& Images, const FGlowImage* Mask, TArray<TOptional<EMantleLightKind>>& Kind)
 	{
 		const auto ImageOf = [&Images](UTexture* Texture) -> const FGlowImage*
 		{
@@ -330,7 +383,7 @@ namespace MantleVehicleLightsPrivate
 			FVector2f UV;
 			for (const FSource& Source : NamedSources)
 			{
-				if (Brightest(GlowUnder(LOD, Triangles[Index], *Source.Image, UV)) >= GlowThreshold)
+				if (Brightest(GlowUnder(LOD, Triangles[Index], *Source.Image, UV, Mask, Glow.MaskChannel)) >= GlowThreshold)
 				{
 					Kind[Index] = IsSignal(*Source.Named) ? SideOf(Center.Y, Bounds) : *Source.Named;
 					break;
@@ -338,7 +391,7 @@ namespace MantleVehicleLightsPrivate
 			}
 			for (int32 Each = 0; !Kind[Index] && Each < GenericSources.Num(); ++Each)
 			{
-				const FLinearColor Pixel = GlowUnder(LOD, Triangles[Index], *GenericSources[Each].Image, UV);
+				const FLinearColor Pixel = GlowUnder(LOD, Triangles[Index], *GenericSources[Each].Image, UV, Mask, Glow.MaskChannel);
 				if (Brightest(Pixel) < GlowThreshold)
 				{
 					continue;
@@ -595,6 +648,8 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 		UMaterialInterface* Material = Materials.IsValidIndex(Slot) ? Materials[Slot].MaterialInterface.Get() : nullptr;
 		TArray<TOptional<EMantleLightKind>> Kind;
 		Kind.SetNum(Triangles.Num());
+		// A glow that is only a mask or the car's own color picture: if it lights too much of the slot, it is no light (checked after the slot is sorted).
+		bool bCheckShare = false;
 
 		FVector3f Middle = FVector3f::ZeroVector;
 		for (const int32 Triangle : Triangles)
@@ -656,10 +711,25 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 			}
 			else if (Glow.Textures.Num() > 1)
 			{
-				KindsFromTextures(LOD, Triangles, Glow, Bounds, Images, Kind);
+				bool bMaskUnreadable = false;
+				const FGlowImage* Mask = MaskImageOf(Glow, Images, bMaskUnreadable);
+				bCheckShare = Glow.MaskTexture != nullptr;
+				if (!bMaskUnreadable)
+				{
+					KindsFromTextures(LOD, Triangles, Glow, Bounds, Images, Mask, Kind);
+				}
 			}
 			else
 			{
+				bool bMaskUnreadable = false;
+				const FGlowImage* Mask = MaskImageOf(Glow, Images, bMaskUnreadable);
+				// The glow is the car's own color picture (or a mask over a flat color): no glow-specific texture says where the lights are.
+				bCheckShare = Glow.MaskTexture != nullptr || (Glow.Texture && Glow.Texture == Glow.BaseTexture);
+				FGlowImage Whole;
+				Whole.Pixels = { FColor::White };
+				Whole.Width = 1;
+				Whole.Height = 1;
+				Whole.bUniform = true;
 				const FLinearColor Tint = Brightest(Glow.Color) > KINDA_SMALL_NUMBER ? Glow.Color : FLinearColor::White;
 				const FGlowImage* Image = nullptr;
 				if (Glow.Texture)
@@ -673,7 +743,12 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 					Image = Cached->Pixels.Num() > 0 ? Cached.Get() : nullptr;
 				}
 				// A glow texture Mantle cannot read (no source data): nothing is guessed from it.
-				const bool bUnreadable = Glow.Texture && !Image;
+				// A mask over a flat color: the mask alone says where it glows.
+				if (!Glow.Texture && Mask)
+				{
+					Image = &Whole;
+				}
+				const bool bUnreadable = (Glow.Texture && !Image) || bMaskUnreadable;
 				// A glow texture that is white everywhere (a mask) leaves the color to the lens under it: the base color, read where the glow is.
 				const FGlowImage* Base = nullptr;
 				if (Glow.BaseTexture && Glow.BaseTexture != Glow.Texture)
@@ -692,7 +767,7 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 					if (Image)
 					{
 						FVector2f UV;
-						const FLinearColor Pixel = GlowUnder(LOD, Triangles[Index], *Image, UV);
+						const FLinearColor Pixel = GlowUnder(LOD, Triangles[Index], *Image, UV, Mask, Glow.MaskChannel);
 						if (Brightest(Pixel) < GlowThreshold)
 						{
 							continue;
@@ -712,6 +787,24 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 						Kind[Index] = Found;
 					}
 				}
+			}
+		}
+
+		if (bCheckShare)
+		{
+			int32 Lit = 0;
+			for (const TOptional<EMantleLightKind>& Each : Kind)
+			{
+				Lit += Each.IsSet() ? 1 : 0;
+			}
+			const float Share = Kind.Num() > 0 ? static_cast<float>(Lit) / Kind.Num() : 0.f;
+			if (Share > MaxMaskedGlowShare)
+			{
+				// Left on the body: a glow this wide is a picture, not lights.
+				UE_LOG(LogMantle, Display, TEXT("MANTLE_VEHICLE_LIGHTS slot %d (%s): %d of %d triangles (%.0f%%) would glow, over the %.0f%% a masked glow may light; they stay on the body"),
+					Slot, Material ? *Material->GetName() : TEXT("none"), Lit, Kind.Num(), Share * 100.f, MaxMaskedGlowShare * 100.f);
+				Kind.Reset();
+				Kind.SetNum(Triangles.Num());
 			}
 		}
 

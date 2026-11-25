@@ -4,6 +4,7 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialExpression.h"
 #include "Materials/MaterialExpressionAdd.h"
+#include "Materials/MaterialExpressionComponentMask.h"
 #include "Materials/MaterialExpressionConstant.h"
 #include "Materials/MaterialExpressionConstant3Vector.h"
 #include "Materials/MaterialExpressionConstant4Vector.h"
@@ -21,6 +22,8 @@
 #include "Materials/MaterialExpressionSceneColor.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
 #include "Materials/MaterialExpressionTextureBase.h"
+#include "Materials/MaterialExpressionTextureCoordinate.h"
+#include "Materials/MaterialExpressionTextureSample.h"
 #include "Materials/MaterialExpressionTextureSampleParameter.h"
 #include "Materials/MaterialFunctionInterface.h"
 #include "Materials/MaterialInterface.h"
@@ -56,6 +59,63 @@ namespace MantleGlowMaterialPrivate
 	{
 		int32 OutputIndex = 0;
 		return ThroughPin(Input, OutputIndex);
+	}
+
+	/** A texture sample an input reads straight (through reroutes and at most one Component Mask), with what a mask made of it would be. */
+	struct FSampleRead
+	{
+		const UMaterialExpressionTextureBase* Sample = nullptr;
+		EMantleGlowMaskChannel Channel = EMantleGlowMaskChannel::RGB;
+		int32 UV = 0;
+
+		/** One channel of the sample (a mask), not its color. */
+		bool bSingleChannel = false;
+	};
+
+	bool ReadSample(const FExpressionInput* Input, FSampleRead& Out)
+	{
+		int32 Pin = 0;
+		const UMaterialExpression* Expression = ThroughPin(Input, Pin);
+		const UMaterialExpressionComponentMask* Mask = Cast<UMaterialExpressionComponentMask>(Expression);
+		if (Mask)
+		{
+			Expression = ThroughPin(&Mask->Input, Pin);
+		}
+		const UMaterialExpressionTextureBase* Sample = Cast<UMaterialExpressionTextureBase>(Expression);
+		if (!Sample)
+		{
+			return false;
+		}
+		Out = FSampleRead();
+		Out.Sample = Sample;
+		// A Texture Sample's outputs: RGB, R, G, B, A, RGBA.
+		switch (Pin)
+		{
+		case 1: Out.Channel = EMantleGlowMaskChannel::R; break;
+		case 2: Out.Channel = EMantleGlowMaskChannel::G; break;
+		case 3: Out.Channel = EMantleGlowMaskChannel::B; break;
+		case 4: Out.Channel = EMantleGlowMaskChannel::A; break;
+		default: break;
+		}
+		if (Mask)
+		{
+			const int32 Count = (Mask->R ? 1 : 0) + (Mask->G ? 1 : 0) + (Mask->B ? 1 : 0) + (Mask->A ? 1 : 0);
+			Out.Channel = Count != 1 ? EMantleGlowMaskChannel::RGB : Mask->R ? EMantleGlowMaskChannel::R : Mask->G ? EMantleGlowMaskChannel::G : Mask->B ? EMantleGlowMaskChannel::B : EMantleGlowMaskChannel::A;
+		}
+		Out.bSingleChannel = Out.Channel != EMantleGlowMaskChannel::RGB;
+		if (const UMaterialExpressionTextureSample* Texture = Cast<UMaterialExpressionTextureSample>(Sample))
+		{
+			const UMaterialExpression* Coordinates = Through(&Texture->Coordinates);
+			if (const UMaterialExpressionTextureCoordinate* Coordinate = Cast<UMaterialExpressionTextureCoordinate>(Coordinates))
+			{
+				Out.UV = Coordinate->CoordinateIndex;
+			}
+			else if (!Coordinates)
+			{
+				Out.UV = Texture->ConstCoordinate;
+			}
+		}
+		return true;
 	}
 
 	/** What feeds one output of a function call: the call's inputs that output depends on, and the nodes inside the function on the way. */
@@ -906,32 +966,6 @@ bool FMantleMaterialGlow::Read(const UMaterialInterface* Material, FMantleMateri
 			}
 		}
 	}
-	// The first texture in pre-order: what the glow is drawn with.
-	TFunction<const UMaterialExpressionTextureBase*(const FExpressionInput*, TSet<const UMaterialExpression*>&)> FirstTexture;
-	int32 Budget = NodeBudget;
-	FirstTexture = [&FirstTexture, &Budget](const FExpressionInput* Input, TSet<const UMaterialExpression*>& Seen) -> const UMaterialExpressionTextureBase*
-	{
-		const UMaterialExpression* Expression = Through(Input);
-		if (!Expression || --Budget < 0 || Seen.Contains(Expression))
-		{
-			return nullptr;
-		}
-		Seen.Add(Expression);
-		if (const UMaterialExpressionTextureBase* Texture = Cast<UMaterialExpressionTextureBase>(Expression))
-		{
-			return Texture;
-		}
-		TArray<const FExpressionInput*> Feeds;
-		FeedingInputs(Input, Feeds);
-		for (const FExpressionInput* Feed : Feeds)
-		{
-			if (const UMaterialExpressionTextureBase* Found = FirstTexture(Feed, Seen))
-			{
-				return Found;
-			}
-		}
-		return nullptr;
-	};
 	// A texture node's texture as the material (or its instance) sets it.
 	const auto TextureOf = [Material](const UMaterialExpressionTextureBase* Sample) -> UTexture*
 	{
@@ -945,6 +979,38 @@ bool FMantleMaterialGlow::Read(const UMaterialInterface* Material, FMantleMateri
 			}
 		}
 		return Texture;
+	};
+	// The first texture in pre-order, a mask excepted: what the base color is drawn with.
+	TFunction<const UMaterialExpressionTextureBase*(const FExpressionInput*, TSet<const UMaterialExpression*>&)> FirstTexture;
+	int32 Budget = NodeBudget;
+	FirstTexture = [&FirstTexture, &Budget, &Out, &TextureOf](const FExpressionInput* Input, TSet<const UMaterialExpression*>& Seen) -> const UMaterialExpressionTextureBase*
+	{
+		const UMaterialExpression* Expression = Through(Input);
+		if (!Expression || --Budget < 0 || Seen.Contains(Expression))
+		{
+			return nullptr;
+		}
+		Seen.Add(Expression);
+		if (const UMaterialExpressionTextureBase* Texture = Cast<UMaterialExpressionTextureBase>(Expression))
+		{
+			// The glow's mask only says where the glow shows: it is never the picture.
+			return Out.MaskTexture && TextureOf(Texture) == Out.MaskTexture ? nullptr : Texture;
+		}
+		TArray<const FExpressionInput*> Feeds;
+		FeedingInputs(Input, Feeds);
+		const UMaterialExpressionLinearInterpolate* Lerp = Cast<UMaterialExpressionLinearInterpolate>(Expression);
+		for (const FExpressionInput* Feed : Feeds)
+		{
+			if (Lerp && Feed == &Lerp->Alpha)
+			{
+				continue;
+			}
+			if (const UMaterialExpressionTextureBase* Found = FirstTexture(Feed, Seen))
+			{
+				return Found;
+			}
+		}
+		return nullptr;
 	};
 	// Every texture on the emissive path, in pre-order. A Scalar Parameter set to 0 belongs to the textures beside it at the first node that has both (the Multiply
 	// of a texture and its intensity), so one switched by a parameter of its own is known by its texture; one with no texture at its node goes on up to the next.
@@ -1005,8 +1071,51 @@ bool FMantleMaterialGlow::Read(const UMaterialInterface* Material, FMantleMateri
 		TArray<FBranch> Children;
 		TArray<const FExpressionInput*> Feeds;
 		FeedingInputs(Input, Feeds);
+		// A mask: the sample that feeds a Linear Interpolate's Alpha, or the single channel multiplied with the branch that carries the glow texture. It says where
+		// the glow shows, so it is kept apart from the textures the glow is drawn with.
+		const FExpressionInput* MaskFeed = nullptr;
+		FSampleRead MaskRead;
+		if (const UMaterialExpressionLinearInterpolate* Lerp = Cast<UMaterialExpressionLinearInterpolate>(Expression))
+		{
+			if (Feeds.Contains(&Lerp->Alpha) && ReadSample(&Lerp->Alpha, MaskRead))
+			{
+				MaskFeed = &Lerp->Alpha;
+			}
+		}
+		else if (const UMaterialExpressionMultiply* Multiply = Cast<UMaterialExpressionMultiply>(Expression))
+		{
+			FSampleRead ReadA;
+			FSampleRead ReadB;
+			const bool bA = Feeds.Contains(&Multiply->A) && ReadSample(&Multiply->A, ReadA);
+			const bool bB = Feeds.Contains(&Multiply->B) && ReadSample(&Multiply->B, ReadB);
+			if (bA != bB)
+			{
+				// A sample times a branch that holds a texture of its own (not just a scalar): the sample is the mask.
+				if (!Walk(bA ? &Multiply->B : &Multiply->A).Textures.IsEmpty())
+				{
+					MaskFeed = bA ? &Multiply->A : &Multiply->B;
+					MaskRead = bA ? ReadA : ReadB;
+				}
+			}
+			else if (bA && ReadA.bSingleChannel != ReadB.bSingleChannel)
+			{
+				// Two samples multiplied: the one reading a single channel is the mask, the one reading color is the glow.
+				MaskFeed = ReadA.bSingleChannel ? &Multiply->A : &Multiply->B;
+				MaskRead = ReadA.bSingleChannel ? ReadA : ReadB;
+			}
+		}
+		if (MaskFeed && !Out.MaskTexture)
+		{
+			Out.MaskTexture = TextureOf(MaskRead.Sample);
+			Out.MaskChannel = MaskRead.Channel;
+			Out.MaskUV = MaskRead.UV;
+		}
 		for (const FExpressionInput* Feed : Feeds)
 		{
+			if (Feed == MaskFeed)
+			{
+				continue;
+			}
 			Children.Add(Walk(Feed));
 			for (const int32 Texture : Children.Last().Textures)
 			{
