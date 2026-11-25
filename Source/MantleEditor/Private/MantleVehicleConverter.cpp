@@ -2508,6 +2508,8 @@ UMantleVehicleSource* FMantleVehicleConverter::ConvertAsset(USkeletalMesh* Mesh,
 	Source->Paint = Scratch->Paint;
 	Source->Linkage = Scratch->Linkage;
 	Source->Parts = Scratch->Parts;
+	// The lights Convert cut and found: without them a first Convert's car is saved with every light list empty, and no lamp lights up in the game.
+	Source->Lights = Scratch->Lights;
 	FAssetRegistryModule::AssetCreated(Source);
 	Package->MarkPackageDirty();
 	return Source;

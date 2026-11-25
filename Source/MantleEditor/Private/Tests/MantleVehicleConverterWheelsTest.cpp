@@ -432,6 +432,55 @@ bool FMantleVehicleConverterLightsTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleConverterFreshAssetLightsTest,
+	"Mantle.Vehicle.Convert.FreshAssetKeepsItsLights",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleConverterFreshAssetLightsTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleConverterWheelsTestPrivate;
+
+	// A car's first Convert (the Convert vehicle command, Build): the vehicle asset is made new, and it must carry the lights the conversion found. It was saved with
+	// every light list empty (SUV01 on 2026-11-25: Headlights, ReverseLights and the signals cut, none listed), while a Convert again onto the asset kept them.
+	TArray<FString> Names = { TEXT("SUV_Headlight"), TEXT("SUV_Taillight"), TEXT("SUV_Body"), TEXT("SUV_Glass") };
+	FString Error;
+	USkeletalMesh* Car = MakeCar(FourWheels(TEXT("B_FLWheel"), TEXT("B_FRWheel"), TEXT("B_RLWheel"), TEXT("B_RRWheel")), Names.Num(), Error, nullptr, Names);
+	if (!TestNotNull(*FString::Printf(TEXT("the car is made (%s)"), *Error), Car))
+	{
+		return false;
+	}
+	FMantleVehicleConversion Conversion;
+	UMantleVehicleSource* Source = FMantleVehicleConverter::ConvertAsset(Car, Conversion);
+	TestTrue(*FString::Printf(TEXT("it converts to a new vehicle asset (%s)"), *FString::Join(Conversion.Problems, TEXT(" "))), Source != nullptr && Conversion.bSuccess);
+	if (Source)
+	{
+		TestTrue(*FString::Printf(TEXT("the new asset lists the headlight (Head: %s)"), *FString::Join(Source->Lights.Head, TEXT(", "))), Source->Lights.Head.Contains(TEXT("SUV_Headlight")));
+		TestTrue(*FString::Printf(TEXT("and the taillight (Rear: %s)"), *FString::Join(Source->Lights.Rear, TEXT(", "))), Source->Lights.Rear.Contains(TEXT("SUV_Taillight")));
+
+		// Converting again onto that asset (the other path) keeps the same lists.
+		FMantleVehicleConversion Again;
+		UMantleVehicleSource* Same = FMantleVehicleConverter::ConvertAsset(Car, Again);
+		TestTrue(TEXT("a Convert again updates the same asset"), Same == Source);
+		TestTrue(TEXT("with the same lights"), Same && Same->Lights.Head.Contains(TEXT("SUV_Headlight")) && Same->Lights.Rear.Contains(TEXT("SUV_Taillight")));
+
+		if (USkeletalMesh* Body = Source->Body.LoadSynchronous(); Body && Body != Car)
+		{
+			MantleVehicleScratchBody::Discard(Body);
+		}
+		UPackage* Package = Source->GetOutermost();
+		Source->ClearFlags(RF_Public | RF_Standalone);
+		Source->MarkAsGarbage();
+		if (Package && Package != GetTransientPackage())
+		{
+			Package->ClearDirtyFlag();
+			Package->MarkAsGarbage();
+		}
+	}
+	MantleVehicleScratchBody::Discard(Car);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleVehicleConverterSplitPaintTest,
 	"Mantle.Vehicle.Convert.SplitPartsKeepPaint",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
