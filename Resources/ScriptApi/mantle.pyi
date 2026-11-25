@@ -325,7 +325,7 @@ class Marker:
     def set_target(self, target: Entity | Player | NPC | Vector3, /) -> None:
         """Moves the marker to a new target: an Entity, Player or NPC to follow while this client has it, or a Vector3 to sit at."""
         ...
-    def set_viewers(self, viewers: (string | Player | {Player}), /) -> None:
+    def set_viewers(self, viewers: str | Player | list[Player], /) -> None:
         """Changes who sees a server marker (Minimap:AddMarker): 'All', 'Team:<name>', a Player or a list of Players. A player who is no longer a viewer has the marker taken off their map at once; one who becomes a viewer is sent it. Only for a server script's marker: a local marker (Minimap:AddLocalMarker) is only ever this player's, so calling this on one is an error."""
         ...
     def set_visible(self, visible: bool, /) -> None:
@@ -680,7 +680,7 @@ class WorldItem:
     def set_data(self, data: Optional[dict[str, Any]], /) -> None:
         """Replaces the table carried with the stack (nil clears it). Booleans, numbers, strings and vectors, nested 2 deep, 1 KB encoded at most. A stack with different Data no longer merges with its neighbors."""
         ...
-    def set_owner(self, player: Optional[(Player | string)] = ..., seconds: Optional[float] = ..., team: Optional[bool] = ..., /) -> None:
+    def set_owner(self, player: Optional[Player | str] = ..., seconds: Optional[float] = ..., team: Optional[bool] = ..., /) -> None:
         """Changes or clears the owner lock. player is a Player or a UserId; seconds is how long the lock lasts (-1 for good, 0 or left out: nothing is locked and the owner is only remembered); team true lets the owner's team take it too. Called with no player, it clears the owner. While locked, other players see the prompt as 'Locked' and cannot take it, auto pickup ignores them, and OnPickingUp is not called for them."""
         ...
     def take_stack(self, index: float, count: Optional[float] = ..., /) -> Optional[dict[str, Any]]:
@@ -1349,7 +1349,7 @@ class _MinimapService:
     def add_local_marker(self, target: Entity | Player | NPC | Vector3, options: Optional[dict[str, Any]] = ..., /) -> Optional[Marker]:
         """Puts a marker on this player's map that only this player sees. The target is an Entity, a Player, an NPC or a Vector3 (a Vehicle is an Entity): a marker follows its Entity, Player or NPC while this client has it, is hidden while this client does not (a player, car or NPC out of range), and is removed when its target is destroyed. Options: Icon ('dot', 'ring', 'arrow', 'star', 'flag', 'diamond', 'skull', 'home' or 'question', or the asset id of an image uploaded with the place; 'dot' by default), Color ('#RRGGBB', white by default), Label (at most 32 characters, shown on the full map only), Size (0.5 to 2, 1 by default), Visible (true by default) and OffMap ('Clamp', the default: a marker past the minimap's range is pinned to its rim as an arrow, or 'Hide'). Markers can be added while the minimap is off. A client has at most 128 local markers: past that the call returns nil and a warning says why. A marker lasts until you remove it, its target is destroyed, or the script that added it stops. Example: local m = Minimap:AddLocalMarker(Vector3.new(0, 0, 0), {Icon = 'flag', Color = '#E53935', Label = 'Base'})"""
         ...
-    def add_marker(self, target: Entity | Player | NPC | Vector3, options: Optional[dict[str, Any]] = ..., viewers: Optional[(string | Player | {Player})] = ..., /) -> Optional[Marker]:
+    def add_marker(self, target: Entity | Player | NPC | Vector3, options: Optional[dict[str, Any]] = ..., viewers: Optional[str | Player | list[Player]] = ..., /) -> Optional[Marker]:
         """Puts a marker on the maps of the players you choose, and only theirs: the server sends a player nothing about a marker they are not a viewer of. viewers is 'All' (every player, the default), 'Team:<name>' (the players on that team now; a player who joins that team starts seeing it, one who leaves it stops, and the team must exist: Teams:Create), a Player, or a list of Players. The target is an Entity, a Player, an NPC or a Vector3 (a Vehicle is an Entity); the marker follows it on each viewer's map while that viewer's client has it, is hidden while it does not (a player, car or NPC out of range), and is removed for everyone when its target is destroyed. Options are AddLocalMarker's: Icon ('dot', 'ring', 'arrow', 'star', 'flag', 'diamond', 'skull', 'home' or 'question', or the asset id of an image uploaded with the place; 'dot' by default), Color ('#RRGGBB', white by default), Label (at most 32 characters, shown on the full map only), Size (0.5 to 2, 1 by default), Visible (true by default) and OffMap ('Clamp', the default, or 'Hide'). Markers show once a viewer's minimap is on. A script has at most 128 server markers: past that the call returns nil and a warning says why. A marker lasts until you remove it, its target is destroyed, or the script that added it stops. Marker:SetViewers changes who sees it later; every other Marker setter updates its viewers' maps. Example: local m = Minimap:AddMarker(flag, {Icon = 'flag', Label = 'Our flag'}, 'Team:Red')"""
         ...
     def close_full_map(self) -> None:
