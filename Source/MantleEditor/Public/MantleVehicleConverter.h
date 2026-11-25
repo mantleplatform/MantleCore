@@ -385,6 +385,12 @@ public:
 	static TArray<FString> RimLayerSections(const UMantleVehicleSource& Source, const TArray<FString>& BodySections, const TArray<UMaterialInterface*>& Materials);
 
 	/**
+	 * The rims start paintable: a Wheels layer holding RimLayerSections, wearing the rims' own look (RimStartColor, RimStartFinish), said in OutNotes. Nothing changes when
+	 * the source already has a Wheels layer or no rim is free. Used by Convert, and by the vehicle builder after its own rim step (its ticked paint replaces the layers).
+	 */
+	static void ApplyRimLayer(UMantleVehicleSource& Source, const TArray<FString>& Sections, const TArray<UMaterialInterface*>& Materials, TArray<FString>& OutNotes);
+
+	/**
 	 * The color a Wheels layer starts with so the rims look as they did: the client keeps the original picture and tints it by this, so white shows the picture as it is.
 	 * bPicture: the material has a base color picture. bHasColor: it has a base color (a factor, else a single color). With a picture the color is the factor unless that is white;
 	 * with none it is the material's own base color. Exposed for tests.

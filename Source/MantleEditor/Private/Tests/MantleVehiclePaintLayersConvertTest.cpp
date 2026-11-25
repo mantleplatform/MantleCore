@@ -276,6 +276,57 @@ bool FMantleVehicleRimLayerTest::RunTest(const FString&)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleVehicleBuilderRimLayerTest, "Mantle.Vehicle.PaintLayers.BuilderTickedPaintKeepsRimLayer",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleBuilderRimLayerTest::RunTest(const FString&)
+{
+	// The builder's order: its paint step (here the ticked paint, as BuildModel paint=PRIMARY secondary=SECONDARY sets it) replaces the layers, then its rim step finds the
+	// rims and ApplyRimLayer puts them on a Wheels layer. The BMW/Jeep/Camaro v4 lost their paintable rims because that last step was missing.
+	const TStrongObjectPtr<UMaterial> Plain(NewObject<UMaterial>(GetTransientPackage()));
+	const TArray<FString> Sections = { TEXT("PRIMARY"), TEXT("SECONDARY"), TEXT("rim"), TEXT("interior") };
+	const TArray<UMaterialInterface*> Materials = { Plain.Get(), Plain.Get(), Plain.Get(), Plain.Get() };
+	const auto Build = [&](const TArray<bool>& Painted, const TArray<uint8>& Picks, TArray<FString>& Notes)
+	{
+		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
+		for (const TCHAR* Bone : { TEXT("wheel_fl"), TEXT("wheel_fr"), TEXT("wheel_rl"), TEXT("wheel_rr") })
+		{
+			FMantleVehicleSourceWheel& Wheel = Source->Wheels.AddDefaulted_GetRef();
+			Wheel.Bone = FName(Bone);
+			Wheel.RimSections = { TEXT("rim") };
+		}
+		FMantleVehicleBuilder::ApplyPaint(*Source, Sections, Painted, Notes, &Picks);
+		FMantleVehicleConverter::ApplyRimLayer(*Source, Sections, Materials, Notes);
+		return Source;
+	};
+	const auto LayerOf = [](const UMantleVehicleSource& Source, const EMantleVehicleSourcePaintLayer Layer)
+	{
+		return Source.Paint.Layers.FindByPredicate([Layer](const FMantleVehicleSourcePaintLayer& Has) { return Has.Layer == Layer; });
+	};
+
+	// Ticked paint, no Wheels layer named: the rims get one, after the body paint and the second paint the build named.
+	TArray<FString> Notes;
+	const uint8 SecondPick = FMantleVehicleBuilder::PaintPick(EMantleVehicleSourcePaintLayer::Secondary);
+	const UMantleVehicleSource* Ticked = Build({ true, true, false, false }, { 0, SecondPick, 0, 0 }, Notes);
+	TestTrue(TEXT("the body paint is PRIMARY"), Ticked->Paint.Sections == TArray<FString>({ TEXT("PRIMARY") }));
+	const FMantleVehicleSourcePaintLayer* Second = LayerOf(*Ticked, EMantleVehicleSourcePaintLayer::Secondary);
+	TestTrue(TEXT("the second paint is SECONDARY"), Second && Second->Sections == TArray<FString>({ TEXT("SECONDARY") }));
+	const FMantleVehicleSourcePaintLayer* Rims = LayerOf(*Ticked, EMantleVehicleSourcePaintLayer::Wheels);
+	TestTrue(TEXT("ticked paint with no Wheels layer: the rims get one"), Rims && Rims->Sections == TArray<FString>({ TEXT("rim") }));
+	TestTrue(TEXT("and it is said"), Notes.ContainsByPredicate([](const FString& Note) { return Note.StartsWith(TEXT("Paint layer wheels: rim")); }));
+	TestFalse(TEXT("the interior gets no layer"), LayerOf(*Ticked, EMantleVehicleSourcePaintLayer::Interior) != nullptr);
+
+	// A Wheels layer the build named (here on the interior section, to tell it apart) is left as it is: the rims are not added to it.
+	Notes.Reset();
+	const uint8 WheelsPick = FMantleVehicleBuilder::PaintPick(EMantleVehicleSourcePaintLayer::Wheels);
+	const UMantleVehicleSource* Named = Build({ true, true, false, true }, { 0, SecondPick, 0, WheelsPick }, Notes);
+	const FMantleVehicleSourcePaintLayer* Own = LayerOf(*Named, EMantleVehicleSourcePaintLayer::Wheels);
+	TestTrue(TEXT("a Wheels layer the build named is left alone"), Own && Own->Sections == TArray<FString>({ TEXT("interior") }));
+	TestEqual(TEXT("and there is only that one"), Named->Paint.Layers.FilterByPredicate([](const FMantleVehicleSourcePaintLayer& Has) { return Has.Layer == EMantleVehicleSourcePaintLayer::Wheels; }).Num(), 1);
+	TestFalse(TEXT("nothing says the rims were put on a layer"), Notes.ContainsByPredicate([](const FString& Note) { return Note.StartsWith(TEXT("Paint layer wheels: rim")); }));
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleVehicleRimLookTest, "Mantle.Vehicle.PaintLayers.RimsStartingLook",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 

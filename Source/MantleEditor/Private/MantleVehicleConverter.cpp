@@ -1788,42 +1788,7 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 		}
 	}
 	// The rims start paintable (they are found above, by their geometry): a Wheels layer holding them, wearing the rims' own look, unless the source already has a Wheels layer.
-	{
-		const TArray<FString> RimLayer = RimLayerSections(Source, Sections, Materials);
-		if (RimLayer.Num() > 0)
-		{
-			const UMaterialInterface* RimMaterial = nullptr;
-			for (const FString& Rim : RimLayer)
-			{
-				const int32 Index = Sections.IndexOfByKey(Rim);
-				if (Materials.IsValidIndex(Index) && Materials[Index])
-				{
-					RimMaterial = Materials[Index];
-					break;
-				}
-			}
-			FLinearColor Factor = FLinearColor::White;
-			bool bHasColor = false;
-			UTexture* Picture = nullptr;
-			if (RimMaterial)
-			{
-				FMantlePlaceAssets::BaseColorParts(RimMaterial, Factor, bHasColor, Picture);
-				if (!Picture)
-				{
-					bHasColor = FMantlePlaceAssets::BaseColorValue(RimMaterial, Factor);
-				}
-			}
-			float Metallic = 0.f;
-			float Roughness = 1.f;
-			const bool bKnownSurface = RimMaterial && FMantlePlaceAssets::SurfaceMetallicRoughness(RimMaterial, Metallic, Roughness);
-			FMantleVehicleSourcePaintLayer& Layer = MantleVehicleConverterPrivate::EnsurePaintLayer(Source.Paint, EMantleVehicleSourcePaintLayer::Wheels);
-			Layer.Sections = RimLayer;
-			Layer.Color = RimStartColor(Picture != nullptr, bHasColor, Factor);
-			Layer.Finish = bKnownSurface ? RimStartFinish(Metallic, Roughness) : EMantleVehicleSourcePaintFinish::Gloss;
-			Result.Notes.Add(FString::Printf(TEXT("Paint layer wheels: %s, starting as the rims' own look (%s finish). A color a script picks tints the rims' own picture. Change it under Paint > Layers in the vehicle asset."),
-				*FString::Join(RimLayer, TEXT(", ")), PaintFinishDocumentName(Layer.Finish)));
-		}
-	}
+	ApplyRimLayer(Source, Sections, Materials, Result.Notes);
 	TArray<const UMaterialInterface*> BodyPaintMaterials;
 	for (int32 Index = 0; Index < Sections.Num(); ++Index)
 	{
@@ -3313,6 +3278,44 @@ bool FMantleVehicleConverter::IsGtaTintLayer(const FString& Name, const UMateria
 		return Part.Equals(TEXT("PRIMARY"), ESearchCase::CaseSensitive) || Part.Equals(TEXT("SECONDARY"), ESearchCase::CaseSensitive)
 			|| Part.Equals(TEXT("WHEEL"), ESearchCase::CaseSensitive);
 	});
+}
+
+void FMantleVehicleConverter::ApplyRimLayer(UMantleVehicleSource& Source, const TArray<FString>& Sections, const TArray<UMaterialInterface*>& Materials, TArray<FString>& OutNotes)
+{
+	const TArray<FString> RimLayer = RimLayerSections(Source, Sections, Materials);
+	if (RimLayer.Num() > 0)
+	{
+		const UMaterialInterface* RimMaterial = nullptr;
+		for (const FString& Rim : RimLayer)
+		{
+			const int32 Index = Sections.IndexOfByKey(Rim);
+			if (Materials.IsValidIndex(Index) && Materials[Index])
+			{
+				RimMaterial = Materials[Index];
+				break;
+			}
+		}
+		FLinearColor Factor = FLinearColor::White;
+		bool bHasColor = false;
+		UTexture* Picture = nullptr;
+		if (RimMaterial)
+		{
+			FMantlePlaceAssets::BaseColorParts(RimMaterial, Factor, bHasColor, Picture);
+			if (!Picture)
+			{
+				bHasColor = FMantlePlaceAssets::BaseColorValue(RimMaterial, Factor);
+			}
+		}
+		float Metallic = 0.f;
+		float Roughness = 1.f;
+		const bool bKnownSurface = RimMaterial && FMantlePlaceAssets::SurfaceMetallicRoughness(RimMaterial, Metallic, Roughness);
+		FMantleVehicleSourcePaintLayer& Layer = MantleVehicleConverterPrivate::EnsurePaintLayer(Source.Paint, EMantleVehicleSourcePaintLayer::Wheels);
+		Layer.Sections = RimLayer;
+		Layer.Color = RimStartColor(Picture != nullptr, bHasColor, Factor);
+		Layer.Finish = bKnownSurface ? RimStartFinish(Metallic, Roughness) : EMantleVehicleSourcePaintFinish::Gloss;
+		OutNotes.Add(FString::Printf(TEXT("Paint layer wheels: %s, starting as the rims' own look (%s finish). A color a script picks tints the rims' own picture. Change it under Paint > Layers in the vehicle asset."),
+			*FString::Join(RimLayer, TEXT(", ")), PaintFinishDocumentName(Layer.Finish)));
+	}
 }
 
 TArray<FString> FMantleVehicleConverter::RimLayerSections(const UMantleVehicleSource& Source, const TArray<FString>& BodySections, const TArray<UMaterialInterface*>& Materials)
