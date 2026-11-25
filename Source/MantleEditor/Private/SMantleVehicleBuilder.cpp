@@ -1526,6 +1526,7 @@ void SMantleVehicleBuilder::RefreshPaintChoices()
 					{
 						Choice.bOn = Old.bOn;
 						Choice.Pick = Old.Pick;
+						Choice.bTouched = Old.bTouched;
 					}
 				}
 			}
@@ -1541,6 +1542,7 @@ void SMantleVehicleBuilder::SetPaintSection(const int32 Index, const bool bOn)
 		return;
 	}
 	PaintChoices[Index].bOn = bOn;
+	PaintChoices[Index].bTouched = true;
 	bPaintEdited = true;
 	// Already built: the vehicle takes the ticks at once.
 	if (UMantleVehicleSource* Source = BuiltSource.Get())
@@ -1607,6 +1609,18 @@ void SMantleVehicleBuilder::ApplyChoices(UMantleVehicleSource& Source)
 		}
 		TArray<FString> PaintNotes;
 		FMantleVehicleBuilder::ApplyPaint(Source, AllSections, Painted, PaintNotes, &Picks);
+		// ApplyPaint sets every layer afresh, so the rims found by their shape lose the Wheels layer the build gave them: they get it back unless the creator picked
+		// Wheels for a section themselves. A rim row the creator unticked themselves means "do not paint it", so it stays off; a rim Mantle's guess left unticked
+		// (a dark rim, or a name that does not say rim) is painted as the build painted it.
+		TArray<FString> Unticked;
+		for (const FPaintChoice& Choice : PaintChoices)
+		{
+			if (Choice.bTouched && !Choice.bOn)
+			{
+				Unticked.Add(Choice.Section);
+			}
+		}
+		FMantleVehicleBuilder::ApplyRimPaint(Source, /*bFindRims*/ false, PaintNotes, Unticked);
 	}
 	if (bHideRiders)
 	{

@@ -386,9 +386,10 @@ public:
 
 	/**
 	 * The rims start paintable: a Wheels layer holding RimLayerSections, wearing the rims' own look (RimStartColor, RimStartFinish), said in OutNotes. Nothing changes when
-	 * the source already has a Wheels layer or no rim is free. Used by Convert, and by the vehicle builder after its own rim step (its ticked paint replaces the layers).
+	 * the source already has a Wheels layer or no rim is free. LeaveUnpainted: sections never put on the layer (the rows a creator unticked in the builder window). Used by Convert, and by the vehicle builder after its own rim step (its ticked paint replaces the layers).
 	 */
-	static void ApplyRimLayer(UMantleVehicleSource& Source, const TArray<FString>& Sections, const TArray<UMaterialInterface*>& Materials, TArray<FString>& OutNotes);
+	static void ApplyRimLayer(UMantleVehicleSource& Source, const TArray<FString>& Sections, const TArray<UMaterialInterface*>& Materials, TArray<FString>& OutNotes,
+		const TArray<FString>& LeaveUnpainted = TArray<FString>());
 
 	/**
 	 * The color a Wheels layer starts with so the rims look as they did: the client keeps the original picture and tints it by this, so white shows the picture as it is.

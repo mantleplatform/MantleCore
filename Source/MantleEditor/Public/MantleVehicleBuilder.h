@@ -275,6 +275,14 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 * body and parts (FMantleVehicleBodySplit), a ticked section that moved to a part is that part's Paint Slot, found by the slot's name, so a split car paints exactly what
 	 * was ticked and nothing is set by hand. Parts a creator added are not touched. OutNotes says in plain words what rides on a part.
 	 */
+	/**
+	 * The rims of the car as built, after its paint was set (ApplyPaint replaces every layer, so the rims' Wheels layer goes with it): reads the body as it uploads, finds the
+	 * rims by their shape first when bFindRims (FMantleVehicleConverter::ApplyRims, as a build does), then puts them on a Wheels layer wearing their own look
+	 * (FMantleVehicleConverter::ApplyRimLayer) unless a Wheels layer is there already. LeaveUnpainted: sections the creator unticked themselves; they stay off the layer.
+	 * Used by the build (BuildFromModel) and by the builder window after it applies the creator's paint ticks.
+	 */
+	static void ApplyRimPaint(UMantleVehicleSource& Source, bool bFindRims, TArray<FString>& OutNotes, const TArray<FString>& LeaveUnpainted = TArray<FString>());
+
 	static void ApplyPaint(UMantleVehicleSource& Source, const TArray<FString>& AllSections, const TArray<bool>& Painted, TArray<FString>& OutNotes,
 		const TArray<uint8>* Layers = nullptr);
 

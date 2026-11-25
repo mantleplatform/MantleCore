@@ -328,6 +328,8 @@ private:
 		bool bOn = false;
 		/** The layer it is painted as: 0 the body color, else FMantleVehicleBuilder::PaintPick of a layer. */
 		uint8 Pick = 0;
+		/** The creator ticked or unticked this row themselves (not Mantle's guess): an unticked rim stays off the rims' Wheels layer. */
+		bool bTouched = false;
 	};
 	TArray<FPaintChoice> PaintChoices;
 	/** The creator ticked or unticked a section: the ticks replace Mantle's own guess on the built vehicle. */
