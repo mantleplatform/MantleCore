@@ -603,7 +603,7 @@ bool FMantleVehicleLightsGlowMaskTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("too wide a masked glow finds no light"), Rejected.FoundAny());
 
 	// MM_Lights02's shape: ONE texture sampled twice, once as the outer Lerp's Alpha (the mask) and once inside an If that picks the zone's color (and again as the
-	// base color). Only the mask node is set aside: the other samples stay glow and color inputs, so the red zone is a rear light.
+	// base color). A "mask" that is the glow's own texture is no mask: the glow is read whole, so the red zone is a rear light.
 	{
 		UMaterial* Zones = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
 		UTexture2D* Masks = MakeGlowTexture(Zones, TEXT("T_Lights_Masks"), FColor::White, { FIntPoint(2, 0) });
@@ -628,7 +628,9 @@ bool FMantleVehicleLightsGlowMaskTest::RunTest(const FString& Parameters)
 		Zones->GetEditorOnlyData()->BaseColor.Connect(0, AddSample(Zones, TEXT("TextureMasksBase"), Masks));
 		Zones->UpdateCachedExpressionData();
 		TestTrue(TEXT("the zones material glows"), FMantleMaterialGlow::Read(Zones, Glow));
-		TestTrue(TEXT("the mask is the texture"), Glow.MaskTexture == Masks);
+		// The Lerp's Alpha reads the glow's own texture: that is how the material picks its zones, not a mask (the real T_Lights_Masks is dark in green exactly
+		// where its zones are red, so multiplying by it would leave only the white zones: SUV04 and SUV01 lost their taillights that way).
+		TestTrue(TEXT("its own texture is not a mask"), Glow.MaskTexture == nullptr);
 		TestTrue(TEXT("the other samples of it are still glow textures"), Glow.Textures.Num() == 1 && Glow.Texture == Masks);
 		TestTrue(TEXT("and the base color's"), Glow.BaseTexture == Masks);
 		Materials[0].MaterialInterface = Zones;

@@ -1144,6 +1144,13 @@ bool FMantleMaterialGlow::Read(const UMaterialInterface* Material, FMantleMateri
 	{
 		Out.Texture = Out.Textures[0].Texture;
 	}
+	// A mask is another picture that says where the glow shows (MM_Sedan_Interior: the color picture, shown only where its masks texture says). When the "mask"
+	// is the glow's own texture, it is not a mask but how the material picks each zone's color (MM_Lights02 reads T_Lights_Masks for both its zones and its
+	// lerp): multiplying by it would wipe out the red zones and leave only the white ones, so the glow is read whole, as before masks were read.
+	if (Out.MaskTexture && Out.Textures.ContainsByPredicate([&Out](const FMantleGlowTexture& Each) { return Each.Texture == Out.MaskTexture; }))
+	{
+		Out.MaskTexture = nullptr;
+	}
 	TSet<const UMaterialExpression*> BaseSeen;
 	Budget = NodeBudget;
 	if (const UMaterialExpressionTextureBase* Sample = FirstTexture(Base->GetExpressionInputForProperty(MP_BaseColor), BaseSeen))
