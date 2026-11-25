@@ -714,10 +714,11 @@ public:
 	 * and triangles in their own order, one primitive per render section, one glTF material per slot in the order
 	 * sections first use them, the full raw reference skeleton as joints, weights as floats (heaviest first, at
 	 * most eight). OutMaterials[i] is glTF material i's material. False with a sentence for the creator when the
-	 * LOD has no CPU copy or its sections share vertices.
+	 * LOD has no CPU copy or its sections share vertices. bSecondUv: OutMesh.UV1s holds the LOD's UV channel 1 too, when it has one
+	 * (what a material's Texture Coordinate 1 reads), for a bake over the mesh's own triangles (FMantleBakeMesh).
 	 */
 	static bool ReadSkeletalMesh(const USkeletalMesh* Mesh, int32 LODIndex, FMantleGlbMesh& OutMesh, TArray<UMaterialInterface*>& OutMaterials,
-		int32& OutTriangles, FString& OutError);
+		int32& OutTriangles, FString& OutError, bool bSecondUv = false);
 
 	/** One bit per reference vertex, least significant first, padding clear: the upload's coverage bytes. */
 	static TArray<uint8> PackCoverageBits(const TBitArray<>& Covered, int32 NumBits);

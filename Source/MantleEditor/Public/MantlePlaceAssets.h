@@ -364,6 +364,75 @@ struct MANTLEEDITOR_API FMantleGatheredMesh
 	bool bCollisionOnly = false;
 };
 
+struct FMantleGlbMesh;
+
+/**
+ * The triangles of one mesh section a material is baked over when its graph reads a second UV set (EMantleMaterialLoss::SecondUv: SUV04's
+ * lamp lenses pick each zone's color from a mask at UV1). A card's UV1 is its UV0 (the engine's bake fills a missing set with the last one,
+ * MaterialRenderItem.cpp PopulateWithQuadData), so such a mask was read at the wrong places; and a section's own UV0 may cover the same
+ * texels many times (tiled, mirrored left and right). The bake therefore draws these triangles with their own UV sets, laid out by Layout:
+ * - the section's own UV0 (bOwnLayout false), and the mesh keeps every UV: exact where UV0 covers each texel once, and always so for a section
+ *   other things lay out by its UV0 (a vehicle's painted sections carry its liveries on UV0);
+ * - else, where UV0 overlaps itself (OverlapsItself) and nothing else reads it, a layout of its own (bOwnLayout): Unreal's lightmap packer
+ *   (FLayoutUV) over the section, each UV0 island packed apart, published as the section's UV0 (ApplyLayout). Safe there: UV0 then only
+ *   places this material's textures, and the bake replaces every one of them.
+ * The material is published under UvBakeKey for that section.
+ */
+struct MANTLEEDITOR_API FMantleBakeMesh
+{
+	/** One per vertex, in the section's vertex order (Unreal space, cm). */
+	TArray<FVector3f> Positions;
+	TArray<FVector3f> Normals;
+	/** Empty, or one per vertex (xyz tangent, w the binormal sign). */
+	TArray<FVector4f> Tangents;
+	/** The section's own UV sets: what the material reads as Texture Coordinate 0 and 1. UV1s is UV0 again when the section has no second set. */
+	TArray<FVector2f> UV0s;
+	TArray<FVector2f> UV1s;
+	/** Empty, or one per vertex: the color the material's Vertex Color node reads. */
+	TArray<FColor> Colors;
+	/** The bake's layout, one per vertex: UV0 itself, or (bOwnLayout) the packer's, within 0 to 1, the section's UV0 once published. */
+	TArray<FVector2f> Layout;
+	/** Layout is the packer's own, which ApplyLayout writes into the mesh; false: it is UV0, and the mesh is left as it is. */
+	bool bOwnLayout = false;
+	/** Triangles, three per triangle, into the arrays above. */
+	TArray<uint32> Indices;
+	/**
+	 * The vertices after the section's own: copies of these (section vertex index), for a corner the packer placed in another island than
+	 * the rest of its vertex (a bow tie). ApplyLayout adds the same copies to the mesh.
+	 */
+	TArray<int32> SplitFrom;
+	/** A hash of all of the above (hex): part of the material's key and of its cache key. */
+	FString Hash;
+
+	/** The grid FLayoutUV packs on: 1 texel of space around each island at this size. */
+	static constexpr int32 LayoutResolution = 1024;
+
+	/**
+	 * UV0 overlaps itself when more than this share of the texels it draws (over its own bounds, on a LayoutResolution grid, counting texel
+	 * centers inside triangles) is drawn more than once. A choice of layout, not a refusal: below it the bake keeps UV0. SUV04's lenses: 99.8%.
+	 */
+	static constexpr double OverlapsItself = 0.01;
+
+	/**
+	 * The section of Mesh drawn with material MaterialIndex (every primitive of it), set up for a bake: laid out by its UV0, or by a layout of
+	 * its own when bMayRelayout and its UV0 overlaps itself. Null when it has no triangles (it then bakes on a card, as before); a layout the
+	 * packer cannot make keeps UV0. The same mesh gives the same layout and Hash every time.
+	 */
+	static TSharedPtr<const FMantleBakeMesh> FromSection(const FMantleGlbMesh& Mesh, int32 MaterialIndex, bool bMayRelayout = true);
+
+	/**
+	 * Writes Layout into the UVs of Mesh's section MaterialIndex (the vertices FromSection read), adding the vertex copies SplitFrom names at the
+	 * end of the section and its triangles on them: what the bake was laid out by.
+	 */
+	void ApplyLayout(FMantleGlbMesh& Mesh, int32 MaterialIndex) const;
+
+	/** How much of the layout's area more than one triangle covers, 0 to 1, on a LayoutResolution grid over its bounds (a measure for the log and tests). */
+	double LayoutOverlap() const;
+
+	/** The same measure for any UVs of these triangles (Uvs per vertex, Indices three per triangle), over the UVs' own bounds. */
+	static double Overlap(TConstArrayView<FVector2f> Uvs, TConstArrayView<uint32> Indices);
+};
+
 /**
  * What a material is baked on beyond the material itself: GLTFExporter draws it on a card, and Unreal's own card has white vertex colors
  * and UVs 0 to 1. A material whose graph reads vertex color (a puddle layer by Vertex Color's blue) is baked with the color its meshes
@@ -409,7 +478,13 @@ struct MANTLEEDITOR_API FMantleBakeSurface
 	 */
 	bool bTintMask = false;
 
-	bool IsPlain() const { return VertexColor == FColor::White && UvRange <= 1.0 && WorldTileCm <= 0.0 && !bTerrainLayer; }
+	/**
+	 * Set for a material that reads a second UV set, on the one mesh section it is published for (FMantleBakeMesh): the bake draws those triangles,
+	 * laid out by the mesh's Layout, instead of a card. Its key is UvBakeKey, and its cache key holds the mesh's Hash.
+	 */
+	TSharedPtr<const FMantleBakeMesh> Mesh;
+
+	bool IsPlain() const { return VertexColor == FColor::White && UvRange <= 1.0 && WorldTileCm <= 0.0 && !bTerrainLayer && !Mesh.IsValid(); }
 
 	/** Whether the bake covers several landscape quads or is a landscape layer's: its material must then read the card (FMantlePlaceAssets::ReadsVertexColorCopy). */
 	bool CoversTerrain() const { return bTerrainLayer || UvRange > 1.0; }
@@ -441,6 +516,9 @@ struct MANTLEEDITOR_API FMantleGatheredMaterial
 
 	/** Set by a vehicle's gather for the tint-mask variant of a material (AddMaterial with bTintMask, key TintMaskKey): FMantleBakeSurface::bTintMask. */
 	bool bTintMask = false;
+
+	/** Set by a vehicle's gather for a body section whose material reads a second UV set (AddMaterial with BakeMesh, key UvBakeKey): FMantleBakeSurface::Mesh. */
+	TSharedPtr<const FMantleBakeMesh> BakeMesh;
 
 	/** The average of VertexColorSum, white when nothing was counted. */
 	FColor AverageVertexColor() const;
@@ -764,7 +842,8 @@ struct MANTLEEDITOR_API FMantlePlaceDependencies
 	 * Gathers Material. With bTintMask it is the tint-mask variant of the material (a GTA tint layer on a painted vehicle section): its own entry under TintMaskKey, so the same
 	 * material on an unticked section or a map prop keeps its plain upload.
 	 */
-	FMantleGatheredMaterial* AddMaterial(UMaterialInterface* Material, const FString& Label, bool bTintMask = false);
+	FMantleGatheredMaterial* AddMaterial(UMaterialInterface* Material, const FString& Label, bool bTintMask = false,
+		const TSharedPtr<const FMantleBakeMesh>& BakeMesh = nullptr);
 
 	/**
 	 * Adds the materials a landscape's layers draw with that Mantle makes itself (transient: read from the landscape's material, or the plain gray of an
@@ -850,6 +929,34 @@ public:
 
 	/** The key of Material's tint-mask variant (FMantleBakeSurface::bTintMask): the material's own key and a suffix. */
 	static FString TintMaskKey(const FString& MaterialKey);
+
+	/** The key of a material baked over one mesh section's own triangles (FMantleBakeSurface::Mesh): its key and a suffix with the section's hash. */
+	static FString UvBakeKey(const FString& MaterialKey, const FMantleBakeMesh& Mesh);
+
+	/**
+	 * The key a material uploads under on a surface: UvBakeKey for a section's own bake, TintMaskKey for a tint mask (or both), else MaterialKey. The
+	 * converter's key and the gather's agree through it.
+	 */
+	static FString SurfaceMaterialKey(const UMaterialInterface* Material, bool bTintMask, const FMantleBakeMesh* Mesh);
+
+	/** Whether Material's graph reads a second UV set (EMantleMaterialLoss::SecondUv), so it bakes over its section's own triangles where it can. */
+	static bool SamplesSecondUv(const UMaterialInterface* Material);
+
+	/**
+	 * What section MaterialIndex of Mesh (a vehicle body as the converter reads it) is baked over when it draws Material: its own triangles
+	 * (FMantleBakeMesh::FromSection) for a material that reads a second UV set, else null (a card, as every other material). bMayRelayout:
+	 * nothing else reads the section's UV0 (VehicleSectionKeepsUv0 is false), so it may get a layout of its own. Gather and the converter both
+	 * ask this, so their keys agree.
+	 */
+	static TSharedPtr<const FMantleBakeMesh> SectionBakeMesh(const FMantleGlbMesh& Mesh, int32 MaterialIndex, const UMaterialInterface* Material, bool bMayRelayout);
+
+	/**
+	 * Whether something besides the section's own material reads body section Section's UV0, so its UV0 must never change: a painted section
+	 * (Paint.Sections or a paint layer's sections, as FMantleVehicleConverter::BodySectionIsTintMask reads them), which carries the car's paint
+	 * and, on the primary layer, its liveries on UV0 (the client paints liveries on the paint slots only: mantle client MantleVehicle.cpp,
+	 * ApplyPaint and ApplyCarPaintParameters); a tint-mask section is a painted one.
+	 */
+	static bool VehicleSectionKeepsUv0(const UMantleVehicleSource& Source, const FString& Section);
 
 	/** A material instance that is not on disk: a Material Instance Dynamic, or an instance that is transient or in the transient package. */
 	static bool IsTransientMaterialInstance(const UMaterialInterface* Material);
@@ -1102,8 +1209,11 @@ public:
 	 * reads mesh data (vertex color, world position); one that reads only texture coordinates, such as a landscape material, bakes over
 	 * UVs 0 to 1 whatever the card's, so a bake over a UV range (FMantleBakeSurface::UvRange) held one landscape quad stretched over the
 	 * whole tile. Null when no copy can be made (a dynamic instance, or nothing connected to the base color or attributes).
+	 * bEveryInput multiplies every connected input the bake reads (not only the base color): GLTFExporter passes an input wired straight
+	 * from a texture through as that texture, on that texture's own UV set (TryGetSourceTexture), which a bake laid out by its own UVs
+	 * (FMantleBakeSurface::Mesh) must not have: every input is then drawn into the layout.
 	 */
-	static TStrongObjectPtr<UMaterialInterface> ReadsVertexColorCopy(const UMaterialInterface* Material);
+	static TStrongObjectPtr<UMaterialInterface> ReadsVertexColorCopy(const UMaterialInterface* Material, bool bEveryInput = false);
 
 	/**
 	 * A1: a transient copy of a decal material (Material Domain: Deferred Decal; its instance chain, with every parameter it sets) with the
