@@ -2289,7 +2289,10 @@ USkeletalMesh* FMantleVehicleConverter::FindLights(USkeletalMesh& Mesh, UMantleV
 	}
 	else
 	{
-		const FMantleVehicleLightGuess Guess = FMantleVehicleLights::Find(Body, Materials, false);
+		// The model's second UV set too (the same render vertices as Body's), for a lens that picks its zones there.
+		const TArray<FVector2f> UV1s = FMantleVehicleLights::SecondUVs(Mesh);
+		const FMantleVehicleLightGuess Guess = FMantleVehicleLights::Find(Body, Materials, false, UV1s.Num() > 0 ? &UV1s : nullptr);
+		OutNotes.Append(Guess.Notes);
 		FMantleVehicleSourceLights Found;
 		FMantleVehicleLights::Cut(Body, Materials, Guess, Found);
 		Wanted.Head = Found.Head;

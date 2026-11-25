@@ -31,6 +31,8 @@ struct FMantleVehicleLightGuess
 	TArray<FMantleVehicleSourceLightBeam> Beams;
 	/** The whole slots (also in WholeSlots) marked to keep their own material (FMantleVehicleLights::FromGlowMarker): a printed part that glows with its light. */
 	TArray<int32> OwnMaterialSlots;
+	/** What the finder could not read and fell back on, in plain words for the creator's notes (a lens whose zones are on a second UV set Mantle cannot work out). */
+	TArray<FString> Notes;
 
 	bool FoundAny() const;
 };
@@ -90,9 +92,13 @@ struct MANTLEEDITOR_API FMantleVehicleLights
 
 	/**
 	 * Finds the lights on Body (LOD 0, the vehicle's space: +X forward, cm) with Materials its slots. bCenterline (a bike) gets one beam on the middle line.
-	 * Reads the materials' glow and their glow textures, so game thread.
+	 * Reads the materials' glow and their glow textures, so game thread. UV1s, when given, is LOD 0's second UV set in its vertex order: a lens whose emissive picks
+	 * its zones there is read from its own graph (FMantleEmissiveEval); without it such a lens is read as before, and Notes says so.
 	 */
-	static FMantleVehicleLightGuess Find(const FMantleSkinnedMesh& Body, const TArray<FSkeletalMaterial>& Materials, bool bCenterline);
+	static FMantleVehicleLightGuess Find(const FMantleSkinnedMesh& Body, const TArray<FSkeletalMaterial>& Materials, bool bCenterline, const TArray<FVector2f>* UV1s = nullptr);
+
+	/** LOD 0's second UV set of Mesh's render data, in the vertex order FMantleSkinnedMesh::ExtractFromSkeletalMesh reads; empty when the mesh has one UV set. */
+	static TArray<FVector2f> SecondUVs(const USkeletalMesh& Mesh);
 
 	/**
 	 * Moves each kind's guessed triangles into sections of their own (one per kind and material they came from), each a new slot with the same material, named

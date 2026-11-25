@@ -7,6 +7,7 @@
 #include "MantleVehicleSource.h"
 
 #include "MantleGlowMaterial.h"
+#include "MantleMaterialEval.h"
 #include "MantlePlaceAssets.h"
 
 #include "Dom/JsonObject.h"
@@ -20,6 +21,7 @@
 #include "Materials/MaterialExpressionLinearInterpolate.h"
 #include "Materials/MaterialExpressionMultiply.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
+#include "Materials/MaterialExpressionTextureCoordinate.h"
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
 #include "Materials/MaterialInstanceConstant.h"
 #include "Misc/AutomationTest.h"
@@ -761,6 +763,260 @@ bool FMantleVehicleLightsOwnMaterialTest::RunTest(const FString& Parameters)
 		TestFalse(TEXT("so the own-look copy does not publish in the rear lights' red"), FMantlePlaceAssets::AnalyzeMaterial(Own).Fidelity2.bVehicleLight);
 		TestTrue(TEXT("and the lamp's does"), FMantlePlaceAssets::AnalyzeMaterial(Lamp).Fidelity2.bVehicleLight);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleLightsSecondUVZonesTest,
+	"Mantle.Vehicle.Lights.ZonesOnSecondUV",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleLightsSecondUVZonesTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleLightsTestPrivate;
+	// A lamp material that picks its zones on the mesh's second UV set, as Leartes' MM_Lights02 does (its own numbers are not used here): a mask's blue read at UV1
+	// through a chain of If nodes, the brightest zone first (white above 0.05, orange above 0.04, red above 0.02, else unlit plastic), times a strength.
+	// The first UV set is the same everywhere, so only the second one can tell the zones apart.
+	UMaterial* Lamp = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+	TArray<FColor> Pixels;
+	Pixels.Init(FColor(0, 0, 0, 255), 16);
+	Pixels[0 * 4 + 0] = FColor(0, 0, 8, 255);   // cell (0, 0): 0.031, the red light
+	Pixels[0 * 4 + 2] = FColor(0, 0, 15, 255);  // cell (2, 0): 0.059, the white light
+	Pixels[2 * 4 + 0] = FColor(0, 0, 11, 255);  // cell (0, 2): 0.043, the orange signal
+	UTexture2D* Masks = NewObject<UTexture2D>(Lamp, FName(TEXT("T_Lamp_Zones")), RF_Transient);
+	Masks->SRGB = false;
+	Masks->Source.Init(4, 4, 1, 1, TSF_BGRA8, reinterpret_cast<const uint8*>(Pixels.GetData()));
+	UMaterialExpressionTextureCoordinate* Second = AddNode<UMaterialExpressionTextureCoordinate>(Lamp);
+	Second->CoordinateIndex = 1;
+	UMaterialExpressionTextureSampleParameter2D* Zone = AddSample(Lamp, TEXT("ZoneMask"), Masks);
+	Zone->Coordinates.Connect(0, Second);
+	const auto Color = [Lamp](const FLinearColor& Value)
+	{
+		UMaterialExpressionConstant3Vector* Node = AddNode<UMaterialExpressionConstant3Vector>(Lamp);
+		Node->Constant = Value;
+		return Node;
+	};
+	const auto Threshold = [Lamp](const float Value)
+	{
+		UMaterialExpressionConstant* Node = AddNode<UMaterialExpressionConstant>(Lamp);
+		Node->R = Value;
+		return Node;
+	};
+	const auto Pick = [Lamp, Zone](UMaterialExpression* Above, UMaterialExpressionConstant* Line, UMaterialExpression* Below)
+	{
+		UMaterialExpressionIf* If = AddNode<UMaterialExpressionIf>(Lamp);
+		If->A.Connect(3, Zone);  // output 3: the blue channel
+		If->B.Connect(0, Line);
+		If->AGreaterThanB.Connect(0, Above);
+		If->ALessThanB.Connect(0, Below);
+		return If;
+	};
+	UMaterialExpressionIf* RedOrNot = Pick(Color(FLinearColor(1.f, 0.f, 0.f)), Threshold(0.02f), Color(FLinearColor::Black));
+	UMaterialExpressionIf* OrangeOrLess = Pick(Color(FLinearColor(1.f, 0.45f, 0.f)), Threshold(0.04f), RedOrNot);
+	UMaterialExpressionIf* WhiteOrLess = Pick(Color(FLinearColor(1.f, 1.f, 1.f)), Threshold(0.05f), OrangeOrLess);
+	UMaterialExpressionScalarParameter* Strength = AddNode<UMaterialExpressionScalarParameter>(Lamp);
+	Strength->ParameterName = TEXT("EmissiveStrength");
+	Strength->DefaultValue = 5.f;
+	Strength->UpdateParameterGuid(true, false);
+	UMaterialExpressionMultiply* Lit = AddNode<UMaterialExpressionMultiply>(Lamp);
+	Lit->A.Connect(0, WhiteOrLess);
+	Lit->B.Connect(0, Strength);
+	Lamp->GetEditorOnlyData()->EmissiveColor.Connect(0, Lit);
+	Lamp->UpdateCachedExpressionData();
+
+	// The evaluator works the graph out as the GPU would.
+	FMantleEmissiveEval Eval;
+	FString Why;
+	if (!TestTrue(*FString::Printf(TEXT("the lamp's graph is worked out (%s)"), *Why), Eval.Prepare(Lamp, {}, Why)))
+	{
+		return false;
+	}
+	TestTrue(TEXT("it reads the second UV set"), Eval.UsesUV(1));
+	const auto At = [&Eval](const FVector2f& UV1)
+	{
+		const FVector2f UVs[2] = { FVector2f(0.1f, 0.1f), UV1 };
+		return Eval.At(MakeArrayView(UVs, 2));
+	};
+	TestTrue(TEXT("the red zone is red, times its strength"), At(FVector2f(0.125f, 0.125f)).Equals(FLinearColor(5.f, 0.f, 0.f), 0.01f));
+	TestTrue(TEXT("the white zone is white"), At(FVector2f(0.625f, 0.125f)).Equals(FLinearColor(5.f, 5.f, 5.f), 0.01f));
+	TestTrue(TEXT("the orange zone is orange"), At(FVector2f(0.125f, 0.625f)).Equals(FLinearColor(5.f, 2.25f, 0.f), 0.01f));
+	TestTrue(TEXT("the plastic does not glow"), At(FVector2f(0.625f, 0.625f)).Equals(FLinearColor::Black, 0.01f));
+
+	// On a body: the front pair over the orange zone, the back left over the red, the back right over the white, the roof over the plastic (MakeBody's quads 0..4).
+	FMantleSkinnedMesh Body;
+	TArray<FSkeletalMaterial> Materials;
+	MakeBody(Body, Materials, TEXT("M_Lens"));
+	Materials[0].MaterialInterface = Lamp;
+	const FVector2f Spots[] = { { 0.125f, 0.625f }, { 0.125f, 0.625f }, { 0.125f, 0.125f }, { 0.625f, 0.125f }, { 0.625f, 0.625f } };
+	TArray<FVector2f> UV1s;
+	UV1s.Init(FVector2f(0.625f, 0.625f), Body.LODs[0].Positions.Num());
+	for (int32 Quad = 0; Quad < 5; ++Quad)
+	{
+		for (int32 Corner = 0; Corner < 4; ++Corner)
+		{
+			UV1s[Quad * 4 + Corner] = Spots[Quad];
+		}
+	}
+	const FMantleVehicleLightGuess Guess = FMantleVehicleLights::Find(Body, Materials, false, &UV1s);
+	const auto Has = [&Guess](const EMantleLightKind Kind, const int32 Triangle) { return Guess.Triangles[static_cast<int32>(Kind)].Contains(Triangle); };
+	TestTrue(TEXT("the red zone (back left) is a rear light"), Has(EMantleLightKind::Rear, 4) && Has(EMantleLightKind::Rear, 5));
+	TestTrue(TEXT("the white zone (back right) is a reverse light"), Has(EMantleLightKind::Reverse, 6) && Has(EMantleLightKind::Reverse, 7));
+	TestTrue(TEXT("the orange zone at the front is the signals, by side"), Has(EMantleLightKind::Left, 0) && Has(EMantleLightKind::Right, 2));
+	bool bRoof = false;
+	for (int32 Kind = 0; Kind < FMantleVehicleLights::NumKinds; ++Kind)
+	{
+		bRoof = bRoof || Guess.Triangles[Kind].Contains(8) || Guess.Triangles[Kind].Contains(9);
+	}
+	TestFalse(TEXT("the unlit plastic on the roof is no light"), bRoof);
+	TestTrue(TEXT("and nothing needed saying"), Guess.Notes.IsEmpty());
+
+	// Without the second UV set (a body read with one), the lamp is found as before, and the notes say why.
+	const FMantleVehicleLightGuess Without = FMantleVehicleLights::Find(Body, Materials, false);
+	TestTrue(*FString::Printf(TEXT("without UV1 the notes say it (%s)"), *FString::Join(Without.Notes, TEXT(" "))),
+		Without.Notes.ContainsByPredicate([](const FString& Note) { return Note.Contains(TEXT("second UV set")); }));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleLightsZoneSwitchesTest,
+	"Mantle.Vehicle.Lights.ZoneSwitches",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleLightsZoneSwitchesTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleLightsTestPrivate;
+	// A lamp shaped as Leartes' MM_Lights02 is (its own numbers are not used here): the zone's color picked by a mask's blue at UV1, and how much it glows the sum of
+	// one switch per zone (red light, indicators, white lights) times that zone's flag, every switch 0 in the material (the game turns each up). Its white is bluish
+	// and its orange deep, as a real lamp's are: by color alone the white is no white light and the orange reads as red. Its switches say which light each zone is.
+	UMaterial* Lamp = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+	TArray<FColor> Pixels;
+	Pixels.Init(FColor(0, 0, 0, 255), 16);
+	Pixels[0 * 4 + 0] = FColor(0, 0, 8, 255);   // cell (0, 0): 0.031, the red light
+	Pixels[0 * 4 + 2] = FColor(0, 0, 15, 255);  // cell (2, 0): 0.059, the white light
+	Pixels[2 * 4 + 0] = FColor(0, 0, 11, 255);  // cell (0, 2): 0.043, the orange signal
+	UTexture2D* Masks = NewObject<UTexture2D>(Lamp, FName(TEXT("T_Lamp_Zones")), RF_Transient);
+	Masks->SRGB = false;
+	Masks->Source.Init(4, 4, 1, 1, TSF_BGRA8, reinterpret_cast<const uint8*>(Pixels.GetData()));
+	UMaterialExpressionTextureCoordinate* Second = AddNode<UMaterialExpressionTextureCoordinate>(Lamp);
+	Second->CoordinateIndex = 1;
+	UMaterialExpressionTextureSampleParameter2D* Zone = AddSample(Lamp, TEXT("ZoneMask"), Masks);
+	Zone->Coordinates.Connect(0, Second);
+	const auto Color = [Lamp](const FLinearColor& Value)
+	{
+		UMaterialExpressionConstant3Vector* Node = AddNode<UMaterialExpressionConstant3Vector>(Lamp);
+		Node->Constant = Value;
+		return Node;
+	};
+	const auto Number = [Lamp](const float Value)
+	{
+		UMaterialExpressionConstant* Node = AddNode<UMaterialExpressionConstant>(Lamp);
+		Node->R = Value;
+		return Node;
+	};
+	const auto Pick = [Lamp, Zone, &Number](UMaterialExpression* Above, const float Line, UMaterialExpression* Below)
+	{
+		UMaterialExpressionIf* If = AddNode<UMaterialExpressionIf>(Lamp);
+		If->A.Connect(3, Zone);  // output 3: the blue channel
+		If->B.Connect(0, Number(Line));
+		If->AGreaterThanB.Connect(0, Above);
+		If->ALessThanB.Connect(0, Below);
+		return If;
+	};
+	const auto Switch = [Lamp](const TCHAR* Name)
+	{
+		UMaterialExpressionScalarParameter* Node = AddNode<UMaterialExpressionScalarParameter>(Lamp);
+		Node->ParameterName = Name;
+		Node->DefaultValue = 0.f;
+		Node->UpdateParameterGuid(true, false);
+		return Node;
+	};
+	const auto Times = [Lamp](UMaterialExpression* A, UMaterialExpression* B)
+	{
+		UMaterialExpressionMultiply* Node = AddNode<UMaterialExpressionMultiply>(Lamp);
+		Node->A.Connect(0, A);
+		Node->B.Connect(0, B);
+		return Node;
+	};
+	const auto Plus = [Lamp](UMaterialExpression* A, UMaterialExpression* B)
+	{
+		UMaterialExpressionAdd* Node = AddNode<UMaterialExpressionAdd>(Lamp);
+		Node->A.Connect(0, A);
+		Node->B.Connect(0, B);
+		return Node;
+	};
+	// The zone's color: white above 0.05, orange above 0.04, red above 0.02, else unlit plastic.
+	const FLinearColor Red(1.f, 0.f, 0.f);
+	const FLinearColor Orange(0.97f, 0.14f, 0.f);
+	const FLinearColor White(0.63f, 0.67f, 0.92f);
+	UMaterialExpressionIf* Colors = Pick(Color(White), 0.05f, Pick(Color(Orange), 0.04f, Pick(Color(Red), 0.02f, Color(FLinearColor::Black))));
+	// Each zone's flag (1 in it, 0 elsewhere) times its switch.
+	UMaterialExpression* RedFlag = Pick(Pick(Number(0.f), 0.04f, Number(1.f)), 0.02f, Number(0.f));
+	UMaterialExpression* OrangeFlag = Pick(Pick(Number(0.f), 0.05f, Number(1.f)), 0.04f, Number(0.f));
+	UMaterialExpression* WhiteFlag = Pick(Number(1.f), 0.05f, Number(0.f));
+	UMaterialExpression* Glows = Plus(Plus(Times(RedFlag, Switch(TEXT("Red Light Intensity"))), Times(OrangeFlag, Switch(TEXT("Indicator Intensity")))),
+		Times(WhiteFlag, Switch(TEXT("White Lights Intensity"))));
+	UMaterialExpressionLinearInterpolate* Lit = AddNode<UMaterialExpressionLinearInterpolate>(Lamp);
+	Lit->A.Connect(0, Number(0.f));
+	Lit->B.Connect(0, Colors);
+	Lit->Alpha.Connect(0, Glows);
+	Lamp->GetEditorOnlyData()->EmissiveColor.Connect(0, Times(Lit, Number(5.f)));
+	Lamp->UpdateCachedExpressionData();
+
+	FMantleMaterialGlow Glow;
+	FMantleMaterialGlow::Read(Lamp, Glow);
+	TestEqual(TEXT("its three switches are listed off"), Glow.OffScalars.Num(), 3);
+	// By color alone (today's rule for any glow) the white is no light and the orange is a red one.
+	const FBox3f Car(FVector3f(-200.f, -80.f, 0.f), FVector3f(200.f, 80.f, 150.f));
+	TestFalse(TEXT("the bluish white is no light by color"), FMantleVehicleLights::Classify(FVector3f(-190.f, 40.f, 80.f), White * 5.f, Car).IsSet());
+	TestTrue(TEXT("the deep orange reads as red by color"), FMantleVehicleLights::Classify(FVector3f(-190.f, 40.f, 80.f), Orange * 5.f, Car)
+		== TOptional<EMantleLightKind>(EMantleLightKind::Rear));
+
+	// On a body (MakeBody's quads: 0 and 1 the front pair, 2 the back left, 3 the back right, 4 the roof), first the orange at the front, the red at the back
+	// left, the white at the back right, the roof unlit plastic.
+	FMantleSkinnedMesh Body;
+	TArray<FSkeletalMaterial> Materials;
+	MakeBody(Body, Materials, TEXT("M_Lens"));
+	Materials[0].MaterialInterface = Lamp;
+	const FVector2f AtRed(0.125f, 0.125f);
+	const FVector2f AtWhite(0.625f, 0.125f);
+	const FVector2f AtOrange(0.125f, 0.625f);
+	const FVector2f AtPlastic(0.625f, 0.625f);
+	const auto FindAt = [&Body, &Materials](std::initializer_list<FVector2f> Spots)
+	{
+		TArray<FVector2f> UV1s;
+		UV1s.Init(FVector2f(0.625f, 0.625f), Body.LODs[0].Positions.Num());
+		int32 Quad = 0;
+		for (const FVector2f& Spot : Spots)
+		{
+			for (int32 Corner = 0; Corner < 4; ++Corner)
+			{
+				UV1s[Quad * 4 + Corner] = Spot;
+			}
+			++Quad;
+		}
+		return FMantleVehicleLights::Find(Body, Materials, false, &UV1s);
+	};
+	const auto Has = [](const FMantleVehicleLightGuess& Guess, const EMantleLightKind Kind, const int32 Triangle)
+	{
+		return Guess.Triangles[static_cast<int32>(Kind)].Contains(Triangle);
+	};
+	const FMantleVehicleLightGuess First = FindAt({ AtOrange, AtOrange, AtRed, AtWhite, AtPlastic });
+	TestTrue(TEXT("the orange at the front is the signals, by side"), Has(First, EMantleLightKind::Left, 0) && Has(First, EMantleLightKind::Right, 2));
+	TestTrue(TEXT("the red at the back is a rear light"), Has(First, EMantleLightKind::Rear, 4) && Has(First, EMantleLightKind::Rear, 5));
+	TestTrue(TEXT("the white at the back is a reverse light"), Has(First, EMantleLightKind::Reverse, 6) && Has(First, EMantleLightKind::Reverse, 7));
+	bool bRoof = false;
+	for (int32 Kind = 0; Kind < FMantleVehicleLights::NumKinds; ++Kind)
+	{
+		bRoof = bRoof || First.Triangles[Kind].Contains(8) || First.Triangles[Kind].Contains(9);
+	}
+	TestFalse(TEXT("the unlit plastic on the roof is no light"), bRoof);
+	TestTrue(*FString::Printf(TEXT("and nothing needed saying (%s)"), *FString::Join(First.Notes, TEXT(" "))), First.Notes.IsEmpty());
+
+	// Then the white at the front, the orange at the back left, the red at the back right.
+	const FMantleVehicleLightGuess Then = FindAt({ AtWhite, AtWhite, AtOrange, AtRed, AtPlastic });
+	TestTrue(TEXT("the white at the front is the headlights"), Has(Then, EMantleLightKind::Head, 0) && Has(Then, EMantleLightKind::Head, 2));
+	TestTrue(TEXT("the orange at the back is a signal, not a rear light"), Has(Then, EMantleLightKind::Left, 4) && !Then.Triangles[static_cast<int32>(EMantleLightKind::Rear)].Contains(4));
+	TestTrue(TEXT("the red at the back right is a rear light"), Has(Then, EMantleLightKind::Rear, 6));
 	return true;
 }
 

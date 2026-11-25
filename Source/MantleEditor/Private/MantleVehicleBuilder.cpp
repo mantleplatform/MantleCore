@@ -1492,7 +1492,10 @@ void FMantleVehicleBuilder::LightOwnBody(FMantleVehicleBuildResult& Built, const
 		Built.Notes.Add(FString::Printf(TEXT("Mantle could not look for lights on your model (%s), so it has none yet. Pick its light sections in the vehicle builder's Seats and paint step."), *Error));
 		return;
 	}
-	const FMantleVehicleLightGuess Guess = FMantleVehicleLights::Find(Body, Materials, false);
+	// The model's second UV set too (the same render vertices as Body's), for a lens that picks its zones there.
+	const TArray<FVector2f> UV1s = FMantleVehicleLights::SecondUVs(*Model);
+	const FMantleVehicleLightGuess Guess = FMantleVehicleLights::Find(Body, Materials, false, UV1s.Num() > 0 ? &UV1s : nullptr);
+	Built.Notes.Append(Guess.Notes);
 	FMantleVehicleSourceLights Found;
 	FMantleVehicleLights::Cut(Body, Materials, Guess, Found);
 	bool bCut = false;
@@ -1977,7 +1980,10 @@ bool FMantleVehicleBuilder::PrepareFromModel(UObject* ModelAsset, const FString&
 	// usually has far more slots than materials. Skin made the body from the model, so the model itself is not touched.
 	FMantleVehicleConverter::MergeIdenticalSlots(Skinned.Body, Skinned.Materials, Model.Name, Out.MergedInto, Out.Notes);
 	// The lights: the spots of the model that glow (or are named for a light) are cut into sections of their own, so the game can switch each one.
-	const FMantleVehicleLightGuess LightGuess = FMantleVehicleLights::Find(Skinned.Body, Skinned.Materials, Spec.bCenterline);
+	// Skin carries the model's second UV set in the body's vertex order (Extras.UVs[0]), for a lens that picks its zones there.
+	const TArray<FVector2f>* SkinnedUV1s = Skinned.Extras.UVs.Num() > 0 && Skinned.Body.LODs.Num() > 0 && Skinned.Extras.UVs[0].Num() == Skinned.Body.LODs[0].Positions.Num() ? &Skinned.Extras.UVs[0] : nullptr;
+	const FMantleVehicleLightGuess LightGuess = FMantleVehicleLights::Find(Skinned.Body, Skinned.Materials, Spec.bCenterline, SkinnedUV1s);
+	Out.Notes.Append(LightGuess.Notes);
 	FMantleVehicleLights::Cut(Skinned.Body, Skinned.Materials, LightGuess, Out.Lights);
 	// What reading the model had to say (a Nanite mesh read from its source or from its fallback, and why).
 	Out.Notes.Append(Model.Notes);

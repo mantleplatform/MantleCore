@@ -9,6 +9,8 @@
 #include "HAL/IConsoleManager.h"
 #include "ImageCore.h"
 #include "MantleGlowMaterial.h"
+#include "MantleMaterialEval.h"
+#include "Rendering/SkeletalMeshRenderData.h"
 #include "MantleRuntime.h"
 #include "MantleSkinnedMesh.h"
 #include "MantleVehicleChassisMesh.h"
@@ -32,9 +34,9 @@ namespace MantleVehicleLightsPrivate
 	constexpr float GlowThreshold = 0.3f;
 
 	/**
-	 * The most of a material's triangles that may glow when its glow is only a mask or the car's own color picture (no glow-specific texture to say where): more than
-	 * this share is the whole surface lit by a picture that is not a glow, not lights, and the material's triangles stay on the body. Measured on SUV04: interior vs
-	 * lens (see PR).
+	 * The most of a material's triangles that may glow when its glow passes through a separate mask (FMantleMaterialGlow::MaskTexture; the check applies only then):
+	 * more than this share is the whole surface lit by a picture that is not a glow, not lights, and the material's triangles stay on the body. A plain lens whose
+	 * emissive is its own color picture is not checked: it glows over its whole slot and is a light. Measured on SUV04: interior vs lens (#271).
 	 */
 	constexpr float MaxMaskedGlowShare = 0.25f;
 
@@ -295,6 +297,173 @@ namespace MantleVehicleLightsPrivate
 			}
 		}
 		return Best;
+	}
+
+	/**
+	 * The light a lamp's glow switch names, for a point at Center. A lamp with one switch per zone (MM_Lights02's "Red Light Intensity", "Indicator Intensity" and
+	 * "White Lights Intensity") says by them which light each zone is, where the zone's own color may not pass for one: a bluish white is no white to Classify, and a
+	 * deep orange reads as red. A white switch is the headlights at the front and the reverse lights at the back; a red one, the rear lights at the back.
+	 * bNamed is false for a switch whose name says no light (a strength, an amount): then its color decides, as any glow's does.
+	 */
+	TOptional<EMantleLightKind> KindFromSwitch(const FName Switch, const FVector3f& Center, const FBox3f& Bounds, bool& bNamed)
+	{
+		const TArray<FString> Said = Words(Switch.ToString());
+		const float Along = (Center.X - Bounds.GetCenter().X) / FMath::Max(Bounds.GetExtent().X, 1.f);
+		const bool bFront = Along >= EndShare;
+		const bool bBack = Along <= -EndShare;
+		bNamed = true;
+		if (AnyWord(Said, { TEXT("signal"), TEXT("indicator"), TEXT("blinker"), TEXT("turn") }))
+		{
+			return SideOf(Center.Y, Bounds);
+		}
+		if (AnyWord(Said, { TEXT("revers"), TEXT("backup") }))
+		{
+			return EMantleLightKind::Reverse;
+		}
+		if (AnyWord(Said, { TEXT("head") }))
+		{
+			return EMantleLightKind::Head;
+		}
+		if (AnyWord(Said, { TEXT("red"), TEXT("brake"), TEXT("stop"), TEXT("tail"), TEXT("rear") }))
+		{
+			return bBack ? TOptional<EMantleLightKind>(EMantleLightKind::Rear) : TOptional<EMantleLightKind>();
+		}
+		if (AnyWord(Said, { TEXT("white") }))
+		{
+			return bFront ? TOptional<EMantleLightKind>(EMantleLightKind::Head) : bBack ? TOptional<EMantleLightKind>(EMantleLightKind::Reverse) : TOptional<EMantleLightKind>();
+		}
+		bNamed = false;
+		return {};
+	}
+
+	/**
+	 * A lens whose emissive picks its zones on the mesh's second UV set (a mask read at UV1 through If and Lerp nodes, Leartes' MM_Lights02 among them): the material's
+	 * own graph worked out at each triangle (FMantleEmissiveEval), with both UV sets. A lens with several glow switches (one per zone) is also worked out with each
+	 * switch on alone: the one that lights a triangle says by its name which light it is (KindFromSwitch). A triangle no single switch lights, or whose switch names
+	 * no light, is sorted by its glow's color as any glow is (Classify). False, leaving Kind as it was, for a lens that reads only its first UV set (the readings below
+	 * cover it), and, with a note, for one whose graph Mantle cannot work out or a body with no second UV set to read it by: those are found as before.
+	 */
+	bool KindsFromGraph(const FMantleSkinnedMeshLOD& LOD, const TArray<int32>& Triangles, const UMaterialInterface* Material, const FMantleMaterialGlow& Glow,
+		const TArray<FVector2f>* UV1s, const FBox3f& Bounds, TArray<TOptional<EMantleLightKind>>& Kind, TArray<FString>& OutNotes)
+	{
+		// Most materials do not read a second UV set at all: told cheaply, without reading a texture.
+		if (!Material || !FMantleEmissiveEval::ReadsUV(Material, 1))
+		{
+			return false;
+		}
+		FMantleEmissiveEval Eval;
+		FString Why;
+		const bool bReady = Eval.Prepare(Material, Glow.OffScalars, Why);
+		const FString Name = Material ? Material->GetName() : FString(TEXT("(none)"));
+		if (!bReady)
+		{
+			OutNotes.Add(FString::Printf(TEXT("Lights: %s picks where it glows on your model's second UV set, but %s, so Mantle found its lights from its first UV set as before."), *Name, *Why));
+			return false;
+		}
+		if (!UV1s || UV1s->Num() != LOD.Positions.Num())
+		{
+			OutNotes.Add(FString::Printf(TEXT("Lights: %s picks where it glows on your model's second UV set, which Mantle could not read, so its lights were found from the first UV set as before."), *Name));
+			return false;
+		}
+		// Each switch on alone, the others as the material sets them (off): only that switch's zones glow.
+		TArray<FName> Switches;
+		TArray<TUniquePtr<FMantleEmissiveEval>> Alone;
+		if (Glow.OffScalars.Num() > 1)
+		{
+			for (const FName& Switch : Glow.OffScalars)
+			{
+				TUniquePtr<FMantleEmissiveEval> Each = MakeUnique<FMantleEmissiveEval>();
+				FString Ignored;
+				if (Each->Prepare(Material, { Switch }, Ignored))
+				{
+					Switches.Add(Switch);
+					Alone.Add(MoveTemp(Each));
+				}
+			}
+		}
+		for (int32 Index = 0; Index < Triangles.Num(); ++Index)
+		{
+			int32 C[3];
+			Corners(LOD, Triangles[Index], C);
+			if (!LOD.UVs.IsValidIndex(C[0]) || !LOD.UVs.IsValidIndex(C[1]) || !LOD.UVs.IsValidIndex(C[2]))
+			{
+				continue;
+			}
+			// The same seven places GlowUnder reads (the middle, halfway to each corner, halfway to each edge's middle), on both UV sets alike.
+			const auto Point = [&](const FVector3f& Weights, const TArray<FVector2f>& Set)
+			{
+				return Set[C[0]] * Weights.X + Set[C[1]] * Weights.Y + Set[C[2]] * Weights.Z;
+			};
+			const FVector3f Middle(1.f / 3.f, 1.f / 3.f, 1.f / 3.f);
+			TArray<FVector3f, TInlineAllocator<7>> Weights = { Middle };
+			for (int32 Corner = 0; Corner < 3; ++Corner)
+			{
+				FVector3f At(0.f);
+				At[Corner] = 1.f;
+				FVector3f EdgeMiddle(0.f);
+				EdgeMiddle[Corner] = 0.5f;
+				EdgeMiddle[(Corner + 1) % 3] = 0.5f;
+				Weights.Add((Middle + At) * 0.5f);
+				Weights.Add((Middle + EdgeMiddle) * 0.5f);
+			}
+			FLinearColor Best = FLinearColor::Black;
+			bool bBestColored = false;
+			// With each switch on alone: the brightest glow it gives this triangle, and the switch that gives the brightest.
+			TArray<FLinearColor, TInlineAllocator<4>> SwitchBest;
+			SwitchBest.Init(FLinearColor::Black, Alone.Num());
+			for (const FVector3f& Each : Weights)
+			{
+				const FVector2f UVs[2] = { Point(Each, LOD.UVs), Point(Each, *UV1s) };
+				const FLinearColor Here = Eval.At(MakeArrayView(UVs, 2));
+				if (Brightest(Here) < GlowThreshold)
+				{
+					continue;
+				}
+				const bool bColored = !IsPale(Here);
+				if ((bColored && !bBestColored) || (bColored == bBestColored && Brightest(Here) > Brightest(Best)))
+				{
+					Best = Here;
+					bBestColored = bColored;
+				}
+				for (int32 Switch = 0; Switch < Alone.Num(); ++Switch)
+				{
+					const FLinearColor Lit = Alone[Switch]->At(MakeArrayView(UVs, 2));
+					if (Brightest(Lit) > Brightest(SwitchBest[Switch]))
+					{
+						SwitchBest[Switch] = Lit;
+					}
+				}
+			}
+			if (Brightest(Best) < GlowThreshold)
+			{
+				continue;
+			}
+			const FVector3f Center = Centroid(LOD, Triangles[Index]);
+			int32 Lighting = INDEX_NONE;
+			for (int32 Switch = 0; Switch < Alone.Num(); ++Switch)
+			{
+				if (Brightest(SwitchBest[Switch]) >= GlowThreshold && (Lighting == INDEX_NONE || Brightest(SwitchBest[Switch]) > Brightest(SwitchBest[Lighting])))
+				{
+					Lighting = Switch;
+				}
+			}
+			if (Lighting != INDEX_NONE)
+			{
+				bool bNamed = false;
+				const TOptional<EMantleLightKind> Named = KindFromSwitch(Switches[Lighting], Center, Bounds, bNamed);
+				const TOptional<EMantleLightKind> Found = bNamed ? Named : FMantleVehicleLights::Classify(Center, SwitchBest[Lighting], Bounds);
+				if (Found)
+				{
+					Kind[Index] = Found;
+				}
+				continue;
+			}
+			if (const TOptional<EMantleLightKind> Found = FMantleVehicleLights::Classify(Center, Best, Bounds))
+			{
+				Kind[Index] = Found;
+			}
+		}
+		return true;
 	}
 
 	/** The pixels of a glow's mask; null for a glow with none, or (bUnreadable set) one Mantle cannot read (no source data), where nothing is guessed. */
@@ -643,7 +812,30 @@ TOptional<EMantleLightKind> FMantleVehicleLights::FromGlowMarker(const FString& 
 	return {};
 }
 
-FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Body, const TArray<FSkeletalMaterial>& Materials, const bool bCenterline)
+TArray<FVector2f> FMantleVehicleLights::SecondUVs(const USkeletalMesh& Mesh)
+{
+	// The same buffer and order FMantleSkinnedMesh::ExtractFromSkeletalMesh reads its first UV set from (LOD 0's render vertices), so the two line up vertex for vertex.
+	TArray<FVector2f> Out;
+	const FSkeletalMeshRenderData* RenderData = const_cast<USkeletalMesh&>(Mesh).GetResourceForRendering();
+	if (!RenderData || RenderData->LODRenderData.Num() == 0)
+	{
+		return Out;
+	}
+	const FStaticMeshVertexBuffer& Buffer = RenderData->LODRenderData[0].StaticVertexBuffers.StaticMeshVertexBuffer;
+	if (Buffer.GetNumTexCoords() < 2)
+	{
+		return Out;
+	}
+	const uint32 Count = Buffer.GetNumVertices();
+	Out.SetNumUninitialized(static_cast<int32>(Count));
+	for (uint32 Vertex = 0; Vertex < Count; ++Vertex)
+	{
+		Out[static_cast<int32>(Vertex)] = Buffer.GetVertexUV(Vertex, 1);
+	}
+	return Out;
+}
+
+FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Body, const TArray<FSkeletalMaterial>& Materials, const bool bCenterline, const TArray<FVector2f>* UV1s)
 {
 	using namespace MantleVehicleLightsPrivate;
 	FMantleVehicleLightGuess Out;
@@ -759,12 +951,20 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 		else
 		{
 			FMantleMaterialGlow Glow;
-			const bool bGlows = FMantleMaterialGlow::Read(Material, Glow) && !IsInertGlow(Glow, Images);
-			if (!bGlows && !bBoneLights)
+			const bool bRead = FMantleMaterialGlow::Read(Material, Glow);
+			const bool bGlows = bRead && !IsInertGlow(Glow, Images);
+			// A lens that picks its zones on the second UV set is read from its own graph first, whatever the glow reading below makes of it (an If chain of constant
+			// colors has no glow texture for that reading to find).
+			const bool bByGraph = KindsFromGraph(LOD, Triangles, Material, Glow, UV1s, Bounds, Kind, Out.Notes);
+			if (!bByGraph && !bGlows && !bBoneLights)
 			{
 				continue;
 			}
-			if (!bGlows)
+			if (bByGraph)
+			{
+				// Its zones read from its own graph on both UV sets: exact, so no share check.
+			}
+			else if (!bGlows)
 			{
 				// No glow to read: the bones' names are all there is to go on. (A material that glows is read by its glow, whatever its bones are called.)
 				Kind = FromBones;
@@ -1358,8 +1558,13 @@ namespace MantleVehicleLightsPrivate
 				UE_LOG(LogTemp, Warning, TEXT("MANTLE_FIND_LIGHTS ok=0 model=%s problem: %s"), *Args[0], Mesh ? *Error : TEXT("not a skeletal mesh"));
 				return;
 			}
-			const FMantleVehicleLightGuess Guess = FMantleVehicleLights::Find(Body, Materials, false);
-			UE_LOG(LogTemp, Display, TEXT("MANTLE_FIND_LIGHTS ok=1 model=%s slots=%d found=%d"), *Args[0], Materials.Num(), Guess.FoundAny() ? 1 : 0);
+			const TArray<FVector2f> UV1s = FMantleVehicleLights::SecondUVs(*Mesh);
+			const FMantleVehicleLightGuess Guess = FMantleVehicleLights::Find(Body, Materials, false, UV1s.Num() > 0 ? &UV1s : nullptr);
+			UE_LOG(LogTemp, Display, TEXT("MANTLE_FIND_LIGHTS ok=1 model=%s slots=%d found=%d uv1=%d"), *Args[0], Materials.Num(), Guess.FoundAny() ? 1 : 0, UV1s.Num() > 0 ? 1 : 0);
+			for (const FString& Note : Guess.Notes)
+			{
+				UE_LOG(LogTemp, Display, TEXT("MANTLE_FIND_LIGHTS note: %s"), *Note);
+			}
 			for (int32 Kind = 0; Kind < FMantleVehicleLights::NumKinds; ++Kind)
 			{
 				FString Whole;
