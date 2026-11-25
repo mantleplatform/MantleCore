@@ -300,10 +300,48 @@ namespace MantleVehicleLightsPrivate
 	}
 
 	/**
+	 * The light a lamp's glow switch names, for a point at Center. A lamp with one switch per zone (MM_Lights02's "Red Light Intensity", "Indicator Intensity" and
+	 * "White Lights Intensity") says by them which light each zone is, where the zone's own color may not pass for one: a bluish white is no white to Classify, and a
+	 * deep orange reads as red. A white switch is the headlights at the front and the reverse lights at the back; a red one, the rear lights at the back.
+	 * bNamed is false for a switch whose name says no light (a strength, an amount): then its color decides, as any glow's does.
+	 */
+	TOptional<EMantleLightKind> KindFromSwitch(const FName Switch, const FVector3f& Center, const FBox3f& Bounds, bool& bNamed)
+	{
+		const TArray<FString> Said = Words(Switch.ToString());
+		const float Along = (Center.X - Bounds.GetCenter().X) / FMath::Max(Bounds.GetExtent().X, 1.f);
+		const bool bFront = Along >= EndShare;
+		const bool bBack = Along <= -EndShare;
+		bNamed = true;
+		if (AnyWord(Said, { TEXT("signal"), TEXT("indicator"), TEXT("blinker"), TEXT("turn") }))
+		{
+			return SideOf(Center.Y, Bounds);
+		}
+		if (AnyWord(Said, { TEXT("revers"), TEXT("backup") }))
+		{
+			return EMantleLightKind::Reverse;
+		}
+		if (AnyWord(Said, { TEXT("head") }))
+		{
+			return EMantleLightKind::Head;
+		}
+		if (AnyWord(Said, { TEXT("red"), TEXT("brake"), TEXT("stop"), TEXT("tail"), TEXT("rear") }))
+		{
+			return bBack ? TOptional<EMantleLightKind>(EMantleLightKind::Rear) : TOptional<EMantleLightKind>();
+		}
+		if (AnyWord(Said, { TEXT("white") }))
+		{
+			return bFront ? TOptional<EMantleLightKind>(EMantleLightKind::Head) : bBack ? TOptional<EMantleLightKind>(EMantleLightKind::Reverse) : TOptional<EMantleLightKind>();
+		}
+		bNamed = false;
+		return {};
+	}
+
+	/**
 	 * A lens whose emissive picks its zones on the mesh's second UV set (a mask read at UV1 through If and Lerp nodes, Leartes' MM_Lights02 among them): the material's
-	 * own graph worked out at each triangle (FMantleEmissiveEval), with both UV sets, and the glow there sorted as any glow is (Classify). False, leaving Kind as it was,
-	 * for a lens that reads only its first UV set (the readings below cover it), and, with a note, for one whose graph Mantle cannot work out or a body with no second
-	 * UV set to read it by: those are found as before.
+	 * own graph worked out at each triangle (FMantleEmissiveEval), with both UV sets. A lens with several glow switches (one per zone) is also worked out with each
+	 * switch on alone: the one that lights a triangle says by its name which light it is (KindFromSwitch). A triangle no single switch lights, or whose switch names
+	 * no light, is sorted by its glow's color as any glow is (Classify). False, leaving Kind as it was, for a lens that reads only its first UV set (the readings below
+	 * cover it), and, with a note, for one whose graph Mantle cannot work out or a body with no second UV set to read it by: those are found as before.
 	 */
 	bool KindsFromGraph(const FMantleSkinnedMeshLOD& LOD, const TArray<int32>& Triangles, const UMaterialInterface* Material, const FMantleMaterialGlow& Glow,
 		const TArray<FVector2f>* UV1s, const FBox3f& Bounds, TArray<TOptional<EMantleLightKind>>& Kind, TArray<FString>& OutNotes)
@@ -326,6 +364,22 @@ namespace MantleVehicleLightsPrivate
 		{
 			OutNotes.Add(FString::Printf(TEXT("Lights: %s picks where it glows on your model's second UV set, which Mantle could not read, so its lights were found from the first UV set as before."), *Name));
 			return false;
+		}
+		// Each switch on alone, the others as the material sets them (off): only that switch's zones glow.
+		TArray<FName> Switches;
+		TArray<TUniquePtr<FMantleEmissiveEval>> Alone;
+		if (Glow.OffScalars.Num() > 1)
+		{
+			for (const FName& Switch : Glow.OffScalars)
+			{
+				TUniquePtr<FMantleEmissiveEval> Each = MakeUnique<FMantleEmissiveEval>();
+				FString Ignored;
+				if (Each->Prepare(Material, { Switch }, Ignored))
+				{
+					Switches.Add(Switch);
+					Alone.Add(MoveTemp(Each));
+				}
+			}
 		}
 		for (int32 Index = 0; Index < Triangles.Num(); ++Index)
 		{
@@ -354,6 +408,9 @@ namespace MantleVehicleLightsPrivate
 			}
 			FLinearColor Best = FLinearColor::Black;
 			bool bBestColored = false;
+			// With each switch on alone: the brightest glow it gives this triangle, and the switch that gives the brightest.
+			TArray<FLinearColor, TInlineAllocator<4>> SwitchBest;
+			SwitchBest.Init(FLinearColor::Black, Alone.Num());
 			for (const FVector3f& Each : Weights)
 			{
 				const FVector2f UVs[2] = { Point(Each, LOD.UVs), Point(Each, *UV1s) };
@@ -368,12 +425,40 @@ namespace MantleVehicleLightsPrivate
 					Best = Here;
 					bBestColored = bColored;
 				}
+				for (int32 Switch = 0; Switch < Alone.Num(); ++Switch)
+				{
+					const FLinearColor Lit = Alone[Switch]->At(MakeArrayView(UVs, 2));
+					if (Brightest(Lit) > Brightest(SwitchBest[Switch]))
+					{
+						SwitchBest[Switch] = Lit;
+					}
+				}
 			}
 			if (Brightest(Best) < GlowThreshold)
 			{
 				continue;
 			}
-			if (const TOptional<EMantleLightKind> Found = FMantleVehicleLights::Classify(Centroid(LOD, Triangles[Index]), Best, Bounds))
+			const FVector3f Center = Centroid(LOD, Triangles[Index]);
+			int32 Lighting = INDEX_NONE;
+			for (int32 Switch = 0; Switch < Alone.Num(); ++Switch)
+			{
+				if (Brightest(SwitchBest[Switch]) >= GlowThreshold && (Lighting == INDEX_NONE || Brightest(SwitchBest[Switch]) > Brightest(SwitchBest[Lighting])))
+				{
+					Lighting = Switch;
+				}
+			}
+			if (Lighting != INDEX_NONE)
+			{
+				bool bNamed = false;
+				const TOptional<EMantleLightKind> Named = KindFromSwitch(Switches[Lighting], Center, Bounds, bNamed);
+				const TOptional<EMantleLightKind> Found = bNamed ? Named : FMantleVehicleLights::Classify(Center, SwitchBest[Lighting], Bounds);
+				if (Found)
+				{
+					Kind[Index] = Found;
+				}
+				continue;
+			}
+			if (const TOptional<EMantleLightKind> Found = FMantleVehicleLights::Classify(Center, Best, Bounds))
 			{
 				Kind[Index] = Found;
 			}
