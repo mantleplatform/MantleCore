@@ -12,6 +12,10 @@
 #include "Engine/Texture2D.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionAdd.h"
+#include "Materials/MaterialExpressionConstant.h"
+#include "Materials/MaterialExpressionConstant3Vector.h"
+#include "Materials/MaterialExpressionIf.h"
+#include "Materials/MaterialExpressionLinearInterpolate.h"
 #include "Materials/MaterialExpressionMultiply.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
@@ -160,6 +164,48 @@ namespace MantleVehicleLightsTestPrivate
 			Emissive = Second;
 		}
 		Material->GetEditorOnlyData()->EmissiveColor.Connect(0, Emissive);
+		Material->UpdateCachedExpressionData();
+		return Material;
+	}
+
+	/** Every cell of MakeGlowTexture's 4x4. */
+	TArray<FIntPoint> AllCells()
+	{
+		TArray<FIntPoint> Cells;
+		for (int32 Y = 0; Y < 4; ++Y)
+		{
+			for (int32 X = 0; X < 4; ++X)
+			{
+				Cells.Add(FIntPoint(X, Y));
+			}
+		}
+		return Cells;
+	}
+
+	/**
+	 * An interior as SUV04 makes it: emissive = Multiply(Lerp(A = 0, B = a color picture, Alpha = a mask's red), Scalar "EmissiveStrength" 2). The picture is white
+	 * all over; the mask is white only at MaskCells. OutPicture and OutMask are the two textures.
+	 */
+	UMaterial* MakeMaskedMaterial(const TArray<FIntPoint>& MaskCells, UTexture2D*& OutPicture, UTexture2D*& OutMask)
+	{
+		UMaterial* Material = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+		OutPicture = MakeGlowTexture(Material, TEXT("T_Interior_BaseColor"), FColor::White, AllCells());
+		OutMask = MakeGlowTexture(Material, TEXT("T_Interior_Masks"), FColor::White, MaskCells);
+		UMaterialExpressionConstant* Zero = AddNode<UMaterialExpressionConstant>(Material);
+		Zero->R = 0.f;
+		UMaterialExpressionLinearInterpolate* Lerp = AddNode<UMaterialExpressionLinearInterpolate>(Material);
+		Lerp->A.Connect(0, Zero);
+		Lerp->B.Connect(0, AddSample(Material, TEXT("BaseTexture"), OutPicture));
+		// Output 1 of a texture sample is its red.
+		Lerp->Alpha.Connect(1, AddSample(Material, TEXT("TextureMasks"), OutMask));
+		UMaterialExpressionScalarParameter* Strength = AddNode<UMaterialExpressionScalarParameter>(Material);
+		Strength->ParameterName = TEXT("EmissiveStrength");
+		Strength->DefaultValue = 2.f;
+		Strength->UpdateParameterGuid(true, false);
+		UMaterialExpressionMultiply* Multiply = AddNode<UMaterialExpressionMultiply>(Material);
+		Multiply->A.Connect(0, Lerp);
+		Multiply->B.Connect(0, Strength);
+		Material->GetEditorOnlyData()->EmissiveColor.Connect(0, Multiply);
 		Material->UpdateCachedExpressionData();
 		return Material;
 	}
@@ -508,6 +554,129 @@ bool FMantleVehicleLightsGlowTexturesTest::RunTest(const FString& Parameters)
 	{
 		TestTrue(TEXT("it keeps its one texture"), TextureOf(Head, TEXT("Lights")) == SingleTexture);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleLightsGlowMaskTest,
+	"Mantle.Vehicle.Lights.GlowMask",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleLightsGlowMaskTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleLightsTestPrivate;
+	const int32 Head = static_cast<int32>(EMantleLightKind::Head);
+	const int32 Reverse = static_cast<int32>(EMantleLightKind::Reverse);
+
+	// Read finds the mask: the picture lerped in by the mask is the glow, the mask's red is the mask.
+	UTexture2D* Picture = nullptr;
+	UTexture2D* Mask = nullptr;
+	UMaterial* OneSpot = MakeMaskedMaterial({ FIntPoint(2, 2) }, Picture, Mask);
+	FMantleMaterialGlow Glow;
+	TestTrue(TEXT("the masked material glows"), FMantleMaterialGlow::Read(OneSpot, Glow));
+	TestTrue(TEXT("the picture is the glow texture"), Glow.Texture == Picture);
+	TestEqual(TEXT("and the only one"), Glow.Textures.Num(), 1);
+	TestTrue(TEXT("the mask is the mask"), Glow.MaskTexture == Mask);
+	TestTrue(TEXT("read by its red"), Glow.MaskChannel == EMantleGlowMaskChannel::R);
+	TestEqual(TEXT("over the first UV set"), Glow.MaskUV, 0);
+
+	// A material with no mask reads as before.
+	TestTrue(TEXT("a lights material glows"), FMantleMaterialGlow::Read(MakeLightsMaterial(false), Glow));
+	TestTrue(TEXT("it has no mask"), Glow.MaskTexture == nullptr);
+	TestEqual(TEXT("and its one glow texture"), Glow.Textures.Num(), 1);
+
+	// The finder: the picture is white everywhere, the mask only at the back right quad, which then alone is lit (white at the back is a reverse light).
+	FMantleSkinnedMesh Body;
+	TArray<FSkeletalMaterial> Materials;
+	MakeBody(Body, Materials, TEXT("M_Body"));
+	LayUVs(Body);
+	Materials[0].MaterialInterface = OneSpot;
+	const FMantleVehicleLightGuess Masked = FMantleVehicleLights::Find(Body, Materials, false);
+	TestEqual(TEXT("only the quad the mask lights glows"), Masked.Triangles[Reverse], TArray<int32>({ 6, 7 }));
+	TestTrue(TEXT("nothing else is a light"), Masked.Triangles[Head].IsEmpty() && Masked.WholeSlots[Head].IsEmpty() && Masked.WholeSlots[Reverse].IsEmpty()
+		&& Masked.Triangles[static_cast<int32>(EMantleLightKind::Rear)].IsEmpty());
+
+	// A mask that lights more than the share a masked glow may (here 6 of 10 triangles) is a picture, not lights: the triangles stay on the body.
+	UMaterial* Wide = MakeMaskedMaterial({ FIntPoint(0, 0), FIntPoint(2, 2) }, Picture, Mask);
+	Materials[0].MaterialInterface = Wide;
+	const FMantleVehicleLightGuess Rejected = FMantleVehicleLights::Find(Body, Materials, false);
+	TestFalse(TEXT("too wide a masked glow finds no light"), Rejected.FoundAny());
+
+	// MM_Lights02's shape: ONE texture sampled twice, once as the outer Lerp's Alpha (the mask) and once inside an If that picks the zone's color (and again as the
+	// base color). A "mask" that is the glow's own texture is no mask: the glow is read whole, so the red zone is a rear light.
+	{
+		UMaterial* Zones = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+		// The real T_Lights_Masks: red high everywhere it lights, green dark exactly where a zone is red and bright where it is white. The back left quad (UV cell
+		// 2,0) is a red zone, the back right (2,2) a white one.
+		TArray<FColor> ZonePixels;
+		ZonePixels.Init(FColor(0, 0, 0, 255), 16);
+		ZonePixels[0 * 4 + 2] = FColor(255, 0, 0, 255);
+		ZonePixels[2 * 4 + 2] = FColor(255, 255, 255, 255);
+		UTexture2D* Masks = NewObject<UTexture2D>(Zones, FName(TEXT("T_Lights_Masks")), RF_Transient);
+		Masks->SRGB = false;
+		Masks->Source.Init(4, 4, 1, 1, TSF_BGRA8, reinterpret_cast<const uint8*>(ZonePixels.GetData()));
+		UMaterialExpressionConstant* Zero = AddNode<UMaterialExpressionConstant>(Zones);
+		Zero->R = 0.f;
+		UMaterialExpressionConstant* Half = AddNode<UMaterialExpressionConstant>(Zones);
+		Half->R = 0.5f;
+		UMaterialExpressionConstant3Vector* Red = AddNode<UMaterialExpressionConstant3Vector>(Zones);
+		Red->Constant = FLinearColor(1.f, 0.f, 0.f);
+		UMaterialExpressionIf* Pick = AddNode<UMaterialExpressionIf>(Zones);
+		Pick->A.Connect(1, AddSample(Zones, TEXT("TextureMasks"), Masks));
+		Pick->B.Connect(0, Half);
+		Pick->AGreaterThanB.Connect(0, Red);
+		Pick->AEqualsB.Connect(0, Zero);
+		Pick->ALessThanB.Connect(0, Zero);
+		UMaterialExpressionLinearInterpolate* Outer = AddNode<UMaterialExpressionLinearInterpolate>(Zones);
+		Outer->A.Connect(0, Zero);
+		Outer->B.Connect(0, Pick);
+		UMaterialExpressionTextureSampleParameter2D* MaskSample = AddSample(Zones, TEXT("TextureMasksUV0"), Masks);
+		// The Lerp reads the green channel, as the real one does: treated as a mask, green would wipe out the red zone (the red-to-white failure on SUV04 and SUV01).
+		Outer->Alpha.Connect(2, MaskSample);
+		Zones->GetEditorOnlyData()->EmissiveColor.Connect(0, Outer);
+		Zones->GetEditorOnlyData()->BaseColor.Connect(0, AddSample(Zones, TEXT("TextureMasksBase"), Masks));
+		Zones->UpdateCachedExpressionData();
+		TestTrue(TEXT("the zones material glows"), FMantleMaterialGlow::Read(Zones, Glow));
+		// The Lerp's Alpha reads the glow's own texture: that is how the material picks its zones, not a mask (the real T_Lights_Masks is dark in green exactly
+		// where its zones are red, so multiplying by it would leave only the white zones: SUV04 and SUV01 lost their taillights that way).
+		TestTrue(TEXT("its own texture is not a mask"), Glow.MaskTexture == nullptr);
+		TestTrue(TEXT("the other samples of it are still glow textures"), Glow.Textures.Num() == 1 && Glow.Texture == Masks);
+		TestTrue(TEXT("and the base color's"), Glow.BaseTexture == Masks);
+		Materials[0].MaterialInterface = Zones;
+		const FMantleVehicleLightGuess ZoneGuess = FMantleVehicleLights::Find(Body, Materials, false);
+		// The material's first color (its red light) tints the whole glow, as on main, so both back quads may read red: the red zone must be among them.
+		const TArray<int32>& ZoneRear = ZoneGuess.Triangles[static_cast<int32>(EMantleLightKind::Rear)];
+		TestTrue(TEXT("the red zone is a rear light"), ZoneRear.Contains(4) && ZoneRear.Contains(5));
+		TestFalse(TEXT("and not a reverse light"), ZoneGuess.Triangles[static_cast<int32>(EMantleLightKind::Reverse)].Contains(4));
+	}
+
+	// A lens switched off in the model (its intensity at 0) still glows where its texture says: the front quads.
+	UMaterial* Lens = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+	UMaterialExpressionMultiply* Switched = AddSwitched(Lens, AddSample(Lens, TEXT("Lights"), MakeGlowTexture(Lens, TEXT("T_Lens_emissive"), FColor::White, { FIntPoint(0, 0) })), TEXT("LightIntensity"));
+	Lens->GetEditorOnlyData()->EmissiveColor.Connect(0, Switched);
+	Lens->UpdateCachedExpressionData();
+	TestTrue(TEXT("the lens glows"), FMantleMaterialGlow::Read(Lens, Glow));
+	TestTrue(TEXT("with no mask"), Glow.MaskTexture == nullptr);
+	TestEqual(TEXT("its switch is listed off"), Glow.OffScalars.Num(), 1);
+	Materials[0].MaterialInterface = Lens;
+	TestEqual(TEXT("a switched-off lens is on, as before"), FMantleVehicleLights::Find(Body, Materials, false).Triangles[Head], TArray<int32>({ 0, 1, 2, 3 }));
+
+	// A plain lens whose emissive is its own color picture times a strength (common on Fab packs), glowing over most of its slot: no separate mask, so the
+	// share check leaves it alone and it stays a light.
+	UMaterial* Plain = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+	UTexture2D* PlainPicture = MakeGlowTexture(Plain, TEXT("T_Lens_BaseColor"), FColor::White, { FIntPoint(0, 0), FIntPoint(2, 0), FIntPoint(2, 2) });
+	UMaterialExpressionMultiply* Strong = AddNode<UMaterialExpressionMultiply>(Plain);
+	Strong->A.Connect(0, AddSample(Plain, TEXT("BaseColor"), PlainPicture));
+	Strong->ConstB = 5.f;
+	Plain->GetEditorOnlyData()->EmissiveColor.Connect(0, Strong);
+	Plain->GetEditorOnlyData()->BaseColor.Connect(0, AddSample(Plain, TEXT("BaseColorToo"), PlainPicture));
+	Plain->UpdateCachedExpressionData();
+	TestTrue(TEXT("the plain lens glows"), FMantleMaterialGlow::Read(Plain, Glow));
+	TestTrue(TEXT("with no mask"), Glow.MaskTexture == nullptr);
+	Materials[0].MaterialInterface = Plain;
+	const FMantleVehicleLightGuess PlainGuess = FMantleVehicleLights::Find(Body, Materials, false);
+	TestEqual(TEXT("a plain full-glow lens keeps its headlights"), PlainGuess.Triangles[Head], TArray<int32>({ 0, 1, 2, 3 }));
+	TestTrue(TEXT("and its back lights"), PlainGuess.FoundAny() && PlainGuess.Triangles[static_cast<int32>(EMantleLightKind::Reverse)].Num() > 0);
 	return true;
 }
 

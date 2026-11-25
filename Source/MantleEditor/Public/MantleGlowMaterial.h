@@ -127,6 +127,16 @@ struct MANTLEEDITOR_API FMantleGlowTexture
 	TArray<FName> OffScalars;
 };
 
+/** Which channel of a mask texture a glow is multiplied by (RGB: the brightest of red, green and blue). */
+enum class EMantleGlowMaskChannel : uint8
+{
+	R,
+	G,
+	B,
+	A,
+	RGB,
+};
+
 /** Where a material glows, for the vehicle builder's light finder: what its emissive graph reads, as the material (or its instance) sets it. */
 struct MANTLEEDITOR_API FMantleMaterialGlow
 {
@@ -153,6 +163,19 @@ struct MANTLEEDITOR_API FMantleMaterialGlow
 	 * off the white default emissive texture every imported material carries. Meaningful with a glow that is only a flat color or a uniform texture.
 	 */
 	bool bColorOff = false;
+
+	/**
+	 * A texture on the emissive path that only says where the glow shows, not what it looks like: one that feeds a Linear Interpolate's Alpha (an interior's
+	 * color picture lerped in by a mask), or a single channel multiplied with the branch that carries the glow texture. Null when there is none. It is never
+	 * Texture or in Textures. Only the first mask found is kept.
+	 */
+	UTexture* MaskTexture = nullptr;
+
+	/** The mask's channel (RGB when the sample reads all three). */
+	EMantleGlowMaskChannel MaskChannel = EMantleGlowMaskChannel::RGB;
+
+	/** The UV set the mask sample reads (its Texture Coordinate's index, else its own constant coordinate): 0 is the mesh's one UV set. */
+	int32 MaskUV = 0;
 
 	/**
 	 * The Scalar Parameters on the path the material sets to 0: a glow switched off in the model ("Emissive Intensity" 0, the way the Fab cars ship). The glow is
