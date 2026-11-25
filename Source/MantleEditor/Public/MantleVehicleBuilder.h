@@ -325,7 +325,14 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 */
 	static bool PlaceSteeringWheel(UMantleVehicleSource& Source, FName Bone, const FMantleVehicleSteeringFit& Fit, TArray<FString>& OutNotes);
 
-	/** A model skinned onto a chassis (Skin): its steering wheel's own bone in the body becomes Source's Steering Wheel Bone when that is empty, and the wheel is placed. True when it changed Source. */
+	/** How far to the side of the driver's seat (cm, across the car) a model's measured steering wheel may be and still replace the chassis's own: about a rim's width. */
+	static constexpr double MaxSteeringWheelAside = 25.0;
+
+	/**
+	 * A model skinned onto a chassis (Skin): its steering wheel's own bone in the body becomes Source's Steering Wheel Bone when that is empty, and the wheel is placed.
+	 * The chassis's own wheel (every build starts from the chassis) is replaced by the measured one, with the driver's hands moved onto its rim, unless the measure is
+	 * not sure or the wheel is not in front of the driver's seat (MaxSteeringWheelAside): the chassis's wheel then stays, and a note says why. True when it changed Source.
+	 */
 	static bool ApplySkinnedSteeringWheel(UMantleVehicleSource& Source, const FMantleVehicleSkinned& Skinned, TArray<FString>& OutNotes);
 
 	/**

@@ -1769,14 +1769,34 @@ bool FMantleVehicleBuilder::ApplySkinnedSteeringWheel(UMantleVehicleSource& Sour
 		// measured on the model's bone replaces it. When the measure is not sure, the chassis's wheel stays, and the notes say why.
 		if (T.bSteeringWheel && T.bSeatLocation)
 		{
-			if (!Skinned.Steering.bPlaced)
+			// The driver sits where the chassis puts them, so the model's wheel must be in front of that seat: one off to the side (a model whose cabin is mirrored,
+			// or a wheel on the other side of the car) would have the driver reach across the car.
+			const double Aside = FMath::Abs(Skinned.Steering.Location.Y - T.SeatLocation.Y);
+			FString Why = Skinned.Steering.bPlaced ? FString() : Skinned.Steering.Why;
+			if (Why.IsEmpty() && Aside > MaxSteeringWheelAside)
+			{
+				Why = FString::Printf(TEXT("it is %.0f cm to the side of the driver's seat, not in front of it"), Aside);
+			}
+			if (!Why.IsEmpty())
 			{
 				OutNotes.Add(FString::Printf(TEXT("Steering wheel: the chassis's own wheel is kept, because %s (the bone %s). Move it under Driver > Steering Wheel in the vehicle asset."),
-					*Skinned.Steering.Why, *Skinned.SteeringWheelBone.ToString()));
+					*Why, *Skinned.SteeringWheelBone.ToString()));
 				return bChanged;
 			}
 			Source.Modify();
 			T.bSteeringWheel = false;
+			if (PlaceSteeringWheel(Source, Skinned.SteeringWheelBone, Skinned.Steering, OutNotes))
+			{
+				// The chassis's hands held the chassis's rim: they go to ten and two on this one, as a Convert puts them (the publish check wants them on the rim).
+				if (T.DriverContacts.Hands == EMantleVehicleHandsKind::Wheel)
+				{
+					const FMantleVehicleSourceSeatContacts Guess = FMantleVehicleConverter::GuessSeatContacts(T, false);
+					T.DriverContacts.LeftHand = Guess.LeftHand;
+					T.DriverContacts.RightHand = Guess.RightHand;
+				}
+				return true;
+			}
+			return bChanged;
 		}
 		bChanged |= PlaceSteeringWheel(Source, Skinned.SteeringWheelBone, Skinned.Steering, OutNotes);
 	}

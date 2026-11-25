@@ -1149,27 +1149,50 @@ bool FMantleVehicleSkinSteeringWheelTest::RunTest(const FString& Parameters)
 
 	// As the builder hands it over: the chassis's seat with the chassis's own wheel already on (a build starts the settings from the chassis). The measured wheel
 	// replaces it; a measure that is not sure leaves the chassis's, and says why.
-	UMantleVehicleSource* Built = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
-	Built->Tuning.bSeatLocation = true;
-	Built->Tuning.bSteeringWheel = true;
-	Built->Tuning.SteeringWheelLocation = FVector(-1, -66, 66);
-	Built->Tuning.SteeringWheelRadius = 19.f;
+	// The chassis's driver seat sits behind the model's wheel (in line with it across the car), with its hands on the chassis's own rim.
+	const FVector SeatBehind(Skinned.Steering.Location.X - 50.0, Skinned.Steering.Location.Y, Skinned.Steering.Location.Z - 10.0);
+	const auto ChassisBuilt = [](const FVector& Seat)
+	{
+		UMantleVehicleSource* Made = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
+		Made->Tuning.bSeatLocation = true;
+		Made->Tuning.SeatLocation = Seat;
+		Made->Tuning.bSteeringWheel = true;
+		Made->Tuning.SteeringWheelLocation = FVector(-1, -66, 66);
+		Made->Tuning.SteeringWheelRadius = 19.f;
+		Made->Tuning.DriverContacts.Hands = EMantleVehicleHandsKind::Wheel;
+		Made->Tuning.DriverContacts.LeftHand.Location = FVector(-1, -80, 76);
+		Made->Tuning.DriverContacts.RightHand.Location = FVector(-1, -52, 76);
+		return Made;
+	};
+	UMantleVehicleSource* Built = ChassisBuilt(SeatBehind);
 	TArray<FString> BuiltNotes;
 	TestTrue(TEXT("a built car with the chassis's wheel changes"), FMantleVehicleBuilder::ApplySkinnedSteeringWheel(*Built, Skinned, BuiltNotes));
 	TestTrue(TEXT("and its wheel is the measured one, at the hub"), Built->Tuning.bSteeringWheel && Built->Tuning.SteeringWheelLocation.Equals(Skinned.Steering.Location, 0.01));
 	TestTrue(*FString::Printf(TEXT("pitched as measured (%.2f)"), Built->Tuning.SteeringWheelRotation.Pitch), FMath::Abs(Built->Tuning.SteeringWheelRotation.Pitch + 20.0) < 3.0);
 	TestTrue(TEXT("and the notes say it was placed from the bone"), BuiltNotes.ContainsByPredicate([](const FString& Note) { return Note.Contains(TEXT("placed from the bone")); }));
+	// The hands moved with it: each on the new rim (as far from the hub as its radius), not left on the chassis's.
+	const double Rim = Built->Tuning.SteeringWheelRadius;
+	const FVector NewHub = Built->Tuning.SteeringWheelLocation;
+	TestTrue(*FString::Printf(TEXT("the left hand is on the new rim (%.1f cm from the hub, radius %.1f)"), FVector::Dist(Built->Tuning.DriverContacts.LeftHand.Location, NewHub), Rim),
+		FMath::Abs(FVector::Dist(Built->Tuning.DriverContacts.LeftHand.Location, NewHub) - Rim) < 1.0);
+	TestTrue(TEXT("and so is the right hand"), FMath::Abs(FVector::Dist(Built->Tuning.DriverContacts.RightHand.Location, NewHub) - Rim) < 1.0);
+
 	FMantleVehicleSkinned Unsure = Skinned;
 	Unsure.Steering.bPlaced = false;
 	Unsure.Steering.Why = TEXT("its vertices are not a ring");
-	UMantleVehicleSource* Kept = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
-	Kept->Tuning.bSeatLocation = true;
-	Kept->Tuning.bSteeringWheel = true;
-	Kept->Tuning.SteeringWheelLocation = FVector(-1, -66, 66);
+	UMantleVehicleSource* Kept = ChassisBuilt(SeatBehind);
 	TArray<FString> KeptNotes;
 	FMantleVehicleBuilder::ApplySkinnedSteeringWheel(*Kept, Unsure, KeptNotes);
 	TestTrue(TEXT("an unsure measure keeps the chassis's wheel"), Kept->Tuning.bSteeringWheel && Kept->Tuning.SteeringWheelLocation.Equals(FVector(-1, -66, 66)));
+	TestTrue(TEXT("and its hands"), Kept->Tuning.DriverContacts.LeftHand.Location.Equals(FVector(-1, -80, 76)));
 	TestTrue(TEXT("and says why"), KeptNotes.ContainsByPredicate([](const FString& Note) { return Note.Contains(TEXT("not a ring")); }));
+
+	// A wheel across the car from the driver's seat (a mirrored cabin: the Goku Mustang's measured at +33 with the seat on the left) is not taken.
+	UMantleVehicleSource* Across = ChassisBuilt(FVector(SeatBehind.X, -SeatBehind.Y, SeatBehind.Z));
+	TArray<FString> AcrossNotes;
+	FMantleVehicleBuilder::ApplySkinnedSteeringWheel(*Across, Skinned, AcrossNotes);
+	TestTrue(TEXT("a wheel across the car keeps the chassis's"), Across->Tuning.SteeringWheelLocation.Equals(FVector(-1, -66, 66)));
+	TestTrue(TEXT("and says it is to the side of the seat"), AcrossNotes.ContainsByPredicate([](const FString& Note) { return Note.Contains(TEXT("to the side of the driver's seat")); }));
 
 	UMantleVehicleSource* Own = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
 	Own->Tuning.bSeatLocation = true;
