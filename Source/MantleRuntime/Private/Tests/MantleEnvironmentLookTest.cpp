@@ -262,6 +262,17 @@ bool FMantleEnvironmentInteriorTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("a block with those keys is not empty"), Settings.IsEmpty());
 	TestFalse(TEXT("outdoors is true unless the file says false"),
 		FMantlePlaceParser::ParseFromString(PlaceJson(TEXT("\"outdoors\":true"))).Place.Settings.Environment.bNoOutdoors);
+	// Outdoor unless the creator chose Indoor: no outdoors key, or no environment block at all, is outdoor.
+	{
+		const FMantleParseResult NoKey = FMantlePlaceParser::ParseFromString(PlaceJson(TEXT("")));
+		TestTrue(TEXT("an environment block with no outdoors key parses"), NoKey.bSuccess);
+		TestFalse(TEXT("no outdoors key is outdoor"), NoKey.Place.Settings.Environment.bNoOutdoors);
+		const FMantleParseResult NoBlock = FMantlePlaceParser::ParseFromString(
+			TEXT("{\"schemaVersion\":1,\"placeId\":\"plc_look_test\",\"revision\":{\"number\":1,\"state\":\"draft\"},")
+			TEXT("\"metadata\":{\"name\":\"Look test\",\"authorId\":\"usr_test\"},\"settings\":{},\"assets\":[],\"entities\":[]}"));
+		TestTrue(TEXT("a place with no environment block parses"), NoBlock.bSuccess);
+		TestFalse(TEXT("no environment block is outdoor"), NoBlock.Place.Settings.Environment.bNoOutdoors);
+	}
 	TestTrue(TEXT("outdoors must be a boolean"), RefusedAt(TEXT("\"outdoors\":\"no\""), TEXT("/settings/environment/outdoors")));
 	TestTrue(TEXT("a threshold past 8 is refused"), RefusedAt(TEXT("\"bloomThreshold\":9"), TEXT("/settings/environment/bloomThreshold")));
 	TestTrue(TEXT("and a negative one"), RefusedAt(TEXT("\"bloomThreshold\":-1"), TEXT("/settings/environment/bloomThreshold")));

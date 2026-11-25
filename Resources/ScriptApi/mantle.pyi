@@ -308,6 +308,30 @@ class Crowd:
     paused: bool
     seed: float
 
+class Marker:
+    """A marker on the minimap and the full map, from Minimap:AddLocalMarker (a client script's, seen by this player) or Minimap:AddMarker (a server script's, seen by the players it names). Calls on a marker that is gone (removed, or its target was destroyed) do nothing."""
+    def remove(self) -> None:
+        """Takes the marker off the map for good. Its handle does nothing afterward."""
+        ...
+    def set_color(self, color: str, /) -> None:
+        """Changes the color, '#RRGGBB'. It tints an image icon too."""
+        ...
+    def set_icon(self, icon: str, /) -> None:
+        """Changes the icon: 'dot', 'ring', 'arrow', 'star', 'flag', 'diamond', 'skull', 'home' or 'question', or the asset id of an image uploaded with the place."""
+        ...
+    def set_label(self, label: str, /) -> None:
+        """Changes the label (at most 32 characters, shown on the full map only). An empty string takes it away."""
+        ...
+    def set_target(self, target: Entity | Player | NPC | Vector3, /) -> None:
+        """Moves the marker to a new target: an Entity, Player or NPC to follow while this client has it, or a Vector3 to sit at."""
+        ...
+    def set_viewers(self, viewers: (string | Player | {Player}), /) -> None:
+        """Changes who sees a server marker (Minimap:AddMarker): 'All', 'Team:<name>', a Player or a list of Players. A player who is no longer a viewer has the marker taken off their map at once; one who becomes a viewer is sent it. Only for a server script's marker: a local marker (Minimap:AddLocalMarker) is only ever this player's, so calling this on one is an error."""
+        ...
+    def set_visible(self, visible: bool, /) -> None:
+        """Shows or hides the marker without removing it."""
+        ...
+
 class NPC:
     """A character NPCs:Spawn made. The server walks and animates it; every player sees it."""
     exists: bool
@@ -1316,6 +1340,36 @@ class _MatchService:
 
 Match: _MatchService
 
+class _MinimapService:
+    """The minimap and the full-screen map. A place switches the minimap on in its settings; a script can turn it on or off at any time and change how it sits and draws while playing. Mantle draws the map (a circle or a square, at the anchor, offset and size you set); put your own frame or labels around it with UI at the same anchor, offset and size, since both use dp. Add markers for what players should find: a marker follows an Entity, a Player, an NPC or a car (a Vehicle is an Entity) while this player's client has it, or sits at a Vector3. A server script adds markers for the players it chooses with AddMarker, and a client script adds ones only this player sees with AddLocalMarker. Players can hide the minimap in their settings: PlayerHidden and PlayerHiddenChanged tell your frame to step aside."""
+    player_hidden: bool
+    enabled_changed: Signal
+    full_map_open_changed: Signal
+    player_hidden_changed: Signal
+    def add_local_marker(self, target: Entity | Player | NPC | Vector3, options: Optional[dict[str, Any]] = ..., /) -> Optional[Marker]:
+        """Puts a marker on this player's map that only this player sees. The target is an Entity, a Player, an NPC or a Vector3 (a Vehicle is an Entity): a marker follows its Entity, Player or NPC while this client has it, is hidden while this client does not (a player, car or NPC out of range), and is removed when its target is destroyed. Options: Icon ('dot', 'ring', 'arrow', 'star', 'flag', 'diamond', 'skull', 'home' or 'question', or the asset id of an image uploaded with the place; 'dot' by default), Color ('#RRGGBB', white by default), Label (at most 32 characters, shown on the full map only), Size (0.5 to 2, 1 by default), Visible (true by default) and OffMap ('Clamp', the default: a marker past the minimap's range is pinned to its rim as an arrow, or 'Hide'). Markers can be added while the minimap is off. A client has at most 128 local markers: past that the call returns nil and a warning says why. A marker lasts until you remove it, its target is destroyed, or the script that added it stops. Example: local m = Minimap:AddLocalMarker(Vector3.new(0, 0, 0), {Icon = 'flag', Color = '#E53935', Label = 'Base'})"""
+        ...
+    def add_marker(self, target: Entity | Player | NPC | Vector3, options: Optional[dict[str, Any]] = ..., viewers: Optional[(string | Player | {Player})] = ..., /) -> Optional[Marker]:
+        """Puts a marker on the maps of the players you choose, and only theirs: the server sends a player nothing about a marker they are not a viewer of. viewers is 'All' (every player, the default), 'Team:<name>' (the players on that team now; a player who joins that team starts seeing it, one who leaves it stops, and the team must exist: Teams:Create), a Player, or a list of Players. The target is an Entity, a Player, an NPC or a Vector3 (a Vehicle is an Entity); the marker follows it on each viewer's map while that viewer's client has it, is hidden while it does not (a player, car or NPC out of range), and is removed for everyone when its target is destroyed. Options are AddLocalMarker's: Icon ('dot', 'ring', 'arrow', 'star', 'flag', 'diamond', 'skull', 'home' or 'question', or the asset id of an image uploaded with the place; 'dot' by default), Color ('#RRGGBB', white by default), Label (at most 32 characters, shown on the full map only), Size (0.5 to 2, 1 by default), Visible (true by default) and OffMap ('Clamp', the default, or 'Hide'). Markers show once a viewer's minimap is on. A script has at most 128 server markers: past that the call returns nil and a warning says why. A marker lasts until you remove it, its target is destroyed, or the script that added it stops. Marker:SetViewers changes who sees it later; every other Marker setter updates its viewers' maps. Example: local m = Minimap:AddMarker(flag, {Icon = 'flag', Label = 'Our flag'}, 'Team:Red')"""
+        ...
+    def close_full_map(self) -> None:
+        """Closes the full-screen map, if it is open."""
+        ...
+    def is_enabled(self) -> bool:
+        """Whether the minimap is on for this player: the place's starting state, or the last SetEnabled. It can be on and still hidden by the player (see PlayerHidden)."""
+        ...
+    def open_full_map(self) -> bool:
+        """Opens the full-screen map, when it may open: the minimap is on and the player has not hidden it, FullMap is true, UI:SetBuiltInHUD has not hidden 'minimap' and no other screen has the player. Returns whether it is open now. The player closes it with M, Esc, B or Back + B."""
+        ...
+    def set_enabled(self, enabled: bool, player: Optional[Player] = ..., /) -> None:
+        """Turns the minimap on or off, whatever the place's minimap setting says; the last call wins. A client script changes its own player's minimap (leave the player out). A server script changes one player's, or everyone's now and later when player is left out. Markers can be added while it is off; they show once it is on. The picture's tiles are only downloaded the first time it is on. Example: Minimap:SetEnabled(true)"""
+        ...
+    def set_layout(self, layout: dict[str, Any], /) -> None:
+        """Changes how the minimap sits and draws, for this player. Name only what you want to change: Shape ('Circle' or 'Square'), Anchor ('TopLeft', 'TopCenter', 'TopRight', 'CenterLeft', 'CenterRight', 'BottomLeft', 'BottomCenter' or 'BottomRight'), Offset ({x, y} in dp from the anchor, each -1000 to 1000), Size (dp across, 96 to 512), Rim (true for Mantle's thin edge ring and the N mark, false when you draw your own frame), Rotate ('Camera': the map turns with where you look, or 'North': north is always up), Range (meters of radius shown, 25 to 2000), FullMap (whether the player may open the full map) and Players ('Nearby': the players this client has, as dots, or 'Off'). These are the place settings' values and ranges. An unknown key, a wrong type or a value out of range is an error that names it. Example: Minimap:SetLayout({Anchor = 'BottomRight', Size = 160, Range = 300})"""
+        ...
+
+Minimap: _MinimapService
+
 class _NPCsService:
     """Spawn characters the server walks around the place and animates (server only)."""
     def from_entity(self, entity: Entity, /) -> Optional[NPC]:
@@ -1655,7 +1709,7 @@ class _UIService:
         """Open one of the place's UI documents (a .rml file in its UI/ folder) on this player's screen. Mode is 'modal' (the default: gameplay input stops, this place's own Input keys are silent, chat and the leaderboard key are off, and Esc, or Start on a pad, always closes it; three quick presses, within about 2 seconds, open the game menu over it instead, even if the place opens it again each time), 'overlay' (play goes on; the mouse works on its controls) or 'hud' (drawn only, never takes input). A modal document takes input over an overlay document and over a Pointer hold (Pointer picking waits while it is up), and gives it back when it closes. Modal documents stack: one opened while another is up goes on top, has the input, and is closed first by Esc or Start; the one under it then has input again. A modal UI:SetInputMode panel waits until the documents are closed. An unknown path or mode is an error, and so is opening on a server. Example: local shop = UI:OpenDocument('UI/shop.rml')"""
         ...
     def set_built_in_hud(self, enabled: bool, part: Optional[str] = ..., player: Optional[Player] = ..., /) -> None:
-        """Shows or hides Mantle's built-in HUD, which is on by default. part is 'reticle', 'ammo', 'hotbar', 'prompt' (the interaction prompt), 'voice' (the voice line), 'text' (UI:SetText lines and toasts) or 'all'; leave it out for all. 'all' also hides the stats strip, notices, emote wheel and Placing's key instructions box. Your own UI (UI:Create, UI:OpenDocument) is never touched. A client script changes the local player's HUD (no player argument). A server script changes one player's, or everyone's now and later when player is left out; hides from the server and from the player's own scripts add up, and a change for everyone also resets earlier per-player changes of those parts. Example: UI:SetBuiltInHUD(false) for a cutscene, UI:SetBuiltInHUD(true) after."""
+        """Shows or hides Mantle's built-in HUD, which is on by default. part is 'reticle', 'ammo', 'hotbar', 'prompt' (the interaction prompt), 'voice' (the voice line), 'text' (UI:SetText lines and toasts), 'minimap' (the minimap) or 'all'; leave it out for all. 'all' also hides the stats strip, notices, emote wheel and Placing's key instructions box. Your own UI (UI:Create, UI:OpenDocument) is never touched. A client script changes the local player's HUD (no player argument). A server script changes one player's, or everyone's now and later when player is left out; hides from the server and from the player's own scripts add up, and a change for everyone also resets earlier per-player changes of those parts. Example: UI:SetBuiltInHUD(false) for a cutscene, UI:SetBuiltInHUD(true) after."""
         ...
     def set_cursor_visible(self, visible: Optional[bool] = ..., /) -> None:
         """Force the mouse cursor on or off regardless of whether an interactive node is visible right now. Nil goes back to automatic: shown only while a modal UI (see SetInputMode) has a Button, a Toggle, or a Prompt with an action visible and enabled; an overlay UI shows no cursor, so the mouse keeps turning the camera. SetCursorVisible(true) shows it in either mode. A gamepad-only panel can call SetCursorVisible(false) to keep working through focus/Accept without ever drawing a cursor."""

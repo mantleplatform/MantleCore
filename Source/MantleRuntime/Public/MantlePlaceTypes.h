@@ -485,9 +485,9 @@ struct FMantleEnvironmentSettings
 	 */
 	bool bNoDirectSun = false;
 	/**
-	 * outdoors: false when the place has no outdoor environment of its own (no sun, sky light, atmosphere, clouds or fog:
-	 * an interior lit by its own lights). The client then spawns no default sun, sky light, atmosphere, clouds, fog or night
-	 * sky, and holds the natural weather at Clear. Only false is written; true is Mantle's own sky.
+	 * outdoors: false when the creator chose Indoor (an interior lit by its own lights). The client then spawns no default sun,
+	 * sky light, atmosphere, clouds, fog or night sky, and holds the natural weather at Clear. Missing means outdoor, Mantle's
+	 * own sky; only false is written.
 	 */
 	bool bNoOutdoors = false;
 
@@ -558,6 +558,90 @@ struct FMantleWorldItemsSettings
 	EMantleWorldItemsPersistence Persistence = EMantleWorldItemsPersistence::None;
 };
 
+/** The outline of the minimap's drawing: settings.minimap.shape. */
+enum class EMantleMinimapShape : uint8
+{
+	Circle,
+	Square
+};
+
+/** The screen point the minimap sits against: settings.minimap.anchor. */
+enum class EMantleMinimapAnchor : uint8
+{
+	TopLeft,
+	TopCenter,
+	TopRight,
+	CenterLeft,
+	CenterRight,
+	BottomLeft,
+	BottomCenter,
+	BottomRight
+};
+
+/** What is at the top of the minimap: settings.minimap.rotate. */
+enum class EMantleMinimapRotate : uint8
+{
+	/** The picture turns with where the player looks. */
+	Camera,
+	/** North (world -Y) is always at the top. */
+	North
+};
+
+/** Which players the minimap draws: settings.minimap.players. */
+enum class EMantleMinimapPlayers : uint8
+{
+	/** The other players the client already has, as dots. */
+	Nearby,
+	Off
+};
+
+/**
+ * settings.minimap.image: the map's picture, a grid of Texture tiles and the area of the world it covers. Image down
+ * is +Y and image right is +X, so north (world -Y) is the top. Tile (row, column) covers an even share of the box, with
+ * row 0 at MinY and column 0 at MinX.
+ */
+struct FMantleMinimapImage
+{
+	/** Asset ids, rows top to bottom. Empty when the place has no picture; otherwise every row is as long as the first. */
+	TArray<TArray<FString>> Tiles;
+	/** The edges of the drawn picture, cm; each min below its max. */
+	double MinX = 0.0;
+	double MaxX = 0.0;
+	double MinY = 0.0;
+	double MaxY = 0.0;
+
+	bool IsSet() const
+	{
+		return Tiles.Num() > 0;
+	}
+};
+
+/**
+ * settings.minimap: the minimap and full-screen map. Every field has the schema's default, which a place without the block
+ * keeps, so a place with no minimap has none (bEnabled is false). Only bEnabled is a starting state: a script can change
+ * it and every layout field while playing.
+ */
+struct FMantleMinimapSettings
+{
+	bool bEnabled = false;
+	EMantleMinimapShape Shape = EMantleMinimapShape::Circle;
+	EMantleMinimapAnchor Anchor = EMantleMinimapAnchor::TopLeft;
+	/** dp from the anchor, each axis within FMantlePlaceLimits::MaxMinimapOffset either way. */
+	FVector2D Offset = FVector2D(16.0, 16.0);
+	/** dp across, FMantlePlaceLimits::MinMinimapSize to MaxMinimapSize. */
+	double Size = 200.0;
+	/** Whether the game draws its thin edge ring and the "N" mark. */
+	bool bRim = true;
+	EMantleMinimapRotate Rotate = EMantleMinimapRotate::Camera;
+	/** Metres of radius shown, FMantlePlaceLimits::MinMinimapRange to MaxMinimapRange. */
+	double Range = 150.0;
+	/** Whether players may open the full-screen map. */
+	bool bFullMap = true;
+	EMantleMinimapPlayers Players = EMantleMinimapPlayers::Nearby;
+	/** The picture. Not IsSet() when the file gives none: the minimap draws the players on a plain background. */
+	FMantleMinimapImage Image;
+};
+
 struct FMantleSettings
 {
 	int32 MaxPlayers = 16;
@@ -617,6 +701,8 @@ struct FMantleSettings
 	FMantleWorldItemsSettings WorldItems;
 	/** settings.playStyle: the style every player starts in. Default (Mantle's normal play) when the file has none. */
 	FMantlePlayStyle PlayStyle;
+	/** settings.minimap. The defaults when the file has none: off. */
+	FMantleMinimapSettings Minimap;
 };
 
 /**

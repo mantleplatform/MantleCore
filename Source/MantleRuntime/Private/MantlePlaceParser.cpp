@@ -3183,6 +3183,239 @@ namespace
 		Out.Persistence = Persistence == 1 ? EMantleWorldItemsPersistence::Server : EMantleWorldItemsPersistence::None;
 	}
 
+	/** An asset id as the schema's assetId says it: "ast_" and 4 to 40 lowercase letters, digits or an underscore. */
+	bool IsAssetIdShape(const FString& Value)
+	{
+		if (Value.Len() < 8 || Value.Len() > 44 || !Value.StartsWith(TEXT("ast_"), ESearchCase::CaseSensitive))
+		{
+			return false;
+		}
+		for (int32 At = 4; At < Value.Len(); ++At)
+		{
+			const TCHAR Character = Value[At];
+			if (!((Character >= TEXT('a') && Character <= TEXT('z')) || (Character >= TEXT('0') && Character <= TEXT('9')) || Character == TEXT('_')))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * settings.minimap.image: 1 to MaxMinimapImageRows rows of 1 to MaxMinimapImageColumns asset ids, every row as long as
+	 * the first, and the box the picture covers (all four sides, each min below its max). Out is left alone when anything
+	 * is wrong. That each id names a Texture is the backend's to check (the skybox's rule, #454): the parser reads no
+	 * asset kinds from a setting.
+	 */
+	void ReadMinimapImage(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Minimap, const FString& MinimapPath, FMantleMinimapImage& Out)
+	{
+		if (!Minimap->HasField(TEXT("image")))
+		{
+			return;
+		}
+		const FString ImagePath = Join(MinimapPath, TEXT("image"));
+		const TSharedPtr<FJsonObject>* Image = nullptr;
+		if (!Minimap->TryGetObjectField(TEXT("image"), Image))
+		{
+			Ctx.Fail(ImagePath, TEXT("must be an object"));
+			return;
+		}
+		RequireNoUnknownKeys(Ctx, *Image, { TEXT("tiles"), TEXT("bounds") }, ImagePath);
+		FMantleMinimapImage Parsed;
+		bool bAllValid = true;
+
+		const FString TilesPath = Join(ImagePath, TEXT("tiles"));
+		const TArray<TSharedPtr<FJsonValue>>* Rows = nullptr;
+		if (!(*Image)->TryGetArrayField(TEXT("tiles"), Rows))
+		{
+			Ctx.Fail(TilesPath, TEXT("required array is missing or not an array"));
+			bAllValid = false;
+		}
+		else
+		{
+			if (Rows->Num() < 1 || Rows->Num() > FMantlePlaceLimits::MaxMinimapImageRows)
+			{
+				Ctx.Fail(TilesPath, FString::Printf(TEXT("has %d rows; a minimap picture has 1 to %d"), Rows->Num(), FMantlePlaceLimits::MaxMinimapImageRows));
+				bAllValid = false;
+			}
+			for (int32 Row = 0; Row < Rows->Num(); ++Row)
+			{
+				const FString RowPath = Index(TilesPath, Row);
+				const TArray<TSharedPtr<FJsonValue>>* Tiles = nullptr;
+				if (!(*Rows)[Row].IsValid() || !(*Rows)[Row]->TryGetArray(Tiles))
+				{
+					Ctx.Fail(RowPath, TEXT("must be an array"));
+					bAllValid = false;
+					continue;
+				}
+				if (Tiles->Num() < 1 || Tiles->Num() > FMantlePlaceLimits::MaxMinimapImageColumns)
+				{
+					Ctx.Fail(RowPath, FString::Printf(TEXT("has %d tiles; a row has 1 to %d"), Tiles->Num(), FMantlePlaceLimits::MaxMinimapImageColumns));
+					bAllValid = false;
+				}
+				else if (Parsed.Tiles.Num() > 0 && Tiles->Num() != Parsed.Tiles[0].Num())
+				{
+					Ctx.Fail(RowPath, FString::Printf(TEXT("has %d tiles; every row needs as many as the first (%d)"), Tiles->Num(), Parsed.Tiles[0].Num()));
+					bAllValid = false;
+				}
+				TArray<FString>& Ids = Parsed.Tiles.AddDefaulted_GetRef();
+				for (int32 Column = 0; Column < Tiles->Num(); ++Column)
+				{
+					const TSharedPtr<FJsonValue>& Tile = (*Tiles)[Column];
+					if (!Tile.IsValid() || Tile->Type != EJson::String || !IsAssetIdShape(Tile->AsString()))
+					{
+						Ctx.Fail(Index(RowPath, Column), TEXT("must be an asset id (ast_ and 4 to 40 lowercase letters, digits or underscores)"));
+						bAllValid = false;
+						continue;
+					}
+					Ids.Add(Tile->AsString());
+				}
+			}
+		}
+
+		const FString BoundsPath = Join(ImagePath, TEXT("bounds"));
+		const TSharedPtr<FJsonObject>* Bounds = nullptr;
+		if (!(*Image)->TryGetObjectField(TEXT("bounds"), Bounds))
+		{
+			Ctx.Fail(BoundsPath, TEXT("required object is missing or not an object"));
+			bAllValid = false;
+		}
+		else
+		{
+			RequireNoUnknownKeys(Ctx, *Bounds, { TEXT("minX"), TEXT("maxX"), TEXT("minY"), TEXT("maxY") }, BoundsPath);
+			bool bAllSides = true;
+			const auto ReadSide = [&](const TCHAR* Key, double& Side)
+			{
+				const TSharedPtr<FJsonValue> Value = (*Bounds)->TryGetField(Key);
+				if (!Value.IsValid() || Value->Type != EJson::Number || !FMath::IsFinite(Value->AsNumber()))
+				{
+					Ctx.Fail(Join(BoundsPath, Key), TEXT("required number is missing"));
+					bAllSides = false;
+					return;
+				}
+				Side = Value->AsNumber();
+			};
+			ReadSide(TEXT("minX"), Parsed.MinX);
+			ReadSide(TEXT("maxX"), Parsed.MaxX);
+			ReadSide(TEXT("minY"), Parsed.MinY);
+			ReadSide(TEXT("maxY"), Parsed.MaxY);
+			if (!bAllSides)
+			{
+				bAllValid = false;
+			}
+			else if (Parsed.MinX >= Parsed.MaxX || Parsed.MinY >= Parsed.MaxY)
+			{
+				Ctx.Fail(BoundsPath, TEXT("each min must be below its max"));
+				bAllValid = false;
+			}
+		}
+		if (bAllValid)
+		{
+			Out = MoveTemp(Parsed);
+		}
+	}
+
+	/**
+	 * settings.minimap: the closed set of optional keys. Enums are case-exact, numbers and booleans typed (a string such
+	 * as "200" or "off" is refused) and numbers in the ranges FMantlePlaceLimits states, as the schema says.
+	 */
+	void ReadMinimapSettings(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Settings, const FString& Path, FMantleMinimapSettings& Out)
+	{
+		if (!Settings->HasField(TEXT("minimap")))
+		{
+			return;
+		}
+		const FString MinimapPath = Join(Path, TEXT("minimap"));
+		const TSharedPtr<FJsonObject>* Minimap = nullptr;
+		if (!Settings->TryGetObjectField(TEXT("minimap"), Minimap))
+		{
+			Ctx.Fail(MinimapPath, TEXT("must be an object"));
+			return;
+		}
+		RequireNoUnknownKeys(Ctx, *Minimap,
+			{ TEXT("enabled"), TEXT("shape"), TEXT("anchor"), TEXT("offset"), TEXT("size"), TEXT("rim"), TEXT("rotate"),
+			  TEXT("range"), TEXT("fullMap"), TEXT("players"), TEXT("image") },
+			MinimapPath);
+
+		ReadStrictOptionalBool(Ctx, *Minimap, TEXT("enabled"), MinimapPath, Out.bEnabled);
+		ReadStrictOptionalBool(Ctx, *Minimap, TEXT("rim"), MinimapPath, Out.bRim);
+		ReadStrictOptionalBool(Ctx, *Minimap, TEXT("fullMap"), MinimapPath, Out.bFullMap);
+
+		// Each list is in its enum's order, so the index OptionalChoice finds is the enum value.
+		int32 Shape = static_cast<int32>(Out.Shape);
+		OptionalChoice(Ctx, *Minimap, TEXT("shape"), MinimapPath, { TEXT("circle"), TEXT("square") }, Shape);
+		Out.Shape = static_cast<EMantleMinimapShape>(Shape);
+		int32 Anchor = static_cast<int32>(Out.Anchor);
+		OptionalChoice(Ctx, *Minimap, TEXT("anchor"), MinimapPath,
+			{ TEXT("topLeft"), TEXT("topCenter"), TEXT("topRight"), TEXT("centerLeft"), TEXT("centerRight"),
+			  TEXT("bottomLeft"), TEXT("bottomCenter"), TEXT("bottomRight") },
+			Anchor);
+		Out.Anchor = static_cast<EMantleMinimapAnchor>(Anchor);
+		int32 Rotate = static_cast<int32>(Out.Rotate);
+		OptionalChoice(Ctx, *Minimap, TEXT("rotate"), MinimapPath, { TEXT("camera"), TEXT("north") }, Rotate);
+		Out.Rotate = static_cast<EMantleMinimapRotate>(Rotate);
+		int32 Players = static_cast<int32>(Out.Players);
+		OptionalChoice(Ctx, *Minimap, TEXT("players"), MinimapPath, { TEXT("nearby"), TEXT("off") }, Players);
+		Out.Players = static_cast<EMantleMinimapPlayers>(Players);
+
+		TOptional<double> Size;
+		ReadEnvironmentNumber(Ctx, *Minimap, TEXT("size"), MinimapPath, FMantlePlaceLimits::MinMinimapSize, FMantlePlaceLimits::MaxMinimapSize, Size);
+		if (Size.IsSet())
+		{
+			Out.Size = *Size;
+		}
+		TOptional<double> Range;
+		ReadEnvironmentNumber(Ctx, *Minimap, TEXT("range"), MinimapPath, FMantlePlaceLimits::MinMinimapRange, FMantlePlaceLimits::MaxMinimapRange, Range);
+		if (Range.IsSet())
+		{
+			Out.Range = *Range;
+		}
+
+		// [x, y] in dp, typed: a numeric string is refused here as it is in size and range.
+		if (const TSharedPtr<FJsonValue> OffsetValue = (*Minimap)->TryGetField(TEXT("offset")))
+		{
+			const FString OffsetPath = Join(MinimapPath, TEXT("offset"));
+			const TArray<TSharedPtr<FJsonValue>>* Offset = nullptr;
+			if (!OffsetValue->TryGetArray(Offset))
+			{
+				Ctx.Fail(OffsetPath, TEXT("must be an array of 2 numbers"));
+			}
+			else if (Offset->Num() != 2)
+			{
+				Ctx.Fail(OffsetPath, FString::Printf(TEXT("expected 2 numbers, got %d"), Offset->Num()));
+			}
+			else
+			{
+				double Axis[2] = { Out.Offset.X, Out.Offset.Y };
+				bool bBothValid = true;
+				for (int32 I = 0; I < 2; ++I)
+				{
+					const TSharedPtr<FJsonValue>& Item = (*Offset)[I];
+					if (!Item.IsValid() || Item->Type != EJson::Number || !FMath::IsFinite(Item->AsNumber()))
+					{
+						Ctx.Fail(Index(OffsetPath, I), TEXT("must be a number"));
+						bBothValid = false;
+					}
+					else if (Item->AsNumber() < -FMantlePlaceLimits::MaxMinimapOffset || Item->AsNumber() > FMantlePlaceLimits::MaxMinimapOffset)
+					{
+						RangeCheck(Ctx, Item->AsNumber(), -FMantlePlaceLimits::MaxMinimapOffset, FMantlePlaceLimits::MaxMinimapOffset, Index(OffsetPath, I));
+						bBothValid = false;
+					}
+					else
+					{
+						Axis[I] = Item->AsNumber();
+					}
+				}
+				if (bBothValid)
+				{
+					Out.Offset = FVector2D(Axis[0], Axis[1]);
+				}
+			}
+		}
+
+		ReadMinimapImage(Ctx, *Minimap, MinimapPath, Out.Image);
+	}
+
 	/** settings.playStyle.options for TopDown: the options Player:SetPlayStyle takes, each in its range, Distance between MinDistance and MaxDistance. */
 	bool ReadTopDownPlayStyleOptions(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Options, const FString& OptionsPath, FMantleTopDownOptions& Result)
 	{
@@ -4667,7 +4900,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 			{ TEXT("maxPlayers"), TEXT("gravity"), TEXT("skybox"), TEXT("ambientLight"),
 			  TEXT("respawnMode"), TEXT("streamingDistance"), TEXT("allowCommunityServers"),
 			  TEXT("allowPrivateServers"), TEXT("avatarHeight"), TEXT("environment"), TEXT("carjacking"), TEXT("water"),
-			  TEXT("maxCarriedTools"), TEXT("allowToolSwap"), TEXT("killZ"), TEXT("boundary"), TEXT("placing"), TEXT("playStyle"), TEXT("worldItems"), TEXT("health"), TEXT("combat") },
+			  TEXT("maxCarriedTools"), TEXT("allowToolSwap"), TEXT("killZ"), TEXT("boundary"), TEXT("placing"), TEXT("playStyle"), TEXT("worldItems"), TEXT("health"), TEXT("combat"), TEXT("minimap") },
 			TEXT("/settings"));
 
 		double MaxPlayers = Place.Settings.MaxPlayers;
@@ -4773,6 +5006,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 		ReadPlacingSettings(Ctx, *SettingsObj, TEXT("/settings"), Place.Settings.Placing);
 		ReadWorldItemsSettings(Ctx, *SettingsObj, TEXT("/settings"), Place.Settings.WorldItems);
 		ReadPlayStyleSettings(Ctx, *SettingsObj, TEXT("/settings"), Place.Settings.PlayStyle);
+		ReadMinimapSettings(Ctx, *SettingsObj, TEXT("/settings"), Place.Settings.Minimap);
 
 		// Deprecated: still accepted, so existing place files parse, but nothing reads it
 		// at runtime and the exporter no longer writes it.

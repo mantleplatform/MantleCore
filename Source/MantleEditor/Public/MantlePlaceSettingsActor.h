@@ -14,6 +14,7 @@ struct FMantleAudience;
 struct FMantleEnvironmentSettings;
 struct FMantlePlacingSettings;
 struct FMantleWorldItemsSettings;
+struct FMantleMinimapSettings;
 struct FMantleStorageEntry;
 struct FMantlePlayStyle;
 
@@ -138,6 +139,57 @@ enum class EMantlePlaceColorGrading : uint8
 	Sepia,
 	Vivid,
 	Faded,
+};
+
+/** The minimap's outline (#167), the place file's settings.minimap.shape. In EMantleMinimapShape's order. */
+UENUM()
+enum class EMantlePlaceMinimapShape : uint8
+{
+	Circle,
+	Square,
+};
+
+/** The screen point the minimap sits against (#167), settings.minimap.anchor. In EMantleMinimapAnchor's order. */
+UENUM()
+enum class EMantlePlaceMinimapAnchor : uint8
+{
+	TopLeft UMETA(DisplayName = "Top Left"),
+	TopCenter UMETA(DisplayName = "Top Center"),
+	TopRight UMETA(DisplayName = "Top Right"),
+	CenterLeft UMETA(DisplayName = "Center Left"),
+	CenterRight UMETA(DisplayName = "Center Right"),
+	BottomLeft UMETA(DisplayName = "Bottom Left"),
+	BottomCenter UMETA(DisplayName = "Bottom Center"),
+	BottomRight UMETA(DisplayName = "Bottom Right"),
+};
+
+/** What is at the top of the minimap (#167), settings.minimap.rotate. In EMantleMinimapRotate's order. */
+UENUM()
+enum class EMantlePlaceMinimapRotate : uint8
+{
+	/** The map turns with where the player looks. */
+	Camera UMETA(DisplayName = "Turns with the Camera"),
+	/** North is always at the top. */
+	North UMETA(DisplayName = "North Up"),
+};
+
+/** Which other players the minimap shows (#167), settings.minimap.players. In EMantleMinimapPlayers's order. */
+UENUM()
+enum class EMantlePlaceMinimapPlayers : uint8
+{
+	/** The players near enough to be in the world around you, as dots. */
+	Nearby UMETA(DisplayName = "Nearby Players"),
+	Off UMETA(DisplayName = "None"),
+};
+
+/** Where the place's map picture comes from (#167). */
+UENUM()
+enum class EMantlePlaceMapPicture : uint8
+{
+	/** Drawn from the level at every publish: roads, buildings, water, parks and ground in flat colors. */
+	Automatic UMETA(DisplayName = "Made Automatically"),
+	/** A picture you made, stretched over the same area. */
+	Own UMETA(DisplayName = "My Own Picture"),
 };
 
 /** How every player's camera and movement work from the start (#232), the place file's settings.playStyle. In EMantlePlayStyle's order. */
@@ -602,6 +654,75 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle|Storage",
 		meta = (ToolTip = "The library items this place holds, at most 32. Vehicle Spawns name one by its Name in their Storage Item. Find and add items with Tools > Mantle > Library."))
 	TArray<FMantleStorageSetting> Storage;
+
+	// The minimap and full-screen map (#167). Every place gets a map picture at every publish, drawn from the level or your own;
+	// these set how players first see the minimap. A script can show, hide or change it while playing. Only values changed from
+	// these defaults are published.
+
+	/** Show the minimap when a player joins. Off by default: the map picture still publishes, and a script can turn the minimap on. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Minimap", meta = (DisplayName = "Show the Minimap"))
+	bool bShowMinimap = false;
+
+	/** The minimap's outline. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Minimap", meta = (DisplayName = "Shape"))
+	EMantlePlaceMinimapShape MinimapShape = EMantlePlaceMinimapShape::Circle;
+
+	/** The screen corner or edge the minimap sits against. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Minimap", meta = (DisplayName = "Screen Position"))
+	EMantlePlaceMinimapAnchor MinimapAnchor = EMantlePlaceMinimapAnchor::TopLeft;
+
+	/** How far it sits in from that corner or edge, across and down, in screen points (positive moves it inward). */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Minimap", meta = (DisplayName = "Offset", ClampMin = "-1000", ClampMax = "1000", UIMin = "-200", UIMax = "400"))
+	FVector2D MinimapOffset = FVector2D(16.0, 16.0);
+
+	/** How wide the minimap is, in screen points. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Minimap", meta = (DisplayName = "Size", ClampMin = "96", ClampMax = "512", UIMin = "96", UIMax = "512"))
+	double MinimapSize = 200.0;
+
+	/** Draw the minimap's thin edge ring and its N mark. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Minimap", meta = (DisplayName = "Edge Ring and North Mark"))
+	bool bMinimapRim = true;
+
+	/** Whether the map turns with the camera or keeps north at the top. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Minimap", meta = (DisplayName = "Rotation"))
+	EMantlePlaceMinimapRotate MinimapRotate = EMantlePlaceMinimapRotate::Camera;
+
+	/** How far the minimap shows around the player, in meters from the middle to the edge. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Minimap", meta = (DisplayName = "Range (m)", ClampMin = "25", ClampMax = "2000", UIMin = "25", UIMax = "2000"))
+	double MinimapRange = 150.0;
+
+	/** Let players open the full-screen map. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Minimap", meta = (DisplayName = "Allow the Full-Screen Map"))
+	bool bMinimapFullMap = true;
+
+	/** Which other players show on the minimap. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Minimap", meta = (DisplayName = "Other Players"))
+	EMantlePlaceMinimapPlayers MinimapPlayers = EMantlePlaceMinimapPlayers::Nearby;
+
+	/** Where the map picture comes from: drawn from the level at every publish, or your own picture stretched over the same area. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Minimap")
+	EMantlePlaceMapPicture MapPicture = EMantlePlaceMapPicture::Automatic;
+
+	/** Your own map picture: a texture in the project. Used before the file when both are set. North (the world's -Y) is its top edge. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Minimap", meta = (DisplayName = "Picture Texture", EditCondition = "MapPicture == EMantlePlaceMapPicture::Own", EditConditionHides))
+	TSoftObjectPtr<UTexture2D> MapPictureTexture;
+
+	/** Your own map picture: a PNG file. North (the world's -Y) is its top edge. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Minimap", meta = (DisplayName = "Picture File", FilePathFilter = "png", EditCondition = "MapPicture == EMantlePlaceMapPicture::Own", EditConditionHides))
+	FFilePath MapPictureFile;
+
+	/** Make the map picture now, as Publish will, save it to Saved/Mantle/Minimap and open it. */
+	UFUNCTION(CallInEditor, Category = "Mantle|Minimap", meta = (DisplayName = "Show the Map Picture"))
+	void ShowMapPicture();
+
+	/** Your own map picture as the shared custom-image loader takes it (FMantleThumbnailResolver::LoadCustom). */
+	FMantleThumbnailChoice MapPictureChoice() const;
+
+	/** The minimap's starting layout (#167) from the Minimap fields, each clamped to the schema's range. The picture is made at publish, not here. */
+	FMantleMinimapSettings MakeMinimapSettings() const;
+
+	/** Sets the Minimap fields from a place file's settings.minimap; keys it leaves out reset to their defaults. Its picture is not kept. */
+	void SetMinimapFrom(const FMantleMinimapSettings& Minimap);
 
 	// The place's picture in the catalog (#786): taken at every publish, from the view below or, when none is chosen,
 	// from above and behind the first Player Start. Publish shows it before anything is sent.

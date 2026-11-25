@@ -6641,6 +6641,26 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		Place.Metadata.Thumbnail = Uploads.IdFor(Options.Assets->Thumbnail, EMantleAssetKind::Texture, nullptr);
 	}
 
+	// #167: the map picture's tiles Publish or the local preview made, texture uploads like any other, and the box they cover. An export
+	// for a file has none, and its settings.minimap carries no image.
+	if (Options.Assets && Options.Assets->MinimapTiles.Num() > 0 && Options.Assets->MinimapBounds.bIsValid)
+	{
+		FMantleMinimapImage& Image = Place.Settings.Minimap.Image;
+		Image.Tiles.Reset();
+		for (const TArray<FString>& Row : Options.Assets->MinimapTiles)
+		{
+			TArray<FString>& Ids = Image.Tiles.AddDefaulted_GetRef();
+			for (const FString& Key : Row)
+			{
+				Ids.Add(Uploads.IdFor(Key, EMantleAssetKind::Texture, nullptr));
+			}
+		}
+		Image.MinX = Options.Assets->MinimapBounds.Min.X;
+		Image.MaxX = Options.Assets->MinimapBounds.Max.X;
+		Image.MinY = Options.Assets->MinimapBounds.Min.Y;
+		Image.MaxY = Options.Assets->MinimapBounds.Max.Y;
+	}
+
 	// GhzGarage/MantleCore#142: Mantle Seats, each owned by the entity of the prop it is on.
 	FMantleSeatExport::Export(Exportable, IdByActor, Place.Seats, Result.Errors);
 
@@ -8117,6 +8137,90 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place, const FMantleCel
 		Writer->WriteObjectStart(TEXT("worldItems"));
 		Writer->WriteValue(TEXT("persistence"), TEXT("server"));
 		Writer->WriteObjectEnd();
+	}
+	// The minimap (#167): only the keys changed from the schema's defaults, and the picture whenever there is one.
+	{
+		const FMantleMinimapSettings& Minimap = Place.Settings.Minimap;
+		const FMantleMinimapSettings Default;
+		static const TCHAR* const Shapes[] = { TEXT("circle"), TEXT("square") };
+		static const TCHAR* const Anchors[] = { TEXT("topLeft"), TEXT("topCenter"), TEXT("topRight"), TEXT("centerLeft"), TEXT("centerRight"),
+			TEXT("bottomLeft"), TEXT("bottomCenter"), TEXT("bottomRight") };
+		static const TCHAR* const Rotations[] = { TEXT("camera"), TEXT("north") };
+		static const TCHAR* const Players[] = { TEXT("nearby"), TEXT("off") };
+		const bool bOffset = !Minimap.Offset.Equals(Default.Offset, 0.0);
+		const bool bAny = Minimap.bEnabled != Default.bEnabled || Minimap.Shape != Default.Shape || Minimap.Anchor != Default.Anchor || bOffset
+			|| Minimap.Size != Default.Size || Minimap.bRim != Default.bRim || Minimap.Rotate != Default.Rotate || Minimap.Range != Default.Range
+			|| Minimap.bFullMap != Default.bFullMap || Minimap.Players != Default.Players || Minimap.Image.IsSet();
+		if (bAny)
+		{
+			Writer->WriteObjectStart(TEXT("minimap"));
+			if (Minimap.bEnabled != Default.bEnabled)
+			{
+				Writer->WriteValue(TEXT("enabled"), Minimap.bEnabled);
+			}
+			if (Minimap.Shape != Default.Shape)
+			{
+				Writer->WriteValue(TEXT("shape"), Shapes[FMath::Clamp(static_cast<int32>(Minimap.Shape), 0, 1)]);
+			}
+			if (Minimap.Anchor != Default.Anchor)
+			{
+				Writer->WriteValue(TEXT("anchor"), Anchors[FMath::Clamp(static_cast<int32>(Minimap.Anchor), 0, 7)]);
+			}
+			if (bOffset)
+			{
+				Writer->WriteArrayStart(TEXT("offset"));
+				Writer->WriteValue(Minimap.Offset.X);
+				Writer->WriteValue(Minimap.Offset.Y);
+				Writer->WriteArrayEnd();
+			}
+			if (Minimap.Size != Default.Size)
+			{
+				Writer->WriteValue(TEXT("size"), Minimap.Size);
+			}
+			if (Minimap.bRim != Default.bRim)
+			{
+				Writer->WriteValue(TEXT("rim"), Minimap.bRim);
+			}
+			if (Minimap.Rotate != Default.Rotate)
+			{
+				Writer->WriteValue(TEXT("rotate"), Rotations[FMath::Clamp(static_cast<int32>(Minimap.Rotate), 0, 1)]);
+			}
+			if (Minimap.Range != Default.Range)
+			{
+				Writer->WriteValue(TEXT("range"), Minimap.Range);
+			}
+			if (Minimap.bFullMap != Default.bFullMap)
+			{
+				Writer->WriteValue(TEXT("fullMap"), Minimap.bFullMap);
+			}
+			if (Minimap.Players != Default.Players)
+			{
+				Writer->WriteValue(TEXT("players"), Players[FMath::Clamp(static_cast<int32>(Minimap.Players), 0, 1)]);
+			}
+			if (Minimap.Image.IsSet())
+			{
+				Writer->WriteObjectStart(TEXT("image"));
+				Writer->WriteArrayStart(TEXT("tiles"));
+				for (const TArray<FString>& Row : Minimap.Image.Tiles)
+				{
+					Writer->WriteArrayStart();
+					for (const FString& Id : Row)
+					{
+						Writer->WriteValue(Id);
+					}
+					Writer->WriteArrayEnd();
+				}
+				Writer->WriteArrayEnd();
+				Writer->WriteObjectStart(TEXT("bounds"));
+				Writer->WriteValue(TEXT("minX"), Minimap.Image.MinX);
+				Writer->WriteValue(TEXT("maxX"), Minimap.Image.MaxX);
+				Writer->WriteValue(TEXT("minY"), Minimap.Image.MinY);
+				Writer->WriteValue(TEXT("maxY"), Minimap.Image.MaxY);
+				Writer->WriteObjectEnd();
+				Writer->WriteObjectEnd();
+			}
+			Writer->WriteObjectEnd();
+		}
 	}
 	// The place's default look (#532), only when it sets something, and only the keys it sets:
 	// clients from before it refuse the key, so a place that keeps the default look still reaches them.

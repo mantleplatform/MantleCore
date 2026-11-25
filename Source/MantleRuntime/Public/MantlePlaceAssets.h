@@ -426,6 +426,19 @@ public:
 	 */
 	static TSharedRef<FMantlePlaceAssets> PrepareManifestMeshes(const FMantlePlace& Root, const FMantlePlaceAssetSettings& Settings, FMantlePlaceAssetsDone OnDone);
 
+	/**
+	 * Texture ids a feature asks for after the place is running, read with the Color role: today the minimap's picture tiles (#167), which no entity uses, so neither
+	 * Prepare nor PrepareManifestOnly takes them (HasUploadedAssets, StartManifestOnly: nothing downloads while the minimap is off). A set of its own, on the settings the
+	 * caller gives (a local preview gives its bundle's store and resolver, as for PrepareManifestOnly): the place's own set has completed and stops pumping, so records
+	 * cannot be added to it. While it loads, GetLiveTextureState(Id, Color) says Loading; when a tile is built FindLiveTexture answers it, from the newest live set that has it.
+	 * An id that is not an uploaded id is skipped, and so is every id on a dedicated server (Settings.bRenderAssets false: nothing there draws). Keep the result for as long as the
+	 * textures are wanted: the set's built textures go with it. OnDone fires once on the game thread, from a later Pump. Log marker: MANTLE_PLACE_ASSETS on-demand textures.
+	 */
+	static TSharedRef<FMantlePlaceAssets> PrepareTextures(const TArray<FString>& Ids, const FMantlePlaceAssetSettings& Settings, FMantlePlaceAssetsDone OnDone);
+
+	/** PrepareTextures with this process's settings (a preview process uses MantlePreviewAssets::PrepareTextures). Logs a summary when it completes. */
+	static TSharedPtr<FMantlePlaceAssets> PrepareTexturesForThisProcess(const TArray<FString>& Ids);
+
 	/** This set was made by PrepareStreaming. */
 	bool IsStreaming() const { return bStreaming; }
 
@@ -948,6 +961,8 @@ private:
 	void StartManifestOnly(const FMantlePlace& Place);
 	/** PrepareManifestMeshes's Start: every uploaded mesh in the manifest, with collision. */
 	void StartManifestMeshes(const FMantlePlace& Place);
+	/** PrepareTextures's Start: a Color texture record for each uploaded id (none on a machine that draws nothing). */
+	void StartTextures(const TArray<FString>& Ids);
 
 	/**
 	 * #149: a record for the Lumen side file of every mesh record so far whose manifest entry names one baked by this

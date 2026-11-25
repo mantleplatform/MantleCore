@@ -189,6 +189,21 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	/** Placed pieces a place may hold at once, and so the most settings.placing.maxPieces may say. The schema and the backend state it too. */
 	static constexpr int32 MaxPlacedPieces = 2000;
 
+	/** settings.minimap.size, dp across: MinMinimapSize to MaxMinimapSize. The schema and the backend state it too. */
+	static constexpr double MinMinimapSize = 96.0;
+	static constexpr double MaxMinimapSize = 512.0;
+
+	/** settings.minimap.range, metres of radius shown: MinMinimapRange to MaxMinimapRange. The schema and the backend state it too. */
+	static constexpr double MinMinimapRange = 25.0;
+	static constexpr double MaxMinimapRange = 2000.0;
+
+	/** settings.minimap.offset, dp from the anchor: each axis within this of zero, either way. The schema and the backend state it too. */
+	static constexpr double MaxMinimapOffset = 1000.0;
+
+	/** settings.minimap.image.tiles: 1 to this many rows, each of 1 to this many tiles. The schema and the backend state it too. */
+	static constexpr int32 MaxMinimapImageRows = 4;
+	static constexpr int32 MaxMinimapImageColumns = 4;
+
 	/** A StaticMesh asset's snap sockets: at most this many, each with at most MaxMeshSocketAccepts accepted kinds. */
 	static constexpr int32 MaxMeshSockets = 32;
 	static constexpr int32 MaxMeshSocketAccepts = 8;

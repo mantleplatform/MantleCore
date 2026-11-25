@@ -3197,6 +3197,38 @@ bool FMantlePlaceAssetConverter::ConvertThumbnail(TConstArrayView<FColor> Pixels
 	return true;
 }
 
+bool FMantlePlaceAssetConverter::ConvertMinimapTile(TConstArrayView<FColor> Pixels, const int32 Width, const int32 Height, FMantlePlaceAssetSet& Out,
+	FString& OutKey)
+{
+	using namespace MantlePlaceAssetConverterPrivate;
+	OutKey.Reset();
+	if (Width <= 0 || Height <= 0 || Width > Limits.MaxTextureSize || Height > Limits.MaxTextureSize || Pixels.Num() != Width * Height)
+	{
+		return false;
+	}
+	// Every alpha 255: an opaque picture cooks to BC1, half the memory of one with alpha (BC3).
+	TArray<FColor> Opaque(Pixels.GetData(), Pixels.Num());
+	for (FColor& Pixel : Opaque)
+	{
+		Pixel.A = 255;
+	}
+	FMantleConvertedTexture Converted;
+	Converted.Bytes = FMantlePng::EncodeRGBA8(Width, Height, Opaque);
+	if (Converted.Bytes.IsEmpty() || Converted.Bytes.Num() > FMath::Min(Limits.MaxTextureBytes, Limits.MaxUploadBytes))
+	{
+		return false;
+	}
+	Converted.Role = RoleOf(EMantlePlaceTextureSlot::BaseColor);
+	Converted.Format = TEXT("png");
+	Converted.Width = Width;
+	Converted.Height = Height;
+	Converted.Hash = FMantleSha256::AssetHash(Converted.Bytes);
+	Converted.Key = FString::Printf(TEXT("texture:%s:%s"), *Converted.Role, *HexOfHash(Converted.Hash));
+	Converted.Name = TEXT("Place map picture");
+	OutKey = Out.AddTexture(MoveTemp(Converted));
+	return true;
+}
+
 bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, FMantlePlaceAssetSet& Out)
 {
 	using namespace MantlePlaceAssetConverterPrivate;
