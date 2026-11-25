@@ -78,7 +78,7 @@
       "handbrakeTorque": 7000
     },
     "tires": {
-      "friction": 3.2
+      "friction": 1.4
     },
     "camera": {
       "armLength": 600,
@@ -98,7 +98,7 @@
     "suspension/damping": [0.2, 0.9],
     "steering/maxAngle": [20, 50],
     "brakes/brakeTorque": [2000, 9000],
-    "tires/friction": [1.5, 5],
+    "tires/friction": [0.8, 5],
     "wheels/*/radius": [28, 50]
   }
 }
