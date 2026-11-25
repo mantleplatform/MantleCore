@@ -638,7 +638,7 @@ namespace MantleVehicleBuilderPrivate
 	// Mantle.Vehicle.BuildModel: what the Build a vehicle window's Build button does for a model that is worn as a skin, from the console or a script.
 	FAutoConsoleCommand BuildModelCommand(
 		TEXT("Mantle.Vehicle.BuildModel"),
-		TEXT("Mantle.Vehicle.BuildModel <model object path> <vehicle type id> [yaw=<deg>] [name=<Name>] [folder=</Game/...>] [bone.<chassis bone>=<model bone>] [section.<chassis bone>=<n>] [overwrite=1] [paint=<text>] [notpaint=<text>] "
+		TEXT("Mantle.Vehicle.BuildModel <model object path> <vehicle type id> [yaw=<deg>] [name=<Name>] [folder=</Game/...>] [bone.<chassis bone>=<model bone>] [section.<chassis bone>=<n>] [overwrite=1] [hideriders=1] [paint=<text>] [notpaint=<text>] "
 			 "-- puts a static or skeletal mesh on the type's chassis (BuildFromModel), saves it under the folder (default /Game/MantleVehicles) and logs MANTLE_VEHICLE_BUILD_MODEL "
 			 "ok=<0|1> with the vehicle's path, its Size and every note. With no yaw or parts given Mantle chooses them. A name= that a vehicle already has is refused unless overwrite=1."),
 		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
@@ -680,6 +680,11 @@ namespace MantleVehicleBuilderPrivate
 				else if (Key.Equals(TEXT("overwrite"), ESearchCase::IgnoreCase))
 				{
 					Options.bOverwrite = Value == TEXT("1") || Value.Equals(TEXT("true"), ESearchCase::IgnoreCase);
+				}
+				else if (Key.Equals(TEXT("hideriders"), ESearchCase::IgnoreCase))
+				{
+					// The window's "This model has no inside": the riders are hidden and the doors stay shut (the hood and trunk still open).
+					Options.HideRiders = Value == TEXT("1") || Value.Equals(TEXT("true"), ESearchCase::IgnoreCase);
 				}
 				else if (Key.Equals(TEXT("paint"), ESearchCase::IgnoreCase))
 				{
