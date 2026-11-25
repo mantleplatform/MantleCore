@@ -329,10 +329,10 @@ public:
 
 	/**
 	 * The rim sections to put on a Wheels paint layer (rims start paintable): the rims found on the wheels (Wheels > Rim Sections, all wheels, each once) that are among BodySections
-	 * and in no other place the paint already has (Paint > Sections or another layer's sections). Empty when the source already has a Wheels layer: that one is the creator's, or the
+	 * and in no other place the paint already has (Paint > Sections or another layer's sections), and not a GTA tint layer (IsGtaTintLayer: GTA's own path owns those). Materials go with BodySections by index. Empty when the source already has a Wheels layer: that one is the creator's, or the
 	 * first convert's, and is left as it is. Exposed for tests.
 	 */
-	static TArray<FString> RimLayerSections(const UMantleVehicleSource& Source, const TArray<FString>& BodySections);
+	static TArray<FString> RimLayerSections(const UMantleVehicleSource& Source, const TArray<FString>& BodySections, const TArray<UMaterialInterface*>& Materials);
 
 	/**
 	 * The color a Wheels layer starts with so the rims look as they did: the client keeps the original picture and tints it by this, so white shows the picture as it is.

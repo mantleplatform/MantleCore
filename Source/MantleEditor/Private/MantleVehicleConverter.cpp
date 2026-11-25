@@ -1692,7 +1692,7 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 	}
 	// The rims start paintable (they are found above, by their geometry): a Wheels layer holding them, wearing the rims' own look, unless the source already has a Wheels layer.
 	{
-		const TArray<FString> RimLayer = RimLayerSections(Source, Sections);
+		const TArray<FString> RimLayer = RimLayerSections(Source, Sections, Materials);
 		if (RimLayer.Num() > 0)
 		{
 			const UMaterialInterface* RimMaterial = nullptr;
@@ -2843,7 +2843,7 @@ bool FMantleVehicleConverter::IsGtaTintLayer(const FString& Name, const UMateria
 	});
 }
 
-TArray<FString> FMantleVehicleConverter::RimLayerSections(const UMantleVehicleSource& Source, const TArray<FString>& BodySections)
+TArray<FString> FMantleVehicleConverter::RimLayerSections(const UMantleVehicleSource& Source, const TArray<FString>& BodySections, const TArray<UMaterialInterface*>& Materials)
 {
 	TArray<FString> Out;
 	if (Source.Paint.Layers.ContainsByPredicate([](const FMantleVehicleSourcePaintLayer& Layer) { return Layer.Layer == EMantleVehicleSourcePaintLayer::Wheels; }))
@@ -2856,7 +2856,9 @@ TArray<FString> FMantleVehicleConverter::RimLayerSections(const UMantleVehicleSo
 		{
 			const bool bTaken = Source.Paint.Sections.Contains(Rim)
 				|| Source.Paint.Layers.ContainsByPredicate([&Rim](const FMantleVehicleSourcePaintLayer& Layer) { return Layer.Sections.Contains(Rim); });
-			if (!bTaken && BodySections.Contains(Rim))
+			const int32 Index = BodySections.IndexOfByKey(Rim);
+			// A GTA tint layer (a __WHEEL_ section, even one GuessPaintLayer left out as too dark) is GTA's own path's: it is not brought back here.
+			if (!bTaken && Index != INDEX_NONE && !IsGtaTintLayer(Rim, Materials.IsValidIndex(Index) ? Materials[Index] : nullptr))
 			{
 				Out.AddUnique(Rim);
 			}

@@ -227,6 +227,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleVehicleRimLayerTest, "Mantle.Vehicle.Pai
 bool FMantleVehicleRimLayerTest::RunTest(const FString&)
 {
 	const TArray<FString> Body = { TEXT("body"), TEXT("M_Part_07"), TEXT("M_Part_08"), TEXT("glass") };
+	const TArray<UMaterialInterface*> NoMaterials;
 	const auto MakeSource = []()
 	{
 		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
@@ -241,13 +242,13 @@ bool FMantleVehicleRimLayerTest::RunTest(const FString&)
 
 	// No Wheels layer: the rims go on one, each once (both wheels list the same section).
 	UMantleVehicleSource* Source = MakeSource();
-	TestEqual(TEXT("the rims, once each"), FMantleVehicleConverter::RimLayerSections(*Source, Body), TArray<FString>{ TEXT("M_Part_07") });
+	TestEqual(TEXT("the rims, once each"), FMantleVehicleConverter::RimLayerSections(*Source, Body, NoMaterials), TArray<FString>{ TEXT("M_Part_07") });
 	Source->Wheels[1].RimSections.Add(TEXT("M_Part_08"));
-	TestEqual(TEXT("across all wheels"), FMantleVehicleConverter::RimLayerSections(*Source, Body), (TArray<FString>{ TEXT("M_Part_07"), TEXT("M_Part_08") }));
+	TestEqual(TEXT("across all wheels"), FMantleVehicleConverter::RimLayerSections(*Source, Body, NoMaterials), (TArray<FString>{ TEXT("M_Part_07"), TEXT("M_Part_08") }));
 
 	// A rim section the model no longer has is not put on a layer.
 	Source->Wheels[1].RimSections.Add(TEXT("gone"));
-	TestFalse(TEXT("a section the model lacks is left out"), FMantleVehicleConverter::RimLayerSections(*Source, Body).Contains(TEXT("gone")));
+	TestFalse(TEXT("a section the model lacks is left out"), FMantleVehicleConverter::RimLayerSections(*Source, Body, NoMaterials).Contains(TEXT("gone")));
 
 	// Sections the paint already uses are skipped: the body's, and another layer's.
 	Source->Paint.Sections = { TEXT("M_Part_07") };
@@ -255,7 +256,7 @@ bool FMantleVehicleRimLayerTest::RunTest(const FString&)
 	Second.Layer = EMantleVehicleSourcePaintLayer::Secondary;
 	Second.Sections = { TEXT("M_Part_08") };
 	Source->Paint.Layers.Add(Second);
-	TestTrue(TEXT("sections in Paint Sections or another layer are skipped"), FMantleVehicleConverter::RimLayerSections(*Source, Body).IsEmpty());
+	TestTrue(TEXT("sections in Paint Sections or another layer are skipped"), FMantleVehicleConverter::RimLayerSections(*Source, Body, NoMaterials).IsEmpty());
 
 	// A Wheels layer that exists is the creator's (or the last convert's): nothing is added, even to an empty one. A re-convert therefore changes nothing.
 	UMantleVehicleSource* Own = MakeSource();
@@ -263,9 +264,15 @@ bool FMantleVehicleRimLayerTest::RunTest(const FString&)
 	Wheels.Layer = EMantleVehicleSourcePaintLayer::Wheels;
 	Wheels.Sections = { TEXT("M_Part_08") };
 	Own->Paint.Layers.Add(Wheels);
-	TestTrue(TEXT("a creator's Wheels layer is left as it is"), FMantleVehicleConverter::RimLayerSections(*Own, Body).IsEmpty());
+	TestTrue(TEXT("a creator's Wheels layer is left as it is"), FMantleVehicleConverter::RimLayerSections(*Own, Body, NoMaterials).IsEmpty());
 	Own->Paint.Layers[0].Sections.Reset();
-	TestTrue(TEXT("even an empty one"), FMantleVehicleConverter::RimLayerSections(*Own, Body).IsEmpty());
+	TestTrue(TEXT("even an empty one"), FMantleVehicleConverter::RimLayerSections(*Own, Body, NoMaterials).IsEmpty());
+
+	// A GTA tint layer (a __WHEEL_ section) is GTA's own path's, however dark it is: it is not put on the rim layer.
+	UMantleVehicleSource* Gta = MakeSource();
+	Gta->Wheels[0].RimSections = { TEXT("vehicle_generic_smallspecmap__WHEEL_"), TEXT("M_Part_08") };
+	const TArray<FString> GtaBody = { TEXT("body"), TEXT("vehicle_generic_smallspecmap__WHEEL_"), TEXT("M_Part_08") };
+	TestEqual(TEXT("a GTA tint layer is not a rim-layer section"), FMantleVehicleConverter::RimLayerSections(*Gta, GtaBody, NoMaterials), TArray<FString>{ TEXT("M_Part_08") });
 	return true;
 }
 
