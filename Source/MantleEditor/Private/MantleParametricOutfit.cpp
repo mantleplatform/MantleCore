@@ -5,7 +5,10 @@
 #include "MantleEditorActions.h"
 #include "MantleFitBodies.h"
 #include "MantleParametricOutfitAuthoring.h"
+#include "MantleStandardBodyMatch.h"
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "HAL/PlatformMemory.h"
+#include "Misc/ScopedSlowTask.h"
 #include "MantleAvatarConverter.h"
 #include "MantleBodyCorrespondence.h"
 #include "MantleBodyTopologyData.h"
@@ -946,6 +949,200 @@ UChaosOutfitAsset* FMantleParametricOutfit::WrapOnAuthoringBody(const FMantleCos
 	return WrapGarment(Draft.Source.Get(), Draft.KeepSlots, SourceBody, KeepAlive, OutWhy);
 }
 
+UChaosOutfitAsset* FMantleParametricOutfit::WrapOnStandardBody(const FMantleCosmeticDraft& Draft, const FMantleAvatarContract& Contract,
+	TArray<TStrongObjectPtr<UObject>>& KeepAlive, FMantleFitBodyPool& Pool, FString& OutBodyId, FString& OutNote, FString& OutWhy)
+{
+	OutBodyId.Reset();
+	OutNote.Reset();
+	USkeletalMesh* Worn = GarmentMesh(Draft.Source.Get(), KeepAlive, OutWhy);
+	if (!Worn) { return nullptr; }
+	MantleParametricOutfitPrivate::Finish(Worn);
+	FMantleGlbMesh Glb;
+	TArray<UMaterialInterface*> Materials;
+	int32 Triangles = 0;
+	FString ReadError;
+	if (!FMantleCosmeticExport::ReadSkeletalMesh(Worn, 0, Glb, Materials, Triangles, ReadError) || !Glb.IsSkinned())
+	{
+		OutWhy = FString::Printf(TEXT("its skin could not be read to compare it with Epic's standard bodies (%s)"), ReadError.IsEmpty() ? TEXT("it has no skin") : *ReadError);
+		return nullptr;
+	}
+	// Only the kept sections count: KeepSlots are material slots, and glTF material i is the mesh's slot UploadMaterialSlots()[i].
+	TOptional<TSet<int32>> Kept;
+	if (Draft.KeepSlots.IsSet())
+	{
+		const TArray<int32> Slots = FMantleCosmeticExport::UploadMaterialSlots(Worn, 0);
+		Kept.Emplace();
+		for (int32 Material = 0; Material < Slots.Num(); ++Material)
+		{
+			if (Draft.KeepSlots.GetValue().Contains(Slots[Material])) { Kept->Add(Material); }
+		}
+	}
+	const TSet<FName> Skinned = FMantleStandardBodyMatch::SkinnedBones(Glb, Kept.GetPtrOrNull());
+	// A garment on another skeleton is no standard body's: no body is made for it.
+	const TSet<FName> Standard = FMantleStandardBodyMatch::StandardBoneNames();
+	TArray<FString> Foreign;
+	for (const FName& Bone : Skinned)
+	{
+		if (!Standard.Contains(Bone)) { Foreign.Add(Bone.ToString()); }
+	}
+	Foreign.Sort();
+	if (Skinned.IsEmpty() || Standard.IsEmpty() || !Foreign.IsEmpty())
+	{
+		OutWhy = Skinned.IsEmpty() ? FString(TEXT("it is not skinned to any bone"))
+			: Standard.IsEmpty() ? FString(TEXT("Epic's MetaHuman body skeleton could not be loaded to compare it with"))
+			: FString::Printf(TEXT("it is not skinned to the MetaHuman body's bones (%s%s)"), *FString::Join(TArrayView<const FString>(Foreign.GetData(), FMath::Min(5, Foreign.Num())), TEXT(", ")),
+				Foreign.Num() > 5 ? TEXT(", ...") : TEXT(""));
+		return nullptr;
+	}
+	// Collecting garbage below must not take the garment: it is held here, not only by the caller's draft.
+	KeepAlive.Emplace(Draft.Source.Get());
+	KeepAlive.Emplace(Worn);
+	const auto LogMemoryUse = [&Draft](const TCHAR* When)
+	{
+		const FPlatformMemoryStats Stats = FPlatformMemory::GetStats();
+		UE_LOG(LogMantleParametricOutfit, Display, TEXT("MANTLE_STANDARD_BODY garment=%s memory %s: free RAM %.0f MB, editor %.0f MB"), *Draft.Source->GetName(), When,
+			static_cast<double>(Stats.AvailablePhysical) / (1024.0 * 1024.0), static_cast<double>(Stats.UsedPhysical) / (1024.0 * 1024.0));
+	};
+	// Every standard body's joints (made once per editor session). Kept while they are made: the bodies the fit uses (of the
+	// creator's chosen sex only, when they chose one), and the best match so far, so the matched body is never made twice; any
+	// other body is released at once. So at most the fit bodies and one more are alive.
+	const TArray<FString> FitTypes = FMantleFitBodies::SanitizeBodyTypes(Contract.GarmentFitBodyTypes);
+	const FString ChosenSex = Draft.FitSex == EMantleFitSex::Male ? TEXT("m_") : Draft.FitSex == EMantleFitSex::Female ? TEXT("f_") : TEXT("");
+	const auto IsFitBody = [&FitTypes, &ChosenSex](const FString& Id) { return FitTypes.Contains(Id.Mid(2)) && (ChosenSex.IsEmpty() || Id.StartsWith(ChosenSex)); };
+	const TMap<FName, FVector3f> GarmentJoints = FMantleStandardBodyMatch::JointPositions(Glb.Joints);
+	float BestSoFar = TNumericLimits<float>::Max();
+	FString KeptAsBest;
+	int32 Released = 0;
+	const auto Keep = [&](const FString& Id, const TMap<FName, FVector3f>& Joints)
+	{
+		const FMantleStandardBodyMatch::FCandidate One{ Id, Joints };
+		const float Score = FMantleStandardBodyMatch::Match(GarmentJoints, Skinned, MakeArrayView(&One, 1)).Best.MeanCm;
+		if (Score < 0.0f || Score >= BestSoFar) { return IsFitBody(Id); }
+		BestSoFar = Score;
+		// The previous best goes, unless the fit keeps it.
+		const int32 Previous = KeptAsBest.IsEmpty() ? INDEX_NONE : Pool.Bodies.IndexOfByPredicate([&KeptAsBest](const FMantleFitBody& Body) { return Body.Id == KeptAsBest; });
+		if (Previous != INDEX_NONE)
+		{
+			FMantleFitBodies::Release(Pool.Bodies[Previous]);
+			Pool.Bodies.RemoveAt(Previous);
+			++Released;
+		}
+		KeptAsBest = IsFitBody(Id) ? FString() : Id;
+		return true;
+	};
+	const TArray<FString> Ids = FMantleStandardBodyMatch::AllBodyIds();
+	const int32 ToMake = Ids.FilterByPredicate([](const FString& Id) { return !FMantleStandardBodyMatch::IsCached(Id); }).Num();
+	TArray<FMantleStandardBodyMatch::FCandidate> Candidates;
+	{
+		// The first check in an editor session makes the bodies (seconds each): say so rather than freeze.
+		FScopedSlowTask Task(static_cast<float>(Ids.Num()), FText::FromString(TEXT("Comparing the garment with Epic's standard MetaHuman bodies")));
+		if (ToMake > 0)
+		{
+			Task.MakeDialog();
+			LogMemoryUse(TEXT("before making the standard bodies"));
+		}
+		for (const FString& Id : Ids)
+		{
+			Task.EnterProgressFrame(1.0f, FText::FromString(FString::Printf(TEXT("Standard body %s (%s)"), *Id, *FMantleStandardBodyMatch::BodyWords(Id))));
+			FMantleStandardBodyMatch::FCandidate& Candidate = Candidates.AddDefaulted_GetRef();
+			Candidate.Id = Id;
+			FString Error;
+			if (!FMantleStandardBodyMatch::BodyJoints(Id, Pool, Keep, Candidate.Joints, Released, Error))
+			{
+				OutWhy = FString::Printf(TEXT("Epic's standard body %s could not be made to compare it with (%s)"), *Id, *Error);
+				return nullptr;
+			}
+			// A released body's character and meshes go now, not at the next collection, so they don't pile up (up to 18).
+			if (Released >= 3)
+			{
+				CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+				Released = 0;
+			}
+		}
+		if (Released > 0) { CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS); }
+		if (ToMake > 0) { LogMemoryUse(TEXT("after making the standard bodies")); }
+	}
+	const FMantleStandardBodyMatch::FResult Result = FMantleStandardBodyMatch::Match(GarmentJoints, Skinned, Candidates);
+	for (const FMantleStandardBodyMatch::FScore& Score : Result.All)
+	{
+		UE_LOG(LogMantleParametricOutfit, Display, TEXT("MANTLE_STANDARD_BODY garment=%s body=%s joints mean %.2f largest %.2f cm (%s) over %d skinned bones"),
+			*Draft.Source->GetName(), *Score.Id, Score.MeanCm, Score.LargestCm, *Score.LargestBone.ToString(), Score.Bones);
+	}
+	OutNote = FMantleStandardBodyMatch::Describe(Result);
+	UE_LOG(LogMantleParametricOutfit, Display, TEXT("MANTLE_STANDARD_BODY garment=%s %s"), *Draft.Source->GetName(), *OutNote);
+	if (!Result.bMatch)
+	{
+		OutWhy = FMantleStandardBodyMatch::ShortWhy(Result);
+		return nullptr;
+	}
+	// Matched, but it can still fail below: then the note says it was not made in sizes, and why.
+	const FString& MatchedId = Result.Best.Id;
+	const auto Fail = [&OutWhy, &OutNote, &MatchedId](const FString& Why)
+	{
+		OutWhy = FString::Printf(TEXT("it was made on Epic's standard body %s, but %s"), *MatchedId, *Why);
+		OutNote = FString::Printf(TEXT("Not made in sizes: it was made on Epic's standard %s body (%s), but %s."), *FMantleStandardBodyMatch::BodyWords(MatchedId), *MatchedId, *Why);
+		return nullptr;
+	};
+	// Only the matched body and the fit bodies of its sex (or the chosen one) stay; the others go now.
+	const FString FitSex = ChosenSex.IsEmpty() ? MatchedId.Left(2) : ChosenSex;
+	int32 Pruned = 0;
+	for (int32 Index = Pool.Bodies.Num() - 1; Index >= 0; --Index)
+	{
+		const FString& Id = Pool.Bodies[Index].Id;
+		if (Id == MatchedId || (FitTypes.Contains(Id.Mid(2)) && Id.StartsWith(FitSex))) { continue; }
+		FMantleFitBodies::Release(Pool.Bodies[Index]);
+		Pool.Bodies.RemoveAt(Index);
+		++Pruned;
+	}
+	if (Pruned > 0) { CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS); }
+	// The matched body itself: kept from the pass as the best so far, or made now when its joints came from the cache.
+	FMantleFitBody* Body = Pool.Find(MatchedId);
+	if (!Body)
+	{
+		EMetaHumanBodyType Type{};
+		FMantleFitBody Made;
+		FString Error;
+		if (!FMantleFitBodies::ParseBodyType(MatchedId, Type) || !FMantleFitBodies::Make(MatchedId, Type, Made, Error) || !Made.MergedHeadAndBodyMesh.IsValid())
+		{
+			FMantleFitBodies::Release(Made);
+			return Fail(FString::Printf(TEXT("that body could not be made (%s)"), *Error));
+		}
+		Pool.Bodies.Add(MoveTemp(Made));
+		Body = &Pool.Bodies.Last();
+	}
+	USkeletalMesh* Source = Body->MergedHeadAndBodyMesh.Get();
+	// The joints pick the body; the skin confirms it: the garment's closest twentieth lies on that body's skin, as WrapOnAuthoringBody checks.
+	TArray<FVector3f> GarmentPoints, BodyPoints;
+	for (const FMantleGlbPrimitive& Primitive : Glb.Primitives)
+	{
+		if (Kept.IsSet() && !Kept->Contains(Primitive.MaterialIndex)) { continue; }
+		for (int32 Vertex = Primitive.FirstVertex; Vertex < Primitive.FirstVertex + Primitive.NumVertices && Glb.Positions.IsValidIndex(Vertex); ++Vertex)
+		{
+			GarmentPoints.Add(Glb.Positions[Vertex]);
+		}
+	}
+	// Only p5 and p50 are read, so a vertex with no skin within 12 cm records 12 instead of searching the whole body.
+	TArray<float> Distances;
+	if (!FMantleFitBodies::ReadVertices(Source, 0, BodyPoints) || !FMantleFitBodies::NearestDistances(GarmentPoints, BodyPoints, Distances, /*bCapped*/ true))
+	{
+		return Fail(TEXT("the garment or that body has no geometry to check the fit with"));
+	}
+	Distances.Sort();
+	const float P5 = Distances[FMath::Min(Distances.Num() - 1, Distances.Num() * 5 / 100)];
+	const float P50 = Distances[FMath::Min(Distances.Num() - 1, Distances.Num() / 2)];
+	UE_LOG(LogMantleParametricOutfit, Display, TEXT("MANTLE_STANDARD_BODY garment=%s body=%s skin p5 %.2f p50 %.2f cm (limit p5 %.1f)"), *Draft.Source->GetName(),
+		*MatchedId, P5, P50, MantleParametricOutfitPrivate::WrapMaxCloseCm);
+	if (P5 > MantleParametricOutfitPrivate::WrapMaxCloseCm)
+	{
+		return Fail(FString::Printf(TEXT("it does not sit on that body (its closest vertices are %.1f cm from the skin)"), P5));
+	}
+	FString WrapWhy;
+	UChaosOutfitAsset* Outfit = WrapGarment(Draft.Source.Get(), Draft.KeepSlots, Source, KeepAlive, WrapWhy);
+	if (!Outfit) { return Fail(FString::Printf(TEXT("it could not be wrapped as an Outfit (%s)"), *WrapWhy)); }
+	OutBodyId = MatchedId;
+	return Outfit;
+}
+
 bool FMantleParametricOutfit::IsThirdPartyConversion(const FTopLevelAssetPath& SourceClass)
 {
 	return !SourceClass.IsNull() && SourceClass != UMetaHumanCharacter::StaticClass()->GetClassPathName();
@@ -1069,35 +1266,65 @@ UChaosOutfitAsset* FMantleParametricOutfit::MakeOutfitBeside(const FMantleCosmet
 }
 
 bool FMantleParametricOutfit::PrepareWrapped(const FMantleCosmeticDraft& Draft, const FMantleAvatarContract& Contract, FMantleCosmeticDraft& OutDraft,
-	TArray<TStrongObjectPtr<UObject>>& KeepAlive, TSharedPtr<void>& Lease, FString& OutWhy, FString* OutRoute)
+	TArray<TStrongObjectPtr<UObject>>& KeepAlive, TSharedPtr<void>& Lease, FString& OutWhy, FString* OutRoute, FString* OutRouteId, FString* OutStandardNote)
 {
-	// The first route that applies: the garment sits on a MetaHuman authoring body, or its character's bare body is beside it.
+	if (OutStandardNote) { OutStandardNote->Reset(); }
+	// The first route that applies: the garment sits on a MetaHuman authoring body, its character's bare body is beside it
+	// (the creator's own body is the truth, so it comes before a guess among the presets), or it was made on one of Epic's
+	// standard bodies.
 	FString WhyOnBody;
 	UChaosOutfitAsset* Outfit = WrapOnAuthoringBody(Draft, KeepAlive, Lease, WhyOnBody);
 	FString Route = TEXT("wrapped on its MetaHuman authoring body");
+	FString RouteId = TEXT("authoring_body");
+	FString MatchedId;
+	// Standard bodies made to match the garment: the fit takes the ones it needs, the rest are released with the pool.
+	const TSharedRef<FMantleFitBodyPool> Pool = MakeShared<FMantleFitBodyPool>();
 	if (!Outfit)
 	{
 		FString WhyBeside, NoteBeside;
 		Outfit = MakeOutfitBeside(Draft, KeepAlive, WhyBeside, &NoteBeside);
 		Route = FString::Printf(TEXT("made with Make Outfit from garment on its character's body. %s"), *NoteBeside);
+		RouteId = TEXT("made_beside");
 		if (!Outfit)
 		{
-			OutWhy = FString::Printf(TEXT("%s; and %s"), *WhyOnBody, *WhyBeside);
-			return false;
+			FString WhyStandard, StandardNote;
+			Outfit = WrapOnStandardBody(Draft, Contract, KeepAlive, *Pool, MatchedId, StandardNote, WhyStandard);
+			if (OutStandardNote) { *OutStandardNote = StandardNote; }
+			if (!Outfit)
+			{
+				OutWhy = FString::Printf(TEXT("%s; %s; and %s"), *WhyOnBody, *WhyBeside, *WhyStandard);
+				return false;
+			}
+			Route = StandardNote;
+			RouteId = TEXT("standard_body:") + MatchedId;
+			// The matched body is the Outfit's authoring body: it lives as long as the caller's lease (or in the fit set, if the fit takes it).
+			Lease = Pool;
 		}
 	}
 	if (OutRoute) { *OutRoute = Route; }
+	if (OutRouteId) { *OutRouteId = RouteId; }
 	OutDraft = Draft;
+	// Fitted to the matched body's sex, unless the creator chose one.
+	if (!MatchedId.IsEmpty() && Draft.FitSex == EMantleFitSex::Auto)
+	{
+		OutDraft.FitSex = MatchedId.StartsWith(TEXT("m_")) ? EMantleFitSex::Male : EMantleFitSex::Female;
+	}
 	OutDraft.Source = Outfit;
 	OutDraft.KeepSlots.Reset();
 	OutDraft.OutfitTargets.Reset();
 	OutDraft.OutfitSourceSize.Reset();
 	OutDraft.AuthoringBody.Reset();
 	OutDraft.AuthoringFace.Reset();
-	FMantleEditorActions::ApplyCosmeticFitTargetDefaults(OutDraft, &Contract);
+	FMantleEditorActions::ApplyCosmeticFitTargetDefaults(OutDraft, &Contract, &Pool.Get());
 	if (OutDraft.OutfitTargets.IsEmpty())
 	{
 		OutWhy = OutDraft.FitBodiesStatus.IsEmpty() ? FString(TEXT("the standard fit bodies were not made")) : OutDraft.FitBodiesStatus;
+		// It uploads in one size after all: the note says so, not that its sizes were made.
+		if (!MatchedId.IsEmpty() && OutStandardNote)
+		{
+			*OutStandardNote = FString::Printf(TEXT("Not made in sizes: it was made on Epic's standard %s body (%s), but its fit bodies were not made (%s)."),
+				*FMantleStandardBodyMatch::BodyWords(MatchedId), *MatchedId, *OutWhy);
+		}
 		return false;
 	}
 	return true;

@@ -13,6 +13,7 @@ class USkeletalMesh;
 class FMantleAvatarContract;
 struct FMantleCosmeticDraft;
 struct FMantleGlbMesh;
+struct FMantleFitBodyPool;
 class UMaterialInterface;
 
 struct MANTLEEDITOR_API FMantleOutfitSourceSize
@@ -65,6 +66,18 @@ struct MANTLEEDITOR_API FMantleParametricOutfit
 	static UChaosOutfitAsset* WrapOnAuthoringBody(const FMantleCosmeticDraft& Draft, TArray<TStrongObjectPtr<UObject>>& KeepAlive,
 		TSharedPtr<void>& Lease, FString& OutWhy);
 
+	/**
+	 * Route 3, when the garment has no body of its own (routes 1 and 2): a garment made on one of Epic's 18 standard bodies
+	 * (FMantleStandardBodyMatch: its joints on the bones it is skinned to within 1.5 cm of that body's), wrapped as an Outfit
+	 * on that body made in memory, once its closest vertices are confirmed on that body's skin (WrapMaxCloseCm). Bodies made
+	 * to match it go into Pool (the fit takes the ones it needs; Pool must outlive the Outfit's use); the rest are released
+	 * and garbage is collected. The first call in an editor session makes the 18 bodies under a progress dialog. OutBodyId
+	 * is the matched body. OutNote is the sentence for the creator: the matched body, or the nearest one and how far, or,
+	 * when it matched but failed after, "Not made in sizes: ..." with why. Null with OutWhy, a short lowercase reason.
+	 */
+	static UChaosOutfitAsset* WrapOnStandardBody(const FMantleCosmeticDraft& Draft, const FMantleAvatarContract& Contract,
+		TArray<TStrongObjectPtr<UObject>>& KeepAlive, FMantleFitBodyPool& Pool, FString& OutBodyId, FString& OutNote, FString& OutWhy);
+
 	/** Pure (tested): Points (component space, cm) span a whole body's height, feet to head. */
 	static bool IsWholeBody(TConstArrayView<FVector3f> Points);
 
@@ -82,12 +95,16 @@ struct MANTLEEDITOR_API FMantleParametricOutfit
 
 	/**
 	 * Draft's skeletal-mesh or cloth-asset garment as a draft of an Outfit with the standard fit bodies as targets (what the
-	 * Outfit route builds a variant for), by the first route that applies: WrapOnAuthoringBody, then MakeOutfitBeside. False
-	 * with OutWhy when neither does (or the fit bodies failed): the caller then uploads the garment in its one size.
-	 * OutRoute says which route made it. Lease and KeepAlive must outlive OutDraft.
+	 * Outfit route builds a variant for), by the first route that applies: WrapOnAuthoringBody, MakeOutfitBeside (the
+	 * creator's own body beside it), then WrapOnStandardBody. False with OutWhy when none does (or the fit bodies failed):
+	 * the caller then uploads the garment in its one size. OutRoute says which route made it, in words; OutRouteId as a
+	 * code: authoring_body, made_beside or standard_body:<body id>. OutStandardNote is WrapOnStandardBody's sentence
+	 * whenever it measured the garment (the match, the nearest body, or "Not made in sizes: ..." when the match failed
+	 * after, the fit bodies included), else empty. Lease and KeepAlive must outlive OutDraft.
 	 */
 	static bool PrepareWrapped(const FMantleCosmeticDraft& Draft, const FMantleAvatarContract& Contract, FMantleCosmeticDraft& OutDraft,
-		TArray<TStrongObjectPtr<UObject>>& KeepAlive, TSharedPtr<void>& Lease, FString& OutWhy, FString* OutRoute = nullptr);
+		TArray<TStrongObjectPtr<UObject>>& KeepAlive, TSharedPtr<void>& Lease, FString& OutWhy, FString* OutRoute = nullptr,
+		FString* OutRouteId = nullptr, FString* OutStandardNote = nullptr);
 	static bool ListSizes(UObject* Source, TArray<FMantleOutfitSourceSize>& OutSizes, FString& OutError);
 
 	/**

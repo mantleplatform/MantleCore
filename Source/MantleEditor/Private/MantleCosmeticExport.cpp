@@ -5318,17 +5318,22 @@ FMantleCosmeticPackage FMantleCosmeticExport::BuildCore(const FMantleCosmeticDra
 {
 	if (Draft.Class != EMantleCosmeticClass::Garment || !Draft.OutfitTargets.IsEmpty() || !FMantleParametricOutfit::IsGarmentSource(Draft.Source.Get()))
 	{
-		return BuildPrepared(Draft, Contract, OutHairPreview, OutHairSourceFace);
+		FMantleCosmeticPackage Result = BuildPrepared(Draft, Contract, OutHairPreview, OutHairSourceFace);
+		if (Draft.Class == EMantleCosmeticClass::Garment && FMantleParametricOutfit::IsSource(Draft.Source.Get())) { Result.GarmentRoute = TEXT("outfit"); }
+		return Result;
 	}
 	// A skeletal-mesh or cloth-asset garment: wrapped as an Outfit it gets the standard fit sizes like any Outfit.
 	FMantleCosmeticDraft Wrapped;
 	TArray<TStrongObjectPtr<UObject>> KeepAlive;
 	TSharedPtr<void> Lease;
-	FString Why, Route;
-	if (FMantleParametricOutfit::PrepareWrapped(Draft, Contract, Wrapped, KeepAlive, Lease, Why, &Route))
+	FString Why, Route, RouteId, StandardNote;
+	if (FMantleParametricOutfit::PrepareWrapped(Draft, Contract, Wrapped, KeepAlive, Lease, Why, &Route, &RouteId, &StandardNote))
 	{
 		FMantleCosmeticPackage Result = BuildPrepared(Wrapped, Contract, OutHairPreview, OutHairSourceFace);
-		if (!Result.HasErrors()) { Result.Notes.Insert(FString::Printf(TEXT("Made as a MetaHuman Outfit (%s), so it uploads in Epic's standard body sizes."), *Route), 0); }
+		Result.GarmentRoute = RouteId;
+		Result.GarmentRouteNote = RouteId.StartsWith(TEXT("standard_body:")) ? StandardNote
+			: FString::Printf(TEXT("Made as a MetaHuman Outfit (%s), so it uploads in Epic's standard body sizes."), *Route);
+		if (!Result.HasErrors()) { Result.Notes.Insert(Result.GarmentRouteNote, 0); }
 		return Result;
 	}
 	// One size, as the garment is: a cloth asset as its render geometry.
@@ -5347,6 +5352,10 @@ FMantleCosmeticPackage FMantleCosmeticExport::BuildCore(const FMantleCosmeticDra
 	Single.Source = Mesh;
 	FMantleCosmeticPackage Result = BuildPrepared(Single, Contract, OutHairPreview, OutHairSourceFace);
 	Result.Notes.Insert(FString::Printf(TEXT("Uploads in one size: it could not be made in sizes (%s)."), *Why), 0);
+	Result.GarmentRoute = TEXT("one_size");
+	// The standard-body sentence names the nearest body and how far, when the garment was measured against them.
+	Result.GarmentRouteNote = StandardNote.IsEmpty() ? FString::Printf(TEXT("Uploads in one size: it could not be made in sizes (%s)."), *Why)
+		: FString::Printf(TEXT("Uploads in one size. %s"), *StandardNote);
 	return Result;
 }
 

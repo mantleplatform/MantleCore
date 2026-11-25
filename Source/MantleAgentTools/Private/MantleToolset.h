@@ -156,8 +156,13 @@ public:
 	 * @param Sections The sections to upload, as the panel's section ticks: material or material slot names separated
 	 * by commas (e.g. "MI_Coat,MI_Shirt" for the top of a mesh holding a whole outfit); "" keeps the panel's default.
 	 * Always pass it.
-	 * A skeletal mesh or Chaos cloth asset garment made on a MetaHuman Creator body gets the same variants: it is wrapped as an Outfit first.
-	 * With no such body it uploads in one size, and a note says so.
+	 * A skeletal mesh or Chaos cloth asset garment gets the same variants when it is wrapped as an Outfit first: on the
+	 * MetaHuman Creator body it was made on, on its character's bare body beside it, or, with no body of its own, on
+	 * whichever of Epic's 18 standard MetaHuman bodies (f_ or m_, srt|med|tal,
+	 * unw|nrw|ovw, such as m_tal_nrw) it was made on, found from its joints on the bones it is skinned to (within 1.5 cm on
+	 * average); its sizes are then fitted to that body's sex. A note names the body and the next closest one. With no such
+	 * body it uploads in one size, and a note says so (naming the nearest standard body and how far it is, when it was measured).
+	 * The first check in an editor session takes about a minute longer: it makes the 18 standard bodies once to read their joints.
 	 * A MetaHuman Outfit uploads as clothing with garment variants made automatically: it is resized onto Epic's standard
 	 * body types (by default the medium-height underweight, normal and overweight bodies of one sex, named like
 	 * "f_med_nrw"), made in memory, so nothing needs converting and no Epic sign-in is needed. The sex follows FitSex;
@@ -166,8 +171,10 @@ public:
 	 * @param FitSex For a MetaHuman Outfit: the style of body the clothing was made on, as the panel's "Made for":
 	 * "female" (women's bodies, f_...), "male" (men's bodies, m_...), or "" / "auto" to let Mantle choose from the
 	 * Outfit's sizes. Ask the creator when you do not know; ignored for anything but clothing from an Outfit.
-	 * @return JSON: {"ok", "asset", "class", "slot", "name", "canUpload" (no errors), "issues":
-	 * [{"severity": "error"|"warning"|"info", "message", "hint"}], "notes": [lines], "files":
+	 * @return JSON: {"ok", "asset", "class", "slot", "name", "canUpload" (no errors), "route" (clothing only: how its sizes
+	 * are made: "outfit" (a MetaHuman Outfit), "authoring_body" (on its MetaHuman Creator body), "standard_body:<id>" (on Epic's
+	 * standard body <id>, such as "standard_body:m_tal_nrw"), "made_beside" (Make Outfit from garment on its character's
+	 * body beside it) or "one_size"), "issues": [{"severity": "error"|"warning"|"info", "message", "hint"}], "notes": [lines], "files":
 	 * [{"key", "label", "bytes"}]}, or a refusal (not_found, not_skeletal_mesh, unknown_slot, convert_first,
 	 * outfit_not_clothing, cards_not_hair, cloth_not_clothing, accessory_needs_outfit, animation_not_emote, texture_not_overlay,
 	 * unknown_section, unknown_fit_sex, bad_item_id).
@@ -195,7 +202,7 @@ public:
 	 * which the signed-in creator must own; the slot must match the item's, and the new version is screened again.
 	 * @param FitSex For a MetaHuman Outfit, the body it was made on, as for CheckCosmetic: "female", "male", or "" / "auto".
 	 * @return JSON: {"ok", "itemId", "itemStatus", "moderationState", "mayClipInMotion",
-	 * "message", "files": [{"label", "state", "assetId", "alreadyOnMantle", "message"}]}, or a
+	 * "message", "route" (clothing only, as CheckCosmetic's), "files": [{"label", "state", "assetId", "alreadyOnMantle", "message"}]}, or a
 	 * refusal (with "issues" when the check found errors).
 	 */
 	UFUNCTION(meta = (AICallable))

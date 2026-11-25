@@ -293,6 +293,8 @@ namespace MantleAgentToolsPrivate
 		Object->SetStringField(TEXT("slot"), Package.Slot);
 		Object->SetStringField(TEXT("name"), Package.Name);
 		Object->SetBoolField(TEXT("canUpload"), !Package.HasErrors());
+		// Clothing only: how its sizes were made (FMantleCosmeticPackage::GarmentRoute).
+		if (!Package.GarmentRoute.IsEmpty()) { Object->SetStringField(TEXT("route"), Package.GarmentRoute); }
 		Object->SetArrayField(TEXT("issues"), Issues);
 		Object->SetArrayField(TEXT("notes"), Notes);
 		Object->SetArrayField(TEXT("files"), Files);
@@ -1015,6 +1017,8 @@ FString FMantleAgentTools::DescribeCosmeticUpload(const FMantleCosmeticUploadSes
 	Object->SetStringField(TEXT("moderationState"), Session.GetItemModerationState());
 	Object->SetBoolField(TEXT("mayClipInMotion"), Session.GetItemMayClipInMotion());
 	Object->SetStringField(TEXT("message"), Session.GetFailure().IsEmpty() ? Session.GetStatusText() : Session.GetFailure());
+	// Clothing only: how its sizes were made, as CheckCosmetic says.
+	if (!Session.GetPackage().GarmentRoute.IsEmpty()) { Object->SetStringField(TEXT("route"), Session.GetPackage().GarmentRoute); }
 	Object->SetArrayField(TEXT("files"), Files);
 	return WriteAgentJson(Object);
 }
