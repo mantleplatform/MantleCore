@@ -2171,6 +2171,18 @@ void FMantleVehicleBuilder::ApplyLights(UMantleVehicleSource& Source, const FMan
 		TArray<FString>& List = FMantleVehicleLights::Sections(Kept, Kind);
 		List.RemoveAll([&Sections](const FString& Section) { return !Sections.Contains(Section); });
 	}
+	// Own Material names only light sections that are still lights.
+	Kept.OwnMaterial.RemoveAll([&Kept](const FString& Section)
+	{
+		for (const EMantleLightKind Kind : { EMantleLightKind::Head, EMantleLightKind::Rear, EMantleLightKind::Reverse, EMantleLightKind::Left, EMantleLightKind::Right })
+		{
+			if (FMantleVehicleLights::Sections(Kept, Kind).ContainsByPredicate([&Section](const FString& Light) { return Light.Equals(Section, ESearchCase::IgnoreCase); }))
+			{
+				return false;
+			}
+		}
+		return true;
+	});
 	Source.Modify();
 	Source.Lights = Kept;
 	FMantleVehicleLights::ApplyMaterials(Source, OutNotes);

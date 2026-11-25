@@ -447,6 +447,11 @@ namespace MantlePlaceMaterialParameters
 	constexpr const TCHAR* Livery = TEXT("Livery");
 	constexpr const TCHAR* LiveryOpacity = TEXT("LiveryOpacity");
 	constexpr const TCHAR* LiveryUV1 = TEXT("LiveryUV1");
+	/**
+	 * How much the livery glows: its own color x alpha x LiveryOpacity x this, added to the emission (tools/materials/add_livery_glow.py).
+	 * 0 (the default) is no glow; AMantleVehicle::UpdateLiveryGlow sets the worn livery's strength x its light's level.
+	 */
+	constexpr const TCHAR* LiveryGlow = TEXT("LiveryGlow");
 
 	/**
 	 * M_MantlePlace_Extended only. It also has

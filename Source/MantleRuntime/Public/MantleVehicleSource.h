@@ -105,6 +105,18 @@ enum class EMantleVehicleSourcePaintFinish : uint8
 	SoftRubber,
 };
 
+/** A light a livery can glow with (the document's light kinds), or none. */
+UENUM(BlueprintType)
+enum class EMantleVehicleSourceLight : uint8
+{
+	None,
+	Head,
+	Rear,
+	Reverse,
+	Left,
+	Right,
+};
+
 /** The slots of a part (by index, as the mesh editor lists them) that wear one of the paint's other layers. */
 USTRUCT(BlueprintType)
 struct MANTLERUNTIME_API FMantleVehicleSourcePartLayerSlots
@@ -636,6 +648,20 @@ struct MANTLERUNTIME_API FMantleVehicleSourceLights
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lights")
 	TArray<FMantleVehicleSourceLightBeam> Beams;
 
+	/**
+	 * Light sections (listed in a kind above) that keep their own material instead of Mantle's lamp lens: a printed part that glows with a light, as GTA's
+	 * lights-emissive livery does. The section publishes with its own material, and the game turns its glow (its own picture) up and down with that light.
+	 * A model marks one by naming its material <name>_glow_<kind> (head, rear, reverse, left or right).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lights")
+	TArray<FString> OwnMaterial;
+
+	/** Whether a section keeps its own material (OwnMaterial), ignoring case as the document's section names do. */
+	bool KeepsOwnMaterial(const FString& Section) const
+	{
+		return OwnMaterial.ContainsByPredicate([&Section](const FString& Own) { return Own.Equals(Section, ESearchCase::IgnoreCase); });
+	}
+
 	bool IsEmpty() const { return Head.IsEmpty() && Rear.IsEmpty() && Reverse.IsEmpty() && Left.IsEmpty() && Right.IsEmpty() && Beams.IsEmpty(); }
 };
 
@@ -661,6 +687,24 @@ struct MANTLERUNTIME_API FMantleVehicleSourcePaintLayer
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
 	EMantleVehicleSourcePaintFinish Finish = EMantleVehicleSourcePaintFinish::Gloss;
+};
+
+/**
+ * Whether a livery lights up with one of the car's lights (the document's liveryGlow): while that light is on, the livery's own color
+ * (where its alpha shows it) glows, times Strength and the light's level (the rear lights dim with the headlights, and so on), as GTA's
+ * lights-emissive livery does. None: the livery never glows.
+ */
+USTRUCT(BlueprintType)
+struct MANTLERUNTIME_API FMantleVehicleSourceLiveryGlow
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Liveries")
+	EMantleVehicleSourceLight Light = EMantleVehicleSourceLight::None;
+
+	/** How bright it glows with the light fully on: 1 is the livery's own color. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Liveries", meta = (ClampMin = "0", ClampMax = "100"))
+	float Strength = 1.f;
 };
 
 /**
@@ -741,6 +785,13 @@ struct MANTLERUNTIME_API FMantleVehicleSourcePaint
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Liveries")
 	TArray<FString> LiveryNames;
+
+	/**
+	 * Which liveries light up with a light, by their index in Liveries (the document's liveryGlow): a livery past the end, or with Light None,
+	 * never glows. A livery image named <name>_glow_<kind> (head, rear, reverse, left or right) starts with that light in the vehicle builder.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Liveries")
+	TArray<FMantleVehicleSourceLiveryGlow> LiveryGlows;
 
 	/** The livery a car wears when it spawns, by its index in Liveries; -1 for none. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Liveries", meta = (ClampMin = "-1", ClampMax = "7"))

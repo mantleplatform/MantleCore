@@ -8,6 +8,7 @@
 #include "MantleVehicleBuilder.h"
 #include "MantleVehicleChassisSkin.h"
 #include "MantleVehicleLightFinder.h"
+#include "MantleVehicleSource.h"
 #include "MantleVehicleShape.h"
 #include "MantleVehicleTypeMatch.h"
 #include "SMantleBuilderFlow.h"
@@ -202,6 +203,8 @@ private:
 	{
 		TSoftObjectPtr<UTexture2D> Texture;
 		FString Name;
+		/** The light it lights up with (Paint > Livery Glows); an image named <name>_glow_<kind> starts with that light. */
+		EMantleVehicleSourceLight Glow = EMantleVehicleSourceLight::None;
 	};
 	/** Adds a texture of the project as the next livery (named after it); says why in the step when it cannot. */
 	void AddLivery(UTexture2D* Texture);
@@ -211,6 +214,7 @@ private:
 	FReply OnAddLiveryImage();
 	void RemoveLivery(int32 Index);
 	void SetLiveryName(int32 Index, const FString& Name);
+	void SetLiveryGlow(int32 Index, EMantleVehicleSourceLight Glow);
 	/** The livery the car starts in (INDEX_NONE for the plain paint). */
 	void SetStartLivery(int32 Index);
 	/** The livery shown on the model in the picture (INDEX_NONE for the plain paint). */

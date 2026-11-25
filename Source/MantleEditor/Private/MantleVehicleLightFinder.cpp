@@ -620,6 +620,29 @@ TOptional<EMantleLightKind> FMantleVehicleLights::FromGlowName(const FString& Na
 	return {};
 }
 
+TOptional<EMantleLightKind> FMantleVehicleLights::FromGlowMarker(const FString& Name)
+{
+	using namespace MantleVehicleLightsPrivate;
+	TArray<FString> Said = Words(Name);
+	// A trailing number (Blender's .001, a _2 made unique) is not part of the marker.
+	while (Said.Num() > 0 && !Said.Last().IsEmpty() && Said.Last().IsNumeric())
+	{
+		Said.Pop();
+	}
+	if (Said.Num() < 2 || Said[Said.Num() - 2] != TEXT("glow"))
+	{
+		return {};
+	}
+	for (const EMantleLightKind Kind : Kinds)
+	{
+		if (Said.Last() == Key(Kind))
+		{
+			return Kind;
+		}
+	}
+	return {};
+}
+
 FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Body, const TArray<FSkeletalMaterial>& Materials, const bool bCenterline)
 {
 	using namespace MantleVehicleLightsPrivate;
@@ -670,6 +693,19 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 	{
 		const TArray<int32>& Triangles = SlotTriangles[Slot];
 		UMaterialInterface* Material = Materials.IsValidIndex(Slot) ? Materials[Slot].MaterialInterface.Get() : nullptr;
+		// A slot marked _glow_<kind> (a printed livery that glows with a light, GTA's lights-emissive) is that light whole, whatever its colors, place or bones,
+		// and keeps its own material.
+		TOptional<EMantleLightKind> Marked = Materials.IsValidIndex(Slot) ? FromGlowMarker(Materials[Slot].MaterialSlotName.ToString()) : TOptional<EMantleLightKind>();
+		if (!Marked && Material)
+		{
+			Marked = FromGlowMarker(Material->GetName());
+		}
+		if (Marked)
+		{
+			Out.WholeSlots[static_cast<int32>(*Marked)].Add(Slot);
+			Out.OwnMaterialSlots.Add(Slot);
+			continue;
+		}
 		TArray<TOptional<EMantleLightKind>> Kind;
 		Kind.SetNum(Triangles.Num());
 		// A glow that is only a mask or the car's own color picture: if it lights too much of the slot, it is no light (checked after the slot is sorted).
@@ -853,12 +889,16 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 		}
 	}
 
-	// The beams: one at the middle of each side's headlights, at their front; with no headlights, at the front corners.
+	// The beams: one at the middle of each side's headlights, at their front; with no headlights, at the front corners. A printed part glowing with the
+	// headlights (a whole livery) is no lamp: it does not place a beam.
 	const int32 Head = static_cast<int32>(EMantleLightKind::Head);
 	TArray<int32> HeadTriangles = Out.Triangles[Head];
 	for (const int32 Slot : Out.WholeSlots[Head])
 	{
-		HeadTriangles.Append(SlotTriangles.FindRef(Slot));
+		if (!Out.OwnMaterialSlots.Contains(Slot))
+		{
+			HeadTriangles.Append(SlotTriangles.FindRef(Slot));
+		}
 	}
 	const auto AddBeam = [&Out](const FVector& Position)
 	{
@@ -1062,6 +1102,14 @@ void FMantleVehicleLights::Cut(FMantleSkinnedMesh& Body, TArray<FSkeletalMateria
 			}
 		}
 	}
+	// Whole slots are never cut, so their numbers still name them.
+	for (const int32 Slot : Guess.OwnMaterialSlots)
+	{
+		if (Names.IsValidIndex(Slot))
+		{
+			OutLights.OwnMaterial.AddUnique(Names[Slot]);
+		}
+	}
 }
 
 TOptional<EMantleLightKind> FMantleVehicleLights::KindOf(const UMaterialInterface* Material)
@@ -1087,8 +1135,15 @@ UMaterialInterface* FMantleVehicleLights::OriginalOf(UMaterialInterface* Materia
 	return Instance && KindOf(Instance) ? Instance->Parent.Get() : Material;
 }
 
+bool FMantleVehicleLights::KeepsOwnLook(const UMaterialInterface* Material)
+{
+	UMaterialInstanceConstant* Instance = const_cast<UMaterialInstanceConstant*>(Cast<UMaterialInstanceConstant>(Material));
+	const UMantleVehicleLightData* Light = Instance ? Cast<UMantleVehicleLightData>(Instance->GetAssetUserDataOfClass(UMantleVehicleLightData::StaticClass())) : nullptr;
+	return Light && Light->bOwnLook;
+}
+
 UMaterialInterface* FMantleVehicleLights::MakeLightMaterial(UMaterialInterface* Original, const EMantleLightKind Kind, const FString& PackagePath, const FString& AssetName,
-	FString& OutError)
+	FString& OutError, const bool bOwnLook)
 {
 	using namespace MantleVehicleLightsPrivate;
 	UMaterialInterface* Parent = OriginalOf(Original);
@@ -1125,7 +1180,7 @@ UMaterialInterface* FMantleVehicleLights::MakeLightMaterial(UMaterialInterface* 
 		OutError = FString::Printf(TEXT("%s could not be created"), *PackageName);
 		return nullptr;
 	}
-	if (!bNew && Instance->Parent == Parent && KindOf(Instance) == Kind)
+	if (!bNew && Instance->Parent == Parent && KindOf(Instance) == Kind && KeepsOwnLook(Instance) == bOwnLook)
 	{
 		// Already this light's copy: nothing to change or save.
 		return Instance;
@@ -1170,6 +1225,7 @@ UMaterialInterface* FMantleVehicleLights::MakeLightMaterial(UMaterialInterface* 
 		Instance->AddAssetUserData(Data);
 	}
 	Data->Kind = Key(Kind);
+	Data->bOwnLook = bOwnLook;
 	Instance->PostEditChange();
 	Instance->MarkPackageDirty();
 	if (bPersist)
@@ -1219,8 +1275,10 @@ void FMantleVehicleLights::ApplyMaterials(UMantleVehicleSource& Source, TArray<F
 		if (Kind && Wanted)
 		{
 			FString Error;
-			const FString AssetName = FString::Printf(TEXT("MI_%s_%s_%s"), *Mesh->GetName(), *Names[Slot], Key(*Kind));
-			UMaterialInterface* Glowing = MakeLightMaterial(Wanted, *Kind, Folder, AssetName, Error);
+			// A section that keeps its own material gets a copy of its own name (its upload differs: the model's glow color, not the kind's).
+			const bool bOwnLook = Source.Lights.KeepsOwnMaterial(Names[Slot]);
+			const FString AssetName = FString::Printf(TEXT("MI_%s_%s_%s%s"), *Mesh->GetName(), *Names[Slot], Key(*Kind), bOwnLook ? TEXT("_own") : TEXT(""));
+			UMaterialInterface* Glowing = MakeLightMaterial(Wanted, *Kind, Folder, AssetName, Error, bOwnLook);
 			if (!Glowing)
 			{
 				OutNotes.Add(FString::Printf(TEXT("The %s section %s can't glow: %s."), *Label(*Kind).ToString().ToLower(), *Names[Slot], *Error));

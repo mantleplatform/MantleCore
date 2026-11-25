@@ -1,6 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "SMantleVehicleBuilder.h"
 #include "MantleSkinnedMesh.h"
+#include "MantleVehicleAsset.h"
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleLiveryTools.h"
 #include "MantleVehicleSource.h"
@@ -10,6 +11,8 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/ScopeExit.h"
+#include "Serialization/JsonSerializer.h"
+#include "Serialization/JsonWriter.h"
 #include "UObject/Package.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -23,6 +26,7 @@ struct FMantleVehicleBuilderLiveryAccess
 	static void Remove(SMantleVehicleBuilder& Panel, const int32 Index) { Panel.RemoveLivery(Index); }
 	static void Name(SMantleVehicleBuilder& Panel, const int32 Index, const FString& Name) { Panel.SetLiveryName(Index, Name); }
 	static void Start(SMantleVehicleBuilder& Panel, const int32 Index) { Panel.SetStartLivery(Index); }
+	static void Glow(SMantleVehicleBuilder& Panel, const int32 Index, const EMantleVehicleSourceLight Light) { Panel.SetLiveryGlow(Index, Light); }
 	static void Apply(SMantleVehicleBuilder& Panel, UMantleVehicleSource& Source) { Panel.ApplyLiveries(Source); }
 	static int32 Count(const SMantleVehicleBuilder& Panel) { return Panel.LiveryChoices.Num(); }
 	static TSharedRef<SWidget> Content(SMantleVehicleBuilder& Panel) { return Panel.MakeLiveriesStep(); }
@@ -89,6 +93,77 @@ bool FMantleVehicleLiveryStepWindowTest::RunTest(const FString& Parameters)
 		Access::Add(*Panel, Image);
 	}
 	TestEqual(TEXT("at most eight liveries"), Access::Count(*Panel), 8);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleLiveryGlowTest,
+	"Mantle.Vehicle.Livery.GlowsWithALight",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleLiveryGlowTest::RunTest(const FString& Parameters)
+{
+	// The marker the FiveM car rebuild gives a lights-emissive livery's picture: it lights up with that light and is no part of the livery's name.
+	TestEqual(TEXT("the marker is cut from the name"), FMantleVehicleLiveryTools::NameFromImage(TEXT("goku_glow_head")), FString(TEXT("goku")));
+	TestEqual(TEXT("so is a marker with a number after it"), FMantleVehicleLiveryTools::NameFromImage(TEXT("Police-Glow-Rear_2")), FString(TEXT("Police")));
+	TestEqual(TEXT("a name with glow in it that is no marker stays"), FMantleVehicleLiveryTools::NameFromImage(TEXT("glow_stripes")), FString(TEXT("glow stripes")));
+
+	UTexture2D* A = MantleVehicleLiveryStepTestPrivate::MakeImage();
+	UTexture2D* B = MantleVehicleLiveryStepTestPrivate::MakeImage();
+	ON_SCOPE_EXIT { A->RemoveFromRoot(); B->RemoveFromRoot(); };
+	UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
+	Source->Paint.Sections = { TEXT("M_Body") };
+	Source->Paint.Liveries = { TSoftObjectPtr<UTexture2D>(A), TSoftObjectPtr<UTexture2D>(B) };
+	TestFalse(TEXT("no glow, no liveryGlow"), FMantleVehicleConverter::MakeDocument(*Source, TMap<FString, FString>())->HasField(TEXT("liveryGlow")));
+
+	FMantleVehicleSourceLiveryGlow Head;
+	Head.Light = EMantleVehicleSourceLight::Head;
+	Source->Paint.LiveryGlows = { FMantleVehicleSourceLiveryGlow(), Head };
+	const TSharedRef<FJsonObject> Doc = FMantleVehicleConverter::MakeDocument(*Source, TMap<FString, FString>());
+	FString Glow;
+	const TArray<TSharedPtr<FJsonValue>>* Glows = nullptr;
+	if (TestTrue(TEXT("a glowing livery writes liveryGlow"), Doc->TryGetArrayField(TEXT("liveryGlow"), Glows) && Glows))
+	{
+		FJsonSerializer::Serialize(*Glows, TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Glow));
+		TestEqual(TEXT("one entry per livery, null for the one that does not glow"), Glow, FString(TEXT("[null,{\"light\":\"head\",\"strength\":1}]")));
+	}
+
+	// More glowing entries than liveries is refused by Check; a None entry past the end is harmless.
+	Source->Paint.LiveryGlows.Add(Head);
+	TArray<FMantleValidationIssue> Issues;
+	FMantleVehicleConverter::CheckSource(Source, TEXT("test"), Issues);
+	bool bPastTheEnd = false;
+	for (const FMantleValidationIssue& Issue : Issues)
+	{
+		bPastTheEnd = bPastTheEnd || (Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(TEXT("lights up livery 2")));
+	}
+	TestTrue(TEXT("a glow for a livery the car does not have is refused"), bPastTheEnd);
+
+	// The builder's Liveries step: an image named with the marker starts lit with that light, and the choice can be changed.
+	if (!FSlateApplication::IsInitialized())
+	{
+		AddWarning(TEXT("SKIPPED the window part, not passed: there is no Slate application in this runner."));
+		return true;
+	}
+	using Access = FMantleVehicleBuilderLiveryAccess;
+	UTexture2D* Marked = UTexture2D::CreateTransient(4, 4, PF_B8G8R8A8, TEXT("Goku_glow_head"));
+	Marked->AddToRoot();
+	ON_SCOPE_EXIT { Marked->RemoveFromRoot(); };
+	const TSharedRef<SMantleVehicleBuilder> Panel = SNew(SMantleVehicleBuilder);
+	Access::Content(*Panel);
+	Access::Add(*Panel, A);
+	Access::Add(*Panel, Marked);
+	UMantleVehicleSource* Built = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
+	Access::Apply(*Panel, *Built);
+	if (TestEqual(TEXT("a glow entry per livery"), Built->Paint.LiveryGlows.Num(), 2))
+	{
+		TestTrue(TEXT("the plain image does not glow"), Built->Paint.LiveryGlows[0].Light == EMantleVehicleSourceLight::None);
+		TestTrue(TEXT("the marked one lights up with the headlights"), Built->Paint.LiveryGlows[1].Light == EMantleVehicleSourceLight::Head);
+	}
+	TestEqual(TEXT("and is named without the marker"), Built->Paint.LiveryNames.Num() > 1 ? Built->Paint.LiveryNames[1] : FString(), FString(TEXT("Goku")));
+	Access::Glow(*Panel, 1, EMantleVehicleSourceLight::None);
+	Access::Apply(*Panel, *Built);
+	TestEqual(TEXT("with no glowing livery left, no glow entries"), Built->Paint.LiveryGlows.Num(), 0);
 	return true;
 }
 

@@ -1417,7 +1417,7 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeSeatsAndPaintStep()
 		SNew(STextBlock)
 			.AutoWrapText(true)
 			.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-			.Text(LOCTEXT("LightsHelp", "Mantle found the parts of your model that glow and sorted them into lights, shown as colored dots in the picture. In the game each kind glows in one color: white headlights and reverse lights, red rear lights, amber signals. Pick the parts for each light, or none."))
+			.Text(LOCTEXT("LightsHelp", "Mantle found the parts of your model that glow and sorted them into lights, shown as colored dots in the picture. In the game each kind glows in one color: white headlights and reverse lights, red rear lights, amber signals. A part whose material is named <name>_glow_<kind> (head, rear, reverse, left or right) keeps its own material instead and glows as its own picture with that light. Pick the parts for each light, or none."))
 	];
 	Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 4)
 	[

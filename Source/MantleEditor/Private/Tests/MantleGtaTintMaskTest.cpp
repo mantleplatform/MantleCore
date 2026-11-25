@@ -134,6 +134,11 @@ bool FMantleGtaTintMaskSectionsTest::RunTest(const FString&)
 	TestFalse(TEXT("the same material on an unticked section is not (it keeps its plain upload)"), FMantleVehicleConverter::BodySectionIsTintMask(*Source, TEXT("trim_PRIMARY_"), Gta.Get()));
 	TestFalse(TEXT("a real paint material named like a tint layer is left alone"), FMantleVehicleConverter::BodySectionIsTintMask(*Source, TEXT("body_PRIMARY_"), RealPaint.Get()));
 	TestFalse(TEXT("no material, no mask"), FMantleVehicleConverter::BodySectionIsTintMask(*Source, TEXT("body_PRIMARY_"), nullptr));
+
+	// A painted tint section that is also a light glows with its own picture: never a grey mask.
+	Source->Lights.Head = { TEXT("body_PRIMARY_") };
+	TestFalse(TEXT("a light section is no tint mask, painted or not"), FMantleVehicleConverter::BodySectionIsTintMask(*Source, TEXT("body_PRIMARY_"), Gta.Get()));
+	TestTrue(TEXT("the other painted tint section still is"), FMantleVehicleConverter::BodySectionIsTintMask(*Source, TEXT("seat__SECONDARY_"), Gta.Get()));
 	return true;
 }
 

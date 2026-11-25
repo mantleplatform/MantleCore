@@ -15,4 +15,8 @@ public:
 	/** The document's key of the light: head, rear, reverse, left or right. */
 	UPROPERTY(VisibleAnywhere, Category = "Mantle")
 	FString Kind;
+
+	/** A light section that keeps its own material (Lights > Own Material): it publishes with the model's own glow color, not the kind's one color. */
+	UPROPERTY(VisibleAnywhere, Category = "Mantle")
+	bool bOwnLook = false;
 };

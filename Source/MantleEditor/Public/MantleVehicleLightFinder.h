@@ -29,6 +29,8 @@ struct FMantleVehicleLightGuess
 	TArray<int32> WholeSlots[5];
 	/** The headlight beams: at each headlight's middle, pointing forward; at the front corners when the model shows no headlights. */
 	TArray<FMantleVehicleSourceLightBeam> Beams;
+	/** The whole slots (also in WholeSlots) marked to keep their own material (FMantleVehicleLights::FromGlowMarker): a printed part that glows with its light. */
+	TArray<int32> OwnMaterialSlots;
 
 	bool FoundAny() const;
 };
@@ -80,6 +82,13 @@ struct MANTLEEDITOR_API FMantleVehicleLights
 	static TOptional<EMantleLightKind> FromGlowName(const FString& Name);
 
 	/**
+	 * The light a material marks itself as following while keeping its own material: a name ending in _glow_<kind>, the kind the document's key (head, rear,
+	 * reverse, left, right), as the FiveM car rebuild writes for GTA's lights-emissive livery (Goku_Body_glow_head). Case and separators are ignored, and a
+	 * trailing number (Blender's .001) is allowed. Unset for any other name. Pure.
+	 */
+	static TOptional<EMantleLightKind> FromGlowMarker(const FString& Name);
+
+	/**
 	 * Finds the lights on Body (LOD 0, the vehicle's space: +X forward, cm) with Materials its slots. bCenterline (a bike) gets one beam on the middle line.
 	 * Reads the materials' glow and their glow textures, so game thread.
 	 */
@@ -102,7 +111,11 @@ struct MANTLEEDITOR_API FMantleVehicleLights
 	 * the glow switches that belong only to such textures stay off. Null with OutError when it
 	 * cannot be made or saved. A /Temp package is not written. Game thread.
 	 */
-	static UMaterialInterface* MakeLightMaterial(UMaterialInterface* Original, EMantleLightKind Kind, const FString& PackagePath, const FString& AssetName, FString& OutError);
+	static UMaterialInterface* MakeLightMaterial(UMaterialInterface* Original, EMantleLightKind Kind, const FString& PackagePath, const FString& AssetName, FString& OutError,
+		bool bOwnLook = false);
+
+	/** Whether a light material (MakeLightMaterial) was made with bOwnLook: a printed part that glows in its own colors, not its kind's one color. */
+	static bool KeepsOwnLook(const UMaterialInterface* Material);
 
 	/** The kind a light material (MakeLightMaterial) glows as; unset for any other material. */
 	static TOptional<EMantleLightKind> KindOf(const UMaterialInterface* Material);
