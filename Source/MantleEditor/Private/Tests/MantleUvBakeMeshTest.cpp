@@ -1,10 +1,20 @@
 // Copyright Joshua Eger. All Rights Reserved.
+#include "MantleChassisSpec.h"
 #include "MantleGlbWriter.h"
 #include "MantlePlaceAssetConverter.h"
 #include "MantlePlaceAssets.h"
+#include "MantleVehicleAsset.h"
+#include "MantleVehicleChassisBuilder.h"
+#include "MantleVehicleChassisMesh.h"
+#include "MantleVehicleConverter.h"
+#include "MantleVehicleScratchBody.h"
 #include "MantleVehicleSource.h"
 
 #include "Dom/JsonObject.h"
+#include "Engine/SkeletalMesh.h"
+#include "Engine/StaticMesh.h"
+#include "Misc/ScopeExit.h"
+#include "StaticMeshAttributes.h"
 #include "Dom/JsonValue.h"
 #include "IImageWrapper.h"
 #include "IImageWrapperModule.h"
@@ -384,7 +394,7 @@ bool FMantleUvBakeKeyTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the plain surface's cache tag is empty, as before"), Surface.CacheTag().IsEmpty());
 	Surface.Mesh = Bake;
 	TestFalse(TEXT("a section's surface is not plain"), Surface.IsPlain());
-	TestTrue(TEXT("and its cache tag holds the section"), Surface.CacheTag().Contains(FString::Printf(TEXT("uvbake=3:%s"), *Bake->Hash)));
+	TestTrue(TEXT("and its cache tag holds the section"), Surface.CacheTag().Contains(FString::Printf(TEXT("uvbake=4:%s"), *Bake->Hash)));
 
 	// Gather keeps it as its own entry, apart from the same material on a card.
 	FMantlePlaceDependencies Dependencies;
@@ -478,6 +488,167 @@ bool FMantleUvBakeRenderTest::RunTest(const FString& Parameters)
 	const FColor WantSecond = FMath::Lerp(Grey, Yellow, 0.9f).ToFColor(true);
 	TestTrue(TEXT("the first quad is grey, as its UV1 places it"), FMath::Abs(First.B - WantFirst.B) <= 8 && FMath::Abs(First.R - WantFirst.R) <= 8);
 	TestTrue(TEXT("the second quad is yellow, though it shares the first one's UV0"), FMath::Abs(Second.B - WantSecond.B) <= 8 && FMath::Abs(Second.R - WantSecond.R) <= 8);
+	return true;
+}
+
+// The tests above hand FromSection a mesh made in code, UV1 filled in. A car body is a skeletal mesh read by the converter, and that reader
+// read UV0 only: every body section's bake read UV0 in place of UV1 and SUV04's lamps came out dark (98% of the lens area where the two
+// sets pick different zones matched the UV0 colors). This reads a real skeletal body with a second UV set, a tire merged onto it, the way
+// the gather and the converter read it.
+namespace MantleUvBakeMeshTestPrivate
+{
+	/** Every body vertex's UV1 is its UV0 moved by this: a read that lost UV1 (or put UV0 there) cannot pass. */
+	const FVector2f Uv1Shift(0.5f, 0.25f);
+
+	/** A transient static mesh of one quad with a single UV set (no UV1), its vertices readable, for a wheel's tire mesh. */
+	UStaticMesh* NewTireQuad()
+	{
+		FMeshDescription Description;
+		FStaticMeshAttributes Attributes(Description);
+		Attributes.Register();
+		const FPolygonGroupID Group = Description.CreatePolygonGroup();
+		Attributes.GetPolygonGroupMaterialSlotNames()[Group] = TEXT("Tire");
+		TArray<FVertexInstanceID> Corners;
+		for (int32 Corner = 0; Corner < 4; ++Corner)
+		{
+			const float U = static_cast<float>(Corner & 1);
+			const float V = static_cast<float>(Corner >> 1);
+			const FVertexID Vertex = Description.CreateVertex();
+			Attributes.GetVertexPositions()[Vertex] = FVector3f(0.0f, 30.0f * U, 30.0f * V);
+			const FVertexInstanceID Instance = Description.CreateVertexInstance(Vertex);
+			Attributes.GetVertexInstanceNormals()[Instance] = FVector3f(1.0f, 0.0f, 0.0f);
+			Attributes.GetVertexInstanceTangents()[Instance] = FVector3f(0.0f, 1.0f, 0.0f);
+			Attributes.GetVertexInstanceBinormalSigns()[Instance] = 1.0f;
+			Attributes.GetVertexInstanceUVs().Set(Instance, 0, FVector2f(0.125f + 0.25f * U, 0.125f + 0.25f * V));
+			Corners.Add(Instance);
+		}
+		Description.CreateTriangle(Group, { Corners[0], Corners[2], Corners[1] });
+		Description.CreateTriangle(Group, { Corners[2], Corners[3], Corners[1] });
+		UStaticMesh* Mesh = NewObject<UStaticMesh>(GetTransientPackage(), NAME_None, RF_Transient);
+		Mesh->GetStaticMaterials().Add(FStaticMaterial(nullptr, TEXT("Tire"), TEXT("Tire")));
+		Mesh->bAllowCPUAccess = true;
+		Mesh->SetNumSourceModels(1);
+		FMeshBuildSettings& Build = Mesh->GetSourceModel(0).BuildSettings;
+		Build.bRecomputeNormals = false;
+		Build.bRecomputeTangents = false;
+		Build.bGenerateLightmapUVs = false;
+		UStaticMesh::FBuildMeshDescriptionsParams Params;
+		Params.bMarkPackageDirty = false;
+		Params.bAllowCpuAccess = true;
+		Params.bBuildSimpleCollision = false;
+		if (!Mesh->BuildFromMeshDescriptions({ &Description }, Params))
+		{
+			Mesh->MarkAsGarbage();
+			return nullptr;
+		}
+		return Mesh;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleUvBakeVehicleBodyReadTest,
+	"Mantle.Editor.UvBake.VehicleBodyReadsItsSecondUv",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleUvBakeVehicleBodyReadTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleUvBakeMeshTestPrivate;
+	// The sedan chassis's gray body (no project content), saved with a second UV set: UV0 moved by Uv1Shift.
+	FMantleChassisSpec Spec;
+	FMantleVehicleAsset Asset;
+	FString Error;
+	if (!TestTrue(FString::Printf(TEXT("the sedan chassis is made (%s)"), *Error),
+		FMantleVehicleChassisBuilder::LoadSpec(TEXT("sedan"), Spec, Error) && FMantleVehicleChassisBuilder::MakeAsset(Spec, Asset, Error)))
+	{
+		return false;
+	}
+	FMantleVehicleBodyExtras Extras;
+	TArray<FVector2f>& Uv1 = Extras.UVs.AddDefaulted_GetRef();
+	for (const FVector2f& Uv0 : Asset.Body.LODs[0].UVs)
+	{
+		Uv1.Add(Uv0 + Uv1Shift);
+	}
+	USkeletalMesh* BodyMesh = FMantleVehicleChassisMesh::Create(Asset.Body, TEXT("/Temp/MantleUvBakeBodyRead"), TEXT("UvBakeBody"), Error, nullptr, &Extras);
+	if (!TestNotNull(FString::Printf(TEXT("the body mesh is saved with two UV sets (%s)"), *Error), BodyMesh))
+	{
+		return false;
+	}
+	ON_SCOPE_EXIT { MantleVehicleScratchBody::Discard(BodyMesh); };
+	UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage());
+	Source->Body = BodyMesh;
+
+	FMantleGlbMesh Plain;
+	TArray<UMaterialInterface*> Materials;
+	if (!TestTrue(FString::Printf(TEXT("the body reads (%s)"), *Error), FMantleVehicleConverter::ReadBody(*Source, Plain, Materials, Error)))
+	{
+		return false;
+	}
+	TestTrue(TEXT("read as the builder and the preview read it, it has no second UV set (as before)"), Plain.UV1s.IsEmpty());
+
+	FMantleGlbMesh Body;
+	if (!TestTrue(TEXT("the body reads with its UV1"), FMantleVehicleConverter::ReadBody(*Source, Body, Materials, Error, true, /*bSecondUv*/ true)))
+	{
+		return false;
+	}
+	if (!TestEqual(TEXT("one UV1 per vertex"), Body.UV1s.Num(), Body.Positions.Num()) || !TestTrue(TEXT("it has vertices"), Body.Positions.Num() > 0))
+	{
+		return false;
+	}
+	bool bShifted = true;
+	for (int32 Vertex = 0; Vertex < Body.Positions.Num(); ++Vertex)
+	{
+		bShifted = bShifted && (Body.UV1s[Vertex] - Body.UVs[Vertex]).Equals(Uv1Shift, 0.05f);
+	}
+	TestTrue(TEXT("each vertex's UV1 is the mesh's channel 1, in the same vertex order as its UV0"), bShifted);
+
+	// A section baked over its own triangles gets that UV1, not UV0.
+	const TSharedPtr<const FMantleBakeMesh> Bake = FMantleBakeMesh::FromSection(Body, 0);
+	if (TestTrue(TEXT("its first section is laid out"), Bake.IsValid()))
+	{
+		bool bBakeShifted = Bake->UV1s.Num() == Bake->UV0s.Num();
+		for (int32 Vertex = 0; bBakeShifted && Vertex < Bake->UV1s.Num(); ++Vertex)
+		{
+			bBakeShifted = (Bake->UV1s[Vertex] - Bake->UV0s[Vertex]).Equals(Uv1Shift, 0.05f);
+		}
+		TestTrue(TEXT("and its bake reads the body's UV1"), bBakeShifted);
+	}
+
+	// A tire merged onto a wheel bone keeps every stream in step; the tire has no UV1, so it gives its UV0 there.
+	UStaticMesh* Tire = NewTireQuad();
+	if (!TestNotNull(TEXT("the tire mesh is built"), Tire))
+	{
+		return false;
+	}
+	ON_SCOPE_EXIT { Tire->MarkAsGarbage(); };
+	if (!TestTrue(TEXT("the body has bones"), Body.Joints.Num() > 0))
+	{
+		return false;
+	}
+	FMantleVehicleSourceWheel& Wheel = Source->Wheels.AddDefaulted_GetRef();
+	Wheel.Bone = Body.Joints.Last().Name;
+	Wheel.TireMesh = Tire;
+	FMantleGlbMesh WithTire;
+	if (!TestTrue(FString::Printf(TEXT("the body reads with its tire (%s)"), *Error), FMantleVehicleConverter::ReadBody(*Source, WithTire, Materials, Error, true, /*bSecondUv*/ true)))
+	{
+		return false;
+	}
+	const int32 Added = WithTire.Positions.Num() - Body.Positions.Num();
+	TestTrue(TEXT("the tire adds vertices"), Added > 0);
+	TestEqual(TEXT("UV1 still has one per vertex"), WithTire.UV1s.Num(), WithTire.Positions.Num());
+	bool bTireUv0 = WithTire.UV1s.Num() == WithTire.Positions.Num();
+	for (int32 Vertex = Body.Positions.Num(); bTireUv0 && Vertex < WithTire.Positions.Num(); ++Vertex)
+	{
+		bTireUv0 = WithTire.UV1s[Vertex].Equals(WithTire.UVs[Vertex], 1.0e-4f);
+	}
+	TestTrue(TEXT("the tire's vertices give their UV0 as UV1"), bTireUv0);
+	const TSharedPtr<const FMantleBakeMesh> BakeWithTire = FMantleBakeMesh::FromSection(WithTire, 0);
+	TestTrue(TEXT("the body section's bake is the same with a tire on"), BakeWithTire.IsValid() && Bake.IsValid() && BakeWithTire->UV1s == Bake->UV1s);
+
+	// A second UV set that lost its count on the way is refused out loud, never baked by UV0.
+	FMantleGlbMesh Broken = WithTire;
+	Broken.UV1s.SetNum(Body.Positions.Num());
+	AddExpectedError(TEXT("its second UV set has"), EAutomationExpectedErrorFlags::Contains, 1);
+	TestFalse(TEXT("a second UV set that does not cover the vertices is not baked by UV0"), FMantleBakeMesh::FromSection(Broken, 0).IsValid());
 	return true;
 }
 

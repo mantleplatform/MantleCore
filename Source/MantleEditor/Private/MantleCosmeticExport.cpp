@@ -377,7 +377,7 @@ namespace MantleCosmeticExportPrivate
 	 * that order instead, through each reference vertex's render vertex, so its upload has the reference topology.
 	 */
 	bool ReadSkeletalLOD(const USkeletalMesh* Mesh, int32 LODIndex, FMeshSource& Out, FString& OutError,
-		const TArray<int32>* KeepSlots = nullptr)
+		const TArray<int32>* KeepSlots = nullptr, const bool bSecondUv = false)
 	{
 		Out = FMeshSource();
 		Out.LODIndex = LODIndex;
@@ -536,6 +536,16 @@ namespace MantleCosmeticExportPrivate
 			Glb.Tangents[Vertex] = FVector4f(TangentX.X, TangentX.Y, TangentX.Z, TangentZ.W < 0.0f ? -1.0f : 1.0f);
 			Glb.UVs[Vertex] = VertexBuffer.GetVertexUV(Source, 0);
 			Out.Bounds += Glb.Positions[Vertex];
+		}
+		// UV channel 1 in the same vertex order, for a caller that bakes a material reading it over these triangles (a car body's lamps:
+		// SUV04's MM_Lights02 picks each lamp zone from a mask read at UV1). Without it that bake read UV0 in its place.
+		if (bSecondUv && VertexBuffer.GetNumTexCoords() >= 2)
+		{
+			Glb.UV1s.SetNumUninitialized(Count);
+			for (int32 Vertex = 0; Vertex < Count; ++Vertex)
+			{
+				Glb.UV1s[Vertex] = VertexBuffer.GetVertexUV(SourceOfVertex[Vertex], 1);
+			}
 		}
 
 		// Materials in the order sections first use them: the cook's section order.
@@ -4853,13 +4863,13 @@ TArray<int32> FMantleCosmeticExport::UploadMaterialSlots(const USkeletalMesh* Me
 }
 
 bool FMantleCosmeticExport::ReadSkeletalMesh(const USkeletalMesh* Mesh, int32 LODIndex, FMantleGlbMesh& OutMesh,
-	TArray<UMaterialInterface*>& OutMaterials, int32& OutTriangles, FString& OutError)
+	TArray<UMaterialInterface*>& OutMaterials, int32& OutTriangles, FString& OutError, const bool bSecondUv)
 {
 	MantleCosmeticExportPrivate::FMeshSource Source;
 	OutMesh = FMantleGlbMesh();
 	OutMaterials.Reset();
 	OutTriangles = 0;
-	if (!MantleCosmeticExportPrivate::ReadSkeletalLOD(Mesh, LODIndex, Source, OutError))
+	if (!MantleCosmeticExportPrivate::ReadSkeletalLOD(Mesh, LODIndex, Source, OutError, /*KeepSlots*/ nullptr, bSecondUv))
 	{
 		return false;
 	}

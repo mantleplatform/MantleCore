@@ -3394,7 +3394,8 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 	FMantleConvertedVehicle Converted;
 	TArray<UMaterialInterface*> Materials;
 	FString ReadError;
-	if (!FMantleVehicleConverter::ReadBody(*Vehicle, Converted.Body, Materials, ReadError, /*bApplyFitScale*/ true))
+	// With its UV1, for the sections baked over their own triangles below (read as the gather reads it, so both key them alike).
+	if (!FMantleVehicleConverter::ReadBody(*Vehicle, Converted.Body, Materials, ReadError, /*bApplyFitScale*/ true, /*bSecondUv*/ true))
 	{
 		Out.Issues.Add(ErrorIssue(FString::Printf(TEXT("Vehicle '%s' could not be converted: %s"), *Vehicle->GetName(), *ReadError),
 			TEXT("Fix it as the message says, then try again.")));
@@ -3426,6 +3427,8 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 				FMantleVehicleConverter::BodySectionIsTintMask(*Vehicle, Converted.Body.MaterialNames[Index], Material), BakeMesh.Get()));
 		}
 	}
+	// UV1 was read for those bakes only: what it placed is in their pictures now, drawn by UV0. The upload carries one UV set, as before.
+	Converted.Body.UV1s.Reset();
 	// Its liveries (#488) convert as decal base colors (FMantlePlaceDependencies::AddVehicleSpawn gathers them), and
 	// upload with the textures, before it.
 	Converted.LiveryTextureKeys = FMantleVehicleConverter::LiveryTextureKeys(*Vehicle);

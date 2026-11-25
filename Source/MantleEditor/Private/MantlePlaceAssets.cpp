@@ -3244,11 +3244,11 @@ void FMantlePlaceDependencies::AddVehicleSpawn(const AActor* Actor)
 
 	// The materials its body (and any tire mesh) draws with, as the upload reads them. A body that cannot be
 	// read gathers none: Check says why (FMantleVehicleConverter::CheckSource).
-	// Read at its Size, as the converter reads it: a section baked over its own triangles (FMantleBakeMesh) is keyed on them.
+	// Read at its Size and with its UV1, as the converter reads it: a section baked over its own triangles (FMantleBakeMesh) is keyed on them.
 	FMantleGlbMesh Body;
 	TArray<UMaterialInterface*> BodyMaterials;
 	FString Error;
-	if (!FMantleVehicleConverter::ReadBody(*Source, Body, BodyMaterials, Error, /*bApplyFitScale*/ true))
+	if (!FMantleVehicleConverter::ReadBody(*Source, Body, BodyMaterials, Error, /*bApplyFitScale*/ true, /*bSecondUv*/ true))
 	{
 		return;
 	}
@@ -4090,10 +4090,11 @@ FString FMantleBakeSurface::CacheTag() const
 	// that baked UVs 0 to 1 for a material reading only texture coordinates, one landscape quad stretched over the tile, and must not stand in.
 	// "terrain": a landscape layer's bake has a card as many cm a side as the layer tiles (a bake made before saw 1 m of the world), over the
 	// finest texture's repeat; an older one must not stand in either.
-	// "uvbake": a bake over one section's own triangles, laid out by its Layout (FMantleBakeMesh), keyed on that section.
+	// "uvbake": a bake over one section's own triangles, laid out by its Layout (FMantleBakeMesh), keyed on that section. 4: a car body's
+	// UV1 is read from its skeletal mesh (before, the bake read UV0 in its place).
 	return FString::Printf(TEXT(" bakesurface color=%s uvrange=%g%s%s%s%s%s"), *VertexColor.ToHex(), FMath::Max(UvRange, 1.0), CoversTerrain() ? TEXT(" meshdata") : TEXT(""),
 		bTerrainLayer ? TEXT(" terrain=2") : TEXT(""), WorldTileCm > 0.0 ? *FString::Printf(TEXT(" worldtile=%g"), WorldTileCm) : TEXT(""), bTintMask ? TEXT(" tintmask=1") : TEXT(""),
-		Mesh.IsValid() ? *FString::Printf(TEXT(" uvbake=3:%s"), *Mesh->Hash) : TEXT(""));
+		Mesh.IsValid() ? *FString::Printf(TEXT(" uvbake=4:%s"), *Mesh->Hash) : TEXT(""));
 	// The shift is not in the tag: the shifted bake is only compared with, never stored.
 }
 
@@ -4160,6 +4161,14 @@ TSharedPtr<const FMantleBakeMesh> FMantleBakeMesh::FromSection(const FMantleGlbM
 		return nullptr;
 	}
 	const bool bTangents = Mesh.Tangents.Num() == NumVertices;
+	// A mesh with no second UV set reads its UV0 there, as the engine does. A second set that does not cover the vertices is a reader that
+	// lost it on the way (a merged tire did), never a mesh without one: refused out loud, not baked by UV0 (SUV04's lamps came out dark).
+	if (!Mesh.UV1s.IsEmpty() && Mesh.UV1s.Num() != NumVertices)
+	{
+		UE_LOG(LogMantle, Error, TEXT("MANTLE_UV_BAKE section %d of %s: its second UV set has %d entries for %d vertices; it is not baked over its triangles"),
+			MaterialIndex, *Mesh.Name, Mesh.UV1s.Num(), NumVertices);
+		return nullptr;
+	}
 	const bool bUV1 = Mesh.UV1s.Num() == NumVertices;
 	const bool bColors = Mesh.Colors.Num() == NumVertices;
 	for (const int32 Vertex : Vertices)
@@ -4317,8 +4326,8 @@ TSharedPtr<const FMantleBakeMesh> FMantleBakeMesh::FromSection(const FMantleGlbM
 	uint8 Digest[FSHA1::DigestSize];
 	Sha.GetHash(Digest);
 	Out->Hash = BytesToHex(Digest, 8).ToLower();
-	UE_LOG(LogMantle, Log, TEXT("MANTLE_UV_BAKE section %d of %s: %d triangles; its UV0 draws %.1f%% of its texels twice; baked by %s, %.1f%% of that layout drawn twice, %d vertex copies for bow-tie corners%s; hash %s"),
-		MaterialIndex, *Mesh.Name, Out->Indices.Num() / 3, 100.0 * Uv0Overlap, Out->bOwnLayout ? TEXT("a layout of its own") : (bMayRelayout ? TEXT("its UV0") : TEXT("its UV0 (other things read it)")),
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_UV_BAKE section %d of %s: %d triangles, %s; its UV0 draws %.1f%% of its texels twice; baked by %s, %.1f%% of that layout drawn twice, %d vertex copies for bow-tie corners%s; hash %s"),
+		MaterialIndex, *Mesh.Name, Out->Indices.Num() / 3, bUV1 ? TEXT("UV1 from the mesh") : TEXT("no second UV set (UV0 read in its place)"), 100.0 * Uv0Overlap, Out->bOwnLayout ? TEXT("a layout of its own") : (bMayRelayout ? TEXT("its UV0") : TEXT("its UV0 (other things read it)")),
 		100.0 * Out->LayoutOverlap(), Split,
 		Unsplit > 0 ? *FString::Printf(TEXT(", %d corner(s) left unsplit (a section of several primitives)"), Unsplit) : TEXT(""), *Out->Hash);
 	return Out;

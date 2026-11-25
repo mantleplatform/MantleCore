@@ -354,6 +354,14 @@ namespace MantleVehicleConverterPrivate
 		const int32 Count = TireGlb.Positions.Num();
 		const bool bBodyTangents = Body.Tangents.Num() > 0;
 		const bool bTireTangents = TireGlb.Tangents.Num() == Count;
+		// Every per-vertex stream the body has grows with the tire's vertices, or it no longer matches them: a body read with its UV1
+		// (ReadBody's bSecondUv) and a tire merged on would bake its lamps without it (FMantleBakeMesh::FromSection), and the upload would
+		// refuse the mesh (MantleGlbWriter). A tire without a second UV set gives its UV0, as the engine reads a missing set; without colors,
+		// white (no color).
+		const bool bBodyUV1s = Body.UV1s.Num() == Base && Base > 0;
+		const bool bTireUV1s = TireGlb.UV1s.Num() == Count;
+		const bool bBodyColors = Body.Colors.Num() == Base && Base > 0;
+		const bool bTireColors = TireGlb.Colors.Num() == Count;
 
 		for (int32 Vertex = 0; Vertex < Count; ++Vertex)
 		{
@@ -373,7 +381,16 @@ namespace MantleVehicleConverterPrivate
 					Body.Tangents.Add(FVector4f(FVector3f(VehiclePerpendicular(Normal)), 1.0f));
 				}
 			}
-			Body.UVs.Add(TireGlb.UVs.IsValidIndex(Vertex) ? TireGlb.UVs[Vertex] : FVector2f::ZeroVector);
+			const FVector2f TireUV = TireGlb.UVs.IsValidIndex(Vertex) ? TireGlb.UVs[Vertex] : FVector2f::ZeroVector;
+			Body.UVs.Add(TireUV);
+			if (bBodyUV1s)
+			{
+				Body.UV1s.Add(bTireUV1s ? TireGlb.UV1s[Vertex] : TireUV);
+			}
+			if (bBodyColors)
+			{
+				Body.Colors.Add(bTireColors ? TireGlb.Colors[Vertex] : FColor::White);
+			}
 			for (int32 Slot = 0; Slot < Body.NumInfluences; ++Slot)
 			{
 				Body.InfluenceJoints.Add(static_cast<uint16>(Slot == 0 ? Joint : 0));
@@ -2530,7 +2547,7 @@ namespace MantleVehicleConverterPrivate
 }
 
 bool FMantleVehicleConverter::ReadBody(const UMantleVehicleSource& Source, FMantleGlbMesh& OutBody, TArray<UMaterialInterface*>& OutMaterials, FString& OutError,
-	const bool bApplyFitScale)
+	const bool bApplyFitScale, const bool bSecondUv)
 {
 	using namespace MantleVehicleConverterPrivate;
 	OutBody = FMantleGlbMesh();
@@ -2542,7 +2559,7 @@ bool FMantleVehicleConverter::ReadBody(const UMantleVehicleSource& Source, FMant
 		return false;
 	}
 	int32 Triangles = 0;
-	if (!FMantleCosmeticExport::ReadSkeletalMesh(Mesh, 0, OutBody, OutMaterials, Triangles, OutError))
+	if (!FMantleCosmeticExport::ReadSkeletalMesh(Mesh, 0, OutBody, OutMaterials, Triangles, OutError, bSecondUv))
 	{
 		return false;
 	}

@@ -330,9 +330,11 @@ public:
 	/**
 	 * The body as uploaded: LOD0 (render vertices in order, the raw reference skeleton, float weights) with each
 	 * wheel's tire mesh merged onto its bone, weighted to it alone. OutMaterials[i] is glTF material i's.
+	 * bSecondUv: OutBody.UV1s holds the body's UV channel 1 too (the tires' own, or their UV0 when they have none), which a section
+	 * baked over its own triangles reads (FMantlePlaceAssets::SectionBakeMesh); the upload itself carries one UV set.
 	 */
 	static bool ReadBody(const UMantleVehicleSource& Source, FMantleGlbMesh& OutBody, TArray<UMaterialInterface*>& OutMaterials, FString& OutError,
-		bool bApplyFitScale = false);
+		bool bApplyFitScale = false, bool bSecondUv = false);
 
 	/**
 	 * The vehicle as it exports (#728): Source with its Size (FitScale) applied, so every consumer sees the same scaled vehicle. Returns
