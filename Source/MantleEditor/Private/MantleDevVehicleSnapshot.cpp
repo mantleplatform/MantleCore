@@ -35,13 +35,17 @@ namespace MantleDevVehicleSnapshotPrivate
 
 	TSharedRef<FJsonObject> StableObject(const FJsonObject& Object)
 	{
-		TArray<FString> Keys;
-		Object.Values.GetKeys(Keys);
-		Keys.Sort();
-		TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
-		for (const FString& Key : Keys)
+		// Values is keyed by a shared string in 5.8, not FString: collect the pairs, then sort them by name.
+		TArray<TPair<FString, TSharedPtr<FJsonValue>>> Fields;
+		for (const auto& Pair : Object.Values)
 		{
-			Out->SetField(Key, Stable(Object.Values.FindChecked(Key), Key));
+			Fields.Emplace(FString(Pair.Key.ToView()), Pair.Value);
+		}
+		Fields.Sort([](const TPair<FString, TSharedPtr<FJsonValue>>& A, const TPair<FString, TSharedPtr<FJsonValue>>& B) { return A.Key < B.Key; });
+		TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : Fields)
+		{
+			Out->SetField(Field.Key, Stable(Field.Value, Field.Key));
 		}
 		return Out;
 	}
