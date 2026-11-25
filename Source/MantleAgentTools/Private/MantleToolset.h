@@ -157,7 +157,8 @@ public:
 	 * by commas (e.g. "MI_Coat,MI_Shirt" for the top of a mesh holding a whole outfit); "" keeps the panel's default.
 	 * Always pass it.
 	 * A skeletal mesh or Chaos cloth asset garment gets the same variants when it is wrapped as an Outfit first: on the
-	 * MetaHuman Creator body it was made on, or on whichever of Epic's 18 standard MetaHuman bodies (f_ or m_, srt|med|tal,
+	 * MetaHuman Creator body it was made on, on its character's bare body beside it, or, with no body of its own, on
+	 * whichever of Epic's 18 standard MetaHuman bodies (f_ or m_, srt|med|tal,
 	 * unw|nrw|ovw, such as m_tal_nrw) it was made on, found from its joints on the bones it is skinned to (within 1.5 cm on
 	 * average); its sizes are then fitted to that body's sex. A note names the body and the next closest one. With no such
 	 * body it uploads in one size, and a note says so (naming the nearest standard body and how far it is, when it was measured).

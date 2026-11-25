@@ -139,6 +139,10 @@ struct MANTLEEDITOR_API FMantleFitBodies
 	/** For each vertex of Probe, the distance to the nearest vertex of Reference: average and largest, in cm. Order-independent. */
 	static bool CompareNearest(const TArray<FVector3f>& Probe, const TArray<FVector3f>& Reference, float& OutAverageCm, float& OutMaxCm);
 
-	/** For each vertex of Probe, in order, the distance (cm) to the nearest vertex of Reference (CompareNearest's grid search). False when either is empty. */
-	static bool NearestDistances(const TArray<FVector3f>& Probe, const TArray<FVector3f>& Reference, TArray<float>& OutCm);
+	/**
+	 * For each vertex of Probe, in order, the distance (cm) to the nearest vertex of Reference (CompareNearest's grid search).
+	 * With bCapped, a vertex with nothing within the grid's reach (12 cm) records 12 instead of searching every vertex: for
+	 * callers that only read low percentiles. False when either is empty.
+	 */
+	static bool NearestDistances(const TArray<FVector3f>& Probe, const TArray<FVector3f>& Reference, TArray<float>& OutCm, bool bCapped = false);
 };

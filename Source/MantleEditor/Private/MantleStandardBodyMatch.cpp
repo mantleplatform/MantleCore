@@ -25,15 +25,17 @@ namespace MantleStandardBodyMatchPrivate
 		return Cache;
 	}
 
+	/** The raw reference skeleton as joints: the same pose the garment's upload joints carry (FMantleCosmeticExport::ReadSkeletalMesh). */
 	TArray<FMantleGlbJoint> JointsOf(const FReferenceSkeleton& Reference)
 	{
 		TArray<FMantleGlbJoint> Joints;
-		const TArray<FTransform>& Pose = Reference.GetRefBonePose();
-		for (int32 Bone = 0; Bone < Pose.Num(); ++Bone)
+		const TArray<FMeshBoneInfo>& Info = Reference.GetRawRefBoneInfo();
+		const TArray<FTransform>& Pose = Reference.GetRawRefBonePose();
+		for (int32 Bone = 0; Bone < Pose.Num() && Bone < Info.Num(); ++Bone)
 		{
 			FMantleGlbJoint& Joint = Joints.AddDefaulted_GetRef();
-			Joint.Name = Reference.GetBoneName(Bone);
-			Joint.Parent = Reference.GetParentIndex(Bone);
+			Joint.Name = Info[Bone].Name;
+			Joint.Parent = Info[Bone].ParentIndex;
 			Joint.Local = Pose[Bone];
 		}
 		return Joints;
@@ -169,8 +171,24 @@ FString FMantleStandardBodyMatch::Describe(const FResult& Result)
 		*BodyWords(Result.Best.Id), *Result.Best.Id, Result.Best.MeanCm, Result.Best.Bones, JointMatchCm, *Next);
 }
 
+FString FMantleStandardBodyMatch::ShortWhy(const FResult& Result)
+{
+	if (Result.bMatch) { return FString(); }
+	if (!Result.Missing.IsEmpty())
+	{
+		return FString::Printf(TEXT("it is skinned to bones Epic's standard bodies don't have (%s%s)"), *Result.Missing[0].ToString(), Result.Missing.Num() > 1 ? TEXT(", ...") : TEXT(""));
+	}
+	if (Result.Best.MeanCm < 0.0f) { return TEXT("it is not skinned to any of Epic's standard bodies' bones"); }
+	return FString::Printf(TEXT("not made on one of Epic's standard bodies: nearest %s, joints %.2f cm off"), *Result.Best.Id, Result.Best.MeanCm);
+}
+
+bool FMantleStandardBodyMatch::IsCached(const FString& Id)
+{
+	return MantleStandardBodyMatchPrivate::JointCache().Contains(Id);
+}
+
 bool FMantleStandardBodyMatch::BodyJoints(const FString& Id, FMantleFitBodyPool& Pool, TFunctionRef<bool(const FString&)> Keep,
-	TMap<FName, FVector3f>& OutJoints, FString& OutError)
+	TMap<FName, FVector3f>& OutJoints, int32& OutReleased, FString& OutError)
 {
 	using namespace MantleStandardBodyMatchPrivate;
 	if (const TMap<FName, FVector3f>* Cached = JointCache().Find(Id))
@@ -180,17 +198,23 @@ bool FMantleStandardBodyMatch::BodyJoints(const FString& Id, FMantleFitBodyPool&
 	}
 	EMetaHumanBodyType Type{};
 	FMantleFitBody Body;
-	if (!FMantleFitBodies::ParseBodyType(Id, Type) || !FMantleFitBodies::Make(Id, Type, Body, OutError) || !Body.MergedHeadAndBodyMesh.IsValid())
+	if (!FMantleFitBodies::ParseBodyType(Id, Type) || !FMantleFitBodies::Make(Id, Type, Body, OutError) || !Body.BodyMesh.IsValid())
 	{
 		FMantleFitBodies::Release(Body);
+		++OutReleased;
 		if (OutError.IsEmpty()) { OutError = FString::Printf(TEXT("the standard body %s could not be made"), *Id); }
 		return false;
 	}
-	OutJoints = JointPositions(JointsOf(Body.MergedHeadAndBodyMesh->GetRefSkeleton()));
+	// The body mesh's own skeleton, as Creator made it for this body type.
+	OutJoints = JointPositions(JointsOf(Body.BodyMesh->GetRefSkeleton()));
 	JointCache().Add(Id, OutJoints);
 	UE_LOG(LogMantleStandardBodyMatch, Display, TEXT("MANTLE_STANDARD_BODY %s made to read its %d joints (kept for this editor session)"), *Id, OutJoints.Num());
 	if (Keep(Id)) { Pool.Bodies.Add(MoveTemp(Body)); }
-	else { FMantleFitBodies::Release(Body); }
+	else
+	{
+		FMantleFitBodies::Release(Body);
+		++OutReleased;
+	}
 	return true;
 }
 
@@ -199,7 +223,6 @@ TSet<FName> FMantleStandardBodyMatch::StandardBoneNames()
 	TSet<FName> Names;
 	const USkeleton* Skeleton = LoadObject<USkeleton>(nullptr, MantleStandardBodyMatchPrivate::BodySkeletonPath);
 	if (!Skeleton) { return Names; }
-	const FReferenceSkeleton& Reference = Skeleton->GetReferenceSkeleton();
-	for (int32 Bone = 0; Bone < Reference.GetRawBoneNum(); ++Bone) { Names.Add(Reference.GetBoneName(Bone)); }
+	for (const FMeshBoneInfo& Bone : Skeleton->GetReferenceSkeleton().GetRawRefBoneInfo()) { Names.Add(Bone.Name); }
 	return Names;
 }

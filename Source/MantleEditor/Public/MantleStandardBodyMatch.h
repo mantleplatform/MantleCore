@@ -73,16 +73,24 @@ struct MANTLEEDITOR_API FMantleStandardBodyMatch
 	/** Pure: "men's tall normal-weight" for m_tal_nrw; the id itself when it is not one. */
 	static FString BodyWords(const FString& Id);
 
-	/** Pure: the sentence for the creator (panel, check notes, log): which body it was made on, or the nearest one and how far. */
+	/** Pure: the sentence for the creator (the panel's line under Authored on): which body it was made on, or the nearest one and how far. */
 	static FString Describe(const FResult& Result);
 
+	/** Pure: why it is no match, as a short lowercase reason for the check's "could not be made in sizes (...)" note; empty for a match. */
+	static FString ShortWhy(const FResult& Result);
+
 	/**
-	 * Editor: Id's joint positions, from the body made in memory (FMantleFitBodies::Make) on the first ask in an editor session,
-	 * then from a cache. A body made here goes into Pool when Keep says so (for the fit to reuse), else is released. False with why.
+	 * Editor: Id's joint positions (the raw reference pose of its body mesh), from the body made in memory
+	 * (FMantleFitBodies::Make) on the first ask in an editor session, then from a cache. A body made here goes into Pool when
+	 * Keep says so (for the fit to reuse), else is released and OutReleased counts it (for the caller to collect garbage).
+	 * False with why.
 	 */
 	static bool BodyJoints(const FString& Id, FMantleFitBodyPool& Pool, TFunctionRef<bool(const FString&)> Keep, TMap<FName, FVector3f>& OutJoints,
-		FString& OutError);
+		int32& OutReleased, FString& OutError);
 
-	/** Editor: the skeleton bone names every standard body has (Epic's metahuman_base_skel); empty when it can't be loaded. */
+	/** Editor: Id's joints are cached, so BodyJoints makes no body for it. */
+	static bool IsCached(const FString& Id);
+
+	/** Editor: the raw skeleton bone names every standard body has (Epic's metahuman_base_skel); empty when it can't be loaded. */
 	static TSet<FName> StandardBoneNames();
 };

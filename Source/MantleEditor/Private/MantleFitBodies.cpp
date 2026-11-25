@@ -646,7 +646,7 @@ bool FMantleFitBodies::CompareNearest(const TArray<FVector3f>& Probe, const TArr
 	return true;
 }
 
-bool FMantleFitBodies::NearestDistances(const TArray<FVector3f>& Probe, const TArray<FVector3f>& Reference, TArray<float>& OutCm)
+bool FMantleFitBodies::NearestDistances(const TArray<FVector3f>& Probe, const TArray<FVector3f>& Reference, TArray<float>& OutCm, const bool bCapped)
 {
 	OutCm.Reset();
 	if (Probe.IsEmpty() || Reference.IsEmpty())
@@ -691,7 +691,11 @@ bool FMantleFitBodies::NearestDistances(const TArray<FVector3f>& Probe, const TA
 				}
 			}
 		}
-		if (Best == TNumericLimits<float>::Max() || Best > static_cast<float>(MaxRing))
+		if (bCapped && (Best == TNumericLimits<float>::Max() || Best > static_cast<float>(MaxRing)))
+		{
+			Best = static_cast<float>(MaxRing);
+		}
+		else if (Best == TNumericLimits<float>::Max() || Best > static_cast<float>(MaxRing))
 		{
 			// Nothing close in the grid: look at every vertex (rare; a body far from the reference).
 			for (const FVector3f& Candidate : Reference)

@@ -2,6 +2,7 @@
 #include "MantleAvatarContract.h"
 #include "MantleCosmeticExport.h"
 #include "MantleEditorActions.h"
+#include "MantleFitBodies.h"
 #include "MantleParametricOutfit.h"
 #include "MantleStandardBodyMatch.h"
 
@@ -77,6 +78,22 @@ bool FMantleStandardBodyMatchPureTest::RunTest(const FString& Parameters)
 	const FMantleStandardBodyMatch::FResult Off = FMantleStandardBodyMatch::Match(Garment, Shirt, OnlyB);
 	TestFalse(TEXT("4 cm off is not a match"), Off.bMatch);
 	TestTrue(TEXT("the near miss names the nearest body"), FMantleStandardBodyMatch::Describe(Off).Contains(TEXT("the nearest is the men's medium normal-weight body (m_med_nrw), its joints 4.00 cm off")));
+	TestEqual(TEXT("the check note's short reason"), FMantleStandardBodyMatch::ShortWhy(Off), FString(TEXT("not made on one of Epic's standard bodies: nearest m_med_nrw, joints 4.00 cm off")));
+	TestTrue(TEXT("a match has no reason"), FMantleStandardBodyMatch::ShortWhy(Found).IsEmpty());
+
+	// The skin confirm's search: exact near the body; with bCapped a vertex far from it records 12 cm instead of a full search.
+	const TArray<FVector3f> Skin = { FVector3f(0, 0, 0), FVector3f(10, 0, 0) };
+	const TArray<FVector3f> Cloth = { FVector3f(0, 0, 0.5f), FVector3f(10, 3, 0), FVector3f(100, 0, 0) };
+	TArray<float> Near;
+	TestTrue(TEXT("distances read"), FMantleFitBodies::NearestDistances(Cloth, Skin, Near, /*bCapped*/ true) && Near.Num() == 3);
+	if (Near.Num() == 3)
+	{
+		TestTrue(TEXT("0.5 cm"), FMath::IsNearlyEqual(Near[0], 0.5f, 0.001f));
+		TestTrue(TEXT("3 cm"), FMath::IsNearlyEqual(Near[1], 3.0f, 0.001f));
+		TestTrue(TEXT("far records 12 cm"), FMath::IsNearlyEqual(Near[2], 12.0f, 0.001f));
+	}
+	TArray<float> Full;
+	TestTrue(TEXT("uncapped reads the true far distance"), FMantleFitBodies::NearestDistances(Cloth, Skin, Full) && Full.Num() == 3 && FMath::IsNearlyEqual(Full[2], 90.0f, 0.001f));
 
 	// The cut-off: Montana's shirt measured 1.07 cm on m_tal_nrw and 1.73 on m_tal_ovw (the 2026-11-25 proof, every shared bone).
 	TestTrue(TEXT("1.07 cm is within the cut-off"), 1.07f <= FMantleStandardBodyMatch::JointMatchCm);
