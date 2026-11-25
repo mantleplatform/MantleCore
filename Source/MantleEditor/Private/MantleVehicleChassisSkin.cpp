@@ -1267,8 +1267,10 @@ FMantleVehicleModelPlacement FMantleVehicleChassisSkin::FitPlacement(const FMant
 	}
 	if (FrontWheels.IsValid && RearWheels.IsValid && !FMantleVehicleShape::UsesSize(Spec))
 	{
-		// A road vehicle with its wheels assigned: the middle of the wheelbase is the chassis's origin.
+		// A road vehicle with its wheels assigned: the middle of the wheelbase is the chassis's origin, and the middle of the wheels across the car is its center
+		// line. Not the model's box: a stray piece off to one side (the Goku Mustang's sliver made it 376 cm wide) would put the car beside its own wheels.
 		Center.X = 0.5 * (FrontWheels.GetCenter().X + RearWheels.GetCenter().X);
+		Center.Y = 0.5 * (FrontWheels.GetCenter().Y + RearWheels.GetCenter().Y);
 		Floor = WheelFloor;
 	}
 	else if (WheelFloor < TNumericLimits<double>::Max() && FMantleVehicleShape::UsesSize(Spec))

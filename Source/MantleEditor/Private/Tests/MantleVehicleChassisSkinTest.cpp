@@ -1209,4 +1209,51 @@ bool FMantleVehicleSkinSteeringWheelTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleSkinWheelsCenterTest,
+	"Mantle.Vehicle.ChassisSkin.WheelsDecideTheCenterLine",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleSkinWheelsCenterTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleChassisSkinTestPrivate;
+	FMantleChassisSpec Spec;
+	FMantleVehicleAsset Gray;
+	if (!Load(*this, TEXT("sedan"), Spec, Gray))
+	{
+		return false;
+	}
+	const FBox3f GrayBox = Gray.Body.ComputeBounds(0);
+	const double GrayCenterY = 0.5 * (GrayBox.Min.Y + GrayBox.Max.Y);
+
+	// A car on its four wheels, centered on Y 0, with a thin stray piece 3 m off to one side (the Goku Mustang's sliver made it 376 cm wide and sat it about 75 cm
+	// beside its own wheels).
+	const FVector Corners[4] = { FVector(140, -80, 35), FVector(140, 80, 35), FVector(-140, -80, 35), FVector(-140, 80, 35) };
+	FMantleVehicleModel Model = SkeletalModel({ { FName(TEXT("root")), INDEX_NONE }, { FName(TEXT("wheel_lf")), 0 }, { FName(TEXT("wheel_rf")), 0 }, { FName(TEXT("wheel_lr")), 0 },
+		{ FName(TEXT("wheel_rr")), 0 } }, { FVector::ZeroVector, Corners[0], Corners[1], Corners[2], Corners[3] });
+	AddBox(Model, FVector3f(-220.f, -90.f, 30.f), FVector3f(220.f, 90.f, 140.f), 0, 0);
+	for (int32 Wheel = 0; Wheel < 4; ++Wheel)
+	{
+		const FVector3f At(Corners[Wheel]);
+		AddBox(Model, At - FVector3f(35.f, 12.f, 35.f), At + FVector3f(35.f, 12.f, 35.f), Wheel + 1, 0);
+	}
+	AddBox(Model, FVector3f(-50.f, 300.f, 50.f), FVector3f(50.f, 302.f, 51.f), 0, 0);
+	CloseSections(Model, { 6 * 12 });
+
+	FMantleVehicleModelMap Map;
+	Map.Parts.Add(FName(TEXT("wheel_fl")), FMantleVehicleModelPiece::OfBone(FName(TEXT("wheel_lf"))));
+	Map.Parts.Add(FName(TEXT("wheel_fr")), FMantleVehicleModelPiece::OfBone(FName(TEXT("wheel_rf"))));
+	Map.Parts.Add(FName(TEXT("wheel_rl")), FMantleVehicleModelPiece::OfBone(FName(TEXT("wheel_lr"))));
+	Map.Parts.Add(FName(TEXT("wheel_rr")), FMantleVehicleModelPiece::OfBone(FName(TEXT("wheel_rr"))));
+	const FMantleVehicleModelPlacement Placement = FMantleVehicleChassisSkin::FitPlacement(Spec, Gray.Body, Model, 0.0, Map);
+	const FVector WheelsMiddle = Placement.Point(FVector::ZeroVector);
+	TestTrue(*FString::Printf(TEXT("the middle of its wheels is the chassis's center line (y %.1f, the chassis's %.1f)"), WheelsMiddle.Y, GrayCenterY), FMath::Abs(WheelsMiddle.Y - GrayCenterY) < 1.0);
+	TestTrue(*FString::Printf(TEXT("and the middle of its wheelbase is the chassis's origin (x %.1f)"), WheelsMiddle.X), FMath::Abs(WheelsMiddle.X) < 1.0);
+
+	// Control: with no wheels assigned, the model's own box decides, so the stray piece pulls it to the side.
+	const FMantleVehicleModelPlacement Boxed = FMantleVehicleChassisSkin::FitPlacement(Spec, Gray.Body, Model, 0.0, FMantleVehicleModelMap());
+	TestTrue(*FString::Printf(TEXT("without its wheels the stray piece moves it (y %.1f)"), Boxed.Point(FVector::ZeroVector).Y), FMath::Abs(Boxed.Point(FVector::ZeroVector).Y - GrayCenterY) > 50.0);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
