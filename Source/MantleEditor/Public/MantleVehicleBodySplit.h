@@ -8,6 +8,7 @@
 class UMaterialInterface;
 class UStaticMesh;
 struct FMantleSkinnedMesh;
+struct FMantleSkinnedMeshLOD;
 
 /**
  * One piece of a vehicle's body that was split off because the body had more materials than a published body may (#576, option b): the triangles of some of the
@@ -58,6 +59,17 @@ struct MANTLEEDITOR_API FMantleVehicleBodySplitResult
 	FString Problem;
 };
 
+/** What merging a body's slots drawn with the same material did (FMantleVehicleBodySplit::MergeIdenticalMaterials). */
+struct MANTLEEDITOR_API FMantleVehicleSlotMerge
+{
+	int32 SlotsBefore = 0;
+	int32 SlotsAfter = 0;
+	/** The slot each old slot is now (the first slot drawn with its material, counted after the slots that went); the old index when it was not merged. Empty when nothing was merged. */
+	TArray<int32> NewSlotOfOld;
+
+	bool bMerged() const { return SlotsAfter < SlotsBefore; }
+};
+
 /**
  * Splits a body that draws more materials than a published vehicle's body may (FMantleVehicleLimits::MaxSections, 64) into the body and parts (#576 option b):
  * the body keeps the materials with the most triangles, up to the cap, and the triangles of the others become static-mesh pieces of at most MaxPartMaterials
@@ -75,10 +87,23 @@ struct MANTLEEDITOR_API FMantleVehicleBodySplit
 	 * Splits Body (LOD 0) in place when it draws more than MaxBodyMaterials: its geometry, sections and Materials (the model's slots, which keep only the ones
 	 * the body still draws, in their order) and Extras (kept in step with the body's vertices) are rewritten. False, with Body untouched and OutResult.Problem
 	 * set, when the pieces would be more than MaxPieces. True with no pieces when Body was within the cap. KeepInBody: slots that stay on the body before any other
-	 * (the light sections, which the game switches on the body), as many as MaxBodyMaterials allows.
+	 * (the car paint and the light sections, which the game switches on the body), as many as MaxBodyMaterials allows. When there are more of them than the body may draw,
+	 * KeepRank (a slot to its rank, the lowest first; a slot it does not list ranks 0) says which stay: the body paint, then each kind of light's first section, then the rims, then the lights' other sections. Within a rank
+	 * the slot with the most triangles stays.
 	 */
 	static bool Split(FMantleSkinnedMesh& Body, TArray<FSkeletalMaterial>& Materials, FMantleVehicleBodyExtras& Extras, int32 MaxBodyMaterials, int32 MaxPieceMaterials,
-		int32 MaxPieces, FMantleVehicleBodySplitResult& OutResult, const TSet<int32>& KeepInBody = TSet<int32>());
+		int32 MaxPieces, FMantleVehicleBodySplitResult& OutResult, const TSet<int32>& KeepInBody = TSet<int32>(), const TMap<int32, int32>* KeepRank = nullptr);
+
+	/**
+	 * Merges the slots of Body (LOD 0) that are drawn with the identical material (the same material object, not null) and have the same Role (a string the caller makes from what its
+	 * finders read off the slot: a light's kind, a rim, the paint layer, a built-in material; an empty role for a slot that is merged with no other, so give it a string of its own)
+	 * into the first of them: the slots' sections become one section of that slot, in the slot's name, and the other slots are taken out of Materials (the rest keep their order).
+	 * A vehicle's body may draw only a few materials, and a model usually draws more slots than materials (SUV04: 25 slots, 9 materials). Pure arithmetic over Body and Materials.
+	 */
+	static FMantleVehicleSlotMerge MergeIdenticalMaterials(FMantleSkinnedMesh& Body, TArray<FSkeletalMaterial>& Materials, TFunctionRef<FString(int32)> Role);
+
+	/** Makes each material slot of LOD 0 one section: the sections of one slot are gathered, in the order the slots first appear, so a name is on one section only. */
+	static void CoalesceSections(FMantleSkinnedMeshLOD& LOD);
 
 	/** FMantleVehicleSourcePart::FoundOn of a part made from a piece: how the paint step tells the parts the split made from the ones a creator added. */
 	static const TCHAR* FoundOn() { return TEXT("split off the model's extra materials"); }

@@ -24,6 +24,9 @@ struct FMantleVehicleSourcePart;
 struct FMantleVehicleSourceSeatContacts;
 struct FMantleVehicleSourceTuning;
 struct FReferenceSkeleton;
+struct FSkeletalMaterial;
+struct FMantleSkinnedMesh;
+struct FMantleVehicleSlotMerge;
 
 /**
  * A static mesh found riding a vehicle's body (#435 item 2): attached to AttachTo (a socket or bone of the body; None for the
@@ -195,6 +198,16 @@ public:
 	static TArray<FMantleVehicleSourceLinkage> DetectLinkage(const FReferenceSkeleton& Skeleton, TConstArrayView<FName> WheelBones, TArray<FString>& OutNotes);
 
 	/**
+	 * Whether a bone's name says it is a wheel's hub (a word with hub, knuckle, upright, spindle or carrier) or its brake (brake or caliper): what turns with the wheel's steering
+	 * and travels with it but does not spin. DetectLinkage's hub rule reads them (a brake only when it sits at the wheel's place, within VehicleBrakeAtWheelCm), and the builder's
+	 * Skin reads them the same way (FMantleVehicleChassisSkin::Skin), so a model on a chassis and a model that keeps its skeleton get the same hubs.
+	 */
+	static bool IsHubBoneName(const FString& Bone);
+	static bool IsBrakeBoneName(const FString& Bone);
+	/** How near a wheel's bone a brake's bone must sit to be that wheel's hub, cm. */
+	static constexpr double BrakeAtWheelCm = 10.0;
+
+	/**
 	 * Measures a wheel from Body's geometry: the vertices weighted to Bone alone, radius half the larger of their X and
 	 * Z extent, width their Y extent (the cook's rule). False when fewer than WheelMinVertices are.
 	 */
@@ -227,6 +240,43 @@ public:
 	 */
 	static bool SplitExtraMaterials(USkeletalMesh& Mesh, const UMantleVehicleSource& Source, const FString& SplitFolder, USkeletalMesh*& OutBody, TArray<FMantleVehicleSourcePart>& OutParts,
 		TArray<FString>& OutNotes, FString& OutProblem);
+
+	/**
+	 * Which of a model's slots the split keeps on the body when it must send some to parts (FMantleVehicleBodySplit::Split's KeepInBody and KeepRank), for the converter and the
+	 * builder alike. The body paint comes first (rank 0): PaintedSections, by name, or when it is null the slots that read as the body color (GuessPaintLayer's primary). Then the
+	 * lights, which the game switches on the body: each kind's first section (rank 1). Then the rims, which a wheel swap hides (rank 2). Then each kind's second and later light
+	 * sections (ranks 3, 4, ...). A slot that is none of them goes to a part first: glass, the interior, seats, tires.
+	 */
+	static void BodyKeep(const TArray<FSkeletalMaterial>& Materials, const FMantleVehicleSourceLights& Lights, const TArray<FString>* PaintedSections, TSet<int32>& OutKeep,
+		TMap<int32, int32>& OutRank);
+
+	/**
+	 * Makes Source's lists name only what its body has, as the publish check asks: the body paint sections, each paint layer's sections and the light sections that are not among
+	 * BodySections (the sections of the body as it is now, FMantleVehicleLights::SectionNames) are taken out, a paint layer left with no section and no part slot is taken out, and
+	 * OutNotes says what was dropped and why (it went to an extra part, which keeps the paint on its slots; a light on a part cannot be switched). Returns whether anything was.
+	 */
+	static bool NameOnlyBodySections(UMantleVehicleSource& Source, const TArray<FString>& BodySections, TArray<FString>& OutNotes);
+
+	/**
+	 * Lights, found as the builder finds them on a model of its own (FMantleVehicleLights): Source's Lights are filled from where each section of Mesh glows and its color, or
+	 * what its name says, when it has none of the model's own (a section it lists that Mesh does not have is a copy's from an earlier Convert, and found afresh). The copy of
+	 * Mesh that has each light in a section of its own, with its glowing material, is saved beside the model (SplitFolder, as SplitExtraMaterials) and set as Source's Body: the
+	 * model itself is not changed. Returns that copy, or null when the model has no lights or the copy could not be saved; OutNotes says which sections became which lights.
+	 * Run before the split, so the split keeps them on the body.
+	 */
+	static USkeletalMesh* FindLights(USkeletalMesh& Mesh, UMantleVehicleSource& Source, const FString& SplitFolder, TArray<FString>& OutNotes);
+
+	/**
+	 * Merges the slots of a model's body that are drawn with the same material into one section each (FMantleVehicleBodySplit::MergeIdenticalMaterials), unless what the finders read
+	 * off their names differs (the kind of light, a rim, the paint layer, a built-in material): SUV04's 25 slots are 9 materials. A merged slot is named as the first of them.
+	 * OutMergedInto maps each slot's old section name that changed to the name it has now; OutNotes says how many slots became how many sections. Body and Materials are changed
+	 * in place: call it on a copy, never the creator's own mesh. The builder runs the same on the model it wears on a chassis.
+	 */
+	static FMantleVehicleSlotMerge MergeIdenticalSlots(FMantleSkinnedMesh& Body, TArray<FSkeletalMaterial>& Materials, const FString& ModelName, TMap<FString, FString>& OutMergedInto,
+		TArray<FString>& OutNotes);
+
+	/** Changes the section names Source's paint, paint layers, lights and wheels' rims list by MergedInto (an old section name to the one it was merged into), each name once. */
+	static void ApplyRenames(UMantleVehicleSource& Source, const TMap<FString, FString>& MergedInto);
 
 	/**
 	 * Convert, into <Mesh>_Vehicle beside the mesh (made, or updated keeping its tuning, parts and the collision and center of
@@ -347,6 +397,12 @@ public:
 	/** The name the vehicle document writes for a paint finish ("gloss", ..., "plastic_smooth", "soft_rubber"). Exposed for tests. */
 	static const TCHAR* PaintFinishDocumentName(EMantleVehicleSourcePaintFinish Finish);
 
+	/** The finish a document name ("chrome") says, any case; false when it is none of them. */
+	static bool ParsePaintFinish(const FString& Name, EMantleVehicleSourcePaintFinish& OutFinish);
+
+	/** The name the vehicle document writes for a paint layer: "secondary", "wheels", "interior", "dashboard". */
+	static const TCHAR* PaintLayerDocumentName(EMantleVehicleSourcePaintLayer Layer);
+
 	/**
 	 * Whether the body section Section drawn with Material publishes its picture as a tint mask: it is painted (in Source's paint sections or one of its layers), it is a GTA tint layer
 	 * (IsGtaTintLayer) and it is not a real paint material (one that already publishes as car paint, or has a Paint Tint). The gather and the conversion both ask this, so they agree.
@@ -356,7 +412,28 @@ public:
 	/** The same for the upload slot Slot of the part's mesh. */
 	static bool PartSlotIsTintMask(const FMantleVehicleSourcePart& Part, const UStaticMesh* PartMesh, int32 Slot);
 
-	/** The slots of Part's mesh that wear a paint layer other than the primary, by the mesh's slot index, found with GuessPaintLayer from each slot's name and material. */
+	/** One slot of an earlier Convert's split part that had paint set on it: the material it draws (a part's number says nothing about what it holds now) and what it wore. */
+	struct FEarlierPartSlot
+	{
+		const UMaterialInterface* Material = nullptr;
+		bool bPaint = false;
+		bool bLayer = false;
+		EMantleVehicleSourcePaintLayer Layer = EMantleVehicleSourcePaintLayer::Secondary;
+	};
+
+	/**
+	 * What the paint was on the parts the split made last time, read before they are made again: for each part that had paint slots or layer slots set, every slot's material and what
+	 * it wore (nothing, the body's paint, or a layer). A slot is kept for its material, not for its part's number: the split numbers its parts afresh each Convert.
+	 */
+	static TArray<FEarlierPartSlot> CaptureSplitPartPaint(const TArray<FMantleVehicleSourcePart>& Earlier);
+
+	/**
+	 * Sets the paint slots and layer slots of each of Parts from Earlier: a slot whose material an earlier part had a slot of wears what that slot wore. OutKnown names, for each
+	 * part (by its index in Parts), the slots that took their setting from Earlier (worn or left bare on purpose); the others are the paint step's to suggest.
+	 */
+	static void RestoreSplitPartPaint(const TArray<FEarlierPartSlot>& Earlier, TArray<FMantleVehicleSourcePart>& Parts, TMap<int32, TSet<int32>>& OutKnown);
+
+	/** The slots of Part's mesh that wear a paint layer other than the primary, by the mesh's slot index: the slots the model marks as a tint layer (IsGtaTintLayer) that GuessPaintLayer reads as a layer. A slot only named like an interior or a rim keeps its own material. */
 	static TArray<FMantleVehicleSourcePartLayerSlots> SuggestPartLayerSlots(const FMantleVehicleSourcePart& Part);
 
 	/** A part's layer slots as its upload counts them, as PartUploadPaintSlots does the primary's. */

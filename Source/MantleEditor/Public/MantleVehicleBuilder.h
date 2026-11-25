@@ -107,6 +107,11 @@ struct FMantleVehicleModelOptions
 	 */
 	TMap<FString, EMantleVehicleSourcePaintLayer> PaintLayers;
 	/**
+	 * The finish a paint layer starts with, by layer (the console's secondaryfinish=chrome): a layer not here keeps its own default (gloss; trim for the interior and the dashboard).
+	 * A layer the build has no section for is not made for it, and said.
+	 */
+	TMap<EMantleVehicleSourcePaintLayer, EMantleVehicleSourcePaintFinish> LayerFinishes;
+	/**
 	 * The space Lights' beams were placed in: the bounds of the window's picture's body. A model that keeps its own wheels (Build) is built in its own space, and the beams
 	 * are moved to the same place on it. Invalid: the beams are in the built body's space already.
 	 */
@@ -138,6 +143,11 @@ struct FMantleVehicleOnChassis
 	 * them by kind, with the headlight beams. Empty lists for a model with no glow and no light named.
 	 */
 	FMantleVehicleSourceLights Lights;
+	/**
+	 * The model's slots drawn with the same material are one section on the body (FMantleVehicleConverter::MergeIdenticalSlots): each old section name that changed, to the name it
+	 * has now. The sections a creator ticked as paint, by the model's own names, are read through it.
+	 */
+	TMap<FString, FString> MergedInto;
 	/** What Mantle chose and what the creator should look at, in the order BuildFromModel has always said it. */
 	TArray<FString> Notes;
 };
@@ -256,6 +266,9 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 */
 	static void ApplyLights(UMantleVehicleSource& Source, const FMantleVehicleSourceLights& Lights, TArray<FString>& OutNotes);
 
+	/** Sets the finish each paint layer of Source starts with, as Finishes asks (FMantleVehicleModelOptions::LayerFinishes); a layer Source has no sections in is said in OutNotes and left alone. */
+	static void ApplyLayerFinishes(UMantleVehicleSource& Source, const TMap<EMantleVehicleSourcePaintLayer, EMantleVehicleSourcePaintFinish>& Finishes, TArray<FString>& OutNotes);
+
 	/**
 	 * Puts the creator's paint choices on a built vehicle. AllSections are the model's section names in the model's own order (FMantleVehicleLights::SectionNames), Painted
 	 * which of them are ticked (same length). A ticked section the body still draws is in Paint.Sections (and one that is not ticked is not); on a car that was split into a
@@ -283,6 +296,13 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 * the passenger seat, else it is left off and said so in OutNotes. A part not in Hinges is left as it is. OutNotes also gets the one plain sentence saying what opens.
 	 */
 	static void ApplyHinges(UMantleVehicleSource& Source, TConstArrayView<FMantleVehicleSkinnedHinge> Hinges, TArray<FString>& OutNotes);
+
+	/**
+	 * Makes the hubs and brakes of a model worn on a chassis (FMantleVehicleChassisSkin::Skin gave each a bone under the root) follow their wheel: a linkage rule in Source
+	 * that copies the wheel's travel and its steering, not its spin (the rule the converter writes for a hub, FMantleVehicleConverter::DetectLinkage), so a brake caliper
+	 * stays with its rim. A rule for a hub's bone made by an earlier build is replaced; the creator's other rules are left as they are. OutNotes says which bones follow which wheel.
+	 */
+	static void ApplyHubs(UMantleVehicleSource& Source, TConstArrayView<FMantleVehicleSkinnedHub> Hubs, TArray<FString>& OutNotes);
 
 	/**
 	 * The doors, hood and trunk of a vehicle built on its own skeleton (Build): the bones are already in the model, so the hinges are worked out on the model as it is

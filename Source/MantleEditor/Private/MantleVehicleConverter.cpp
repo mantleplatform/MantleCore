@@ -19,6 +19,7 @@
 #include "MantleVehicleShape.h"
 #include "MantleVehicleSource.h"
 
+#include "Algo/AllOf.h"
 #include "Algo/AnyOf.h"
 #include "Animation/PreviewAssetAttachComponent.h"
 #include "Animation/Skeleton.h"
@@ -185,6 +186,8 @@ namespace MantleVehicleConverterPrivate
 	/** Words a hub's and a damper's bone names carry (DetectLinkage). */
 	const TCHAR* const VehicleHubWords[] = { TEXT("hub"), TEXT("knuckle"), TEXT("upright"), TEXT("spindle"), TEXT("carrier") };
 	const TCHAR* const VehicleDamperWords[] = { TEXT("damper"), TEXT("shock"), TEXT("strut"), TEXT("coilover"), TEXT("spring") };
+	/** Words a brake's bone carries (SUV04's B_SUV04_FLBrake): the caliper rides it, so it is the wheel's hub (DetectLinkage). */
+	const TCHAR* const VehicleBrakeWords[] = { TEXT("brake"), TEXT("caliper") };
 	const TCHAR* const VehicleAxleWords[] = { TEXT("axle"), TEXT("beam") };
 	const TCHAR* const VehicleWheelWords[] = { TEXT("wheel") };
 
@@ -1052,6 +1055,16 @@ FString FMantleVehicleConverter::CornerOf(const FString& Bone)
 	return FString();
 }
 
+bool FMantleVehicleConverter::IsHubBoneName(const FString& Bone)
+{
+	return MantleVehicleConverterPrivate::VehicleNameHas(FName(*Bone), MakeArrayView(MantleVehicleConverterPrivate::VehicleHubWords));
+}
+
+bool FMantleVehicleConverter::IsBrakeBoneName(const FString& Bone)
+{
+	return MantleVehicleConverterPrivate::VehicleNameHas(FName(*Bone), MakeArrayView(MantleVehicleConverterPrivate::VehicleBrakeWords));
+}
+
 TArray<FMantleVehicleSourceLinkage> FMantleVehicleConverter::DetectLinkage(const FReferenceSkeleton& Skeleton, const TConstArrayView<FName> WheelBones,
 	TArray<FString>& OutNotes)
 {
@@ -1125,14 +1138,17 @@ TArray<FMantleVehicleSourceLinkage> FMantleVehicleConverter::DetectLinkage(const
 		}
 	}
 	// Hubs copy their wheel's travel and steering, not its spin; so does a wheel's helper beside it (wheel_rear_no_spin_l, the brake
-	// side of a common free car pack's wheel). A helper the wheel hangs from carries it and is never moved.
+	// side of a common free car pack's wheel), and a corner's brake bone (B_SUV04_FLBrake: Brake or Caliper, at the wheel's place, its corner's
+	// by its name when it has one), which the caliper is skinned to. A helper the wheel hangs from carries it and is never moved.
 	for (const int32 Wheel : Wheels)
 	{
 		const FString Corner = CornerOf(Info[Wheel].Name.ToString());
 		for (int32 Bone = 1; Bone < Num; ++Bone)
 		{
-			if (Free(Bone) && CornerOf(Info[Bone].Name.ToString()) == Corner
-				&& (VehicleNameHas(Info[Bone].Name, MakeArrayView(VehicleHubWords)) || VehicleNamedHelper(Info[Bone].Name)))
+			const FString BoneCorner = CornerOf(Info[Bone].Name.ToString());
+			const bool bBrake = IsBrakeBoneName(Info[Bone].Name.ToString()) && FVector::Dist(At(Bone), At(Wheel)) <= BrakeAtWheelCm
+				&& (BoneCorner.IsEmpty() || BoneCorner == Corner);
+			if (Free(Bone) && !Wheels.Contains(Bone) && ((BoneCorner == Corner && (VehicleNameHas(Info[Bone].Name, MakeArrayView(VehicleHubWords)) || VehicleNamedHelper(Info[Bone].Name))) || bBrake))
 			{
 				FMantleVehicleSourceLinkage* Rule = Add(EMantleVehicleLinkageType::Copy, Bone);
 				Rule->Source = Info[Wheel].Name;
@@ -1453,8 +1469,35 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 		return Result;
 	}
 
+	// Lights, as the builder finds them on a model of its own: the sections that glow, from where they glow and their color or their names. They are cut into sections of their
+	// own on a copy of the model, which is then the body; found before the split below, which keeps them on the body (a light section the split moved to a part cannot be switched).
+	TArray<FString> LightNotes;
+	if (USkeletalMesh* Lit = FindLights(*Mesh, Source, SplitFolder, LightNotes))
+	{
+		Mesh = Lit;
+		Body = FMantleGlbMesh();
+		Materials.Reset();
+		if (!FMantleCosmeticExport::ReadSkeletalMesh(Mesh, 0, Body, Materials, Triangles, Error))
+		{
+			Result.Problems.Add(FString::Printf(TEXT("%s's copy with its lights could not be read back (%s)."), *Name, *Error));
+			return Result;
+		}
+		bSplitMaterials = Body.MaterialNames.Num() > FMantleVehicleLimits::MaxSections;
+	}
+
 	// More materials than a published body may have: its extras ride along as parts, as the builder carries them (SplitExtraMaterials). The body is then the copy that keeps
 	// the most-used materials; the model the creator made is not touched. Parts a split made before are made afresh below, so they are not "the creator's".
+	// The paint slots the creator (or an earlier Convert) put on them are kept by the part's name, below.
+	TArray<FMantleVehicleSourcePart> EarlierSplitParts;
+	for (const FMantleVehicleSourcePart& Part : Source.Parts)
+	{
+		if (Part.FoundOn == FMantleVehicleBodySplit::FoundOn())
+		{
+			EarlierSplitParts.Add(Part);
+		}
+	}
+	// Read now: the split below makes its parts afresh, in the same assets when they are saved.
+	const TArray<FEarlierPartSlot> EarlierPaint = CaptureSplitPartPaint(EarlierSplitParts);
 	Source.Parts.RemoveAll([](const FMantleVehicleSourcePart& Part) { return Part.FoundOn == FMantleVehicleBodySplit::FoundOn(); });
 	TArray<FMantleVehicleSourcePart> SplitParts;
 	TArray<FString> SplitNotes;
@@ -1546,7 +1589,9 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 	// the first on its bone) is that wheel's Tire Mesh when it has none. Before the wheels' notes, which say how a wheel with a tire is
 	// measured. A tire's shape is checked against the wheel's size: as set, else measured from the body.
 	TArray<FString> PartNotes;
-	const bool bFreshParts = Source.Parts.IsEmpty();
+	// The parts that were there before this Convert are the creator's (their paint slots are kept); the ones found or split off now are fresh and get theirs suggested.
+	const int32 KeptParts = Source.Parts.Num();
+	TMap<int32, TSet<int32>> RestoredSlots;
 	if (Around.Attached.Num() > 0)
 	{
 		TMap<FName, double> Measured;
@@ -1568,6 +1613,15 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 	}
 	if (SplitParts.Num() > 0)
 	{
+		// A part a Convert made before is made again, numbered afresh: what was set on its slots follows the material each slot draws (not the part's number, which may hold
+		// other materials now), so converting again (after the seats are set, say) does not unpaint it and does not paint what was never painted.
+		const int32 SplitBase = Source.Parts.Num();
+		TMap<int32, TSet<int32>> Known;
+		RestoreSplitPartPaint(EarlierPaint, SplitParts, Known);
+		for (const TPair<int32, TSet<int32>>& Each : Known)
+		{
+			RestoredSlots.Add(SplitBase + Each.Key, Each.Value);
+		}
 		Source.Parts.Append(SplitParts);
 		PartNotes.Append(SplitNotes);
 		if (Source.Parts.Num() > FMantleVehicleLimits::MaxParts)
@@ -1620,6 +1674,7 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 
 	Result.Notes.Append(SetupNotes);
 	Result.Notes.Append(PartNotes);
+	Result.Notes.Append(LightNotes);
 
 	// The chassis (#435): its collision boxes and center of mass from the physics it simulates on, where the tuning sets neither.
 	TArray<FName> WheelNames;
@@ -1671,6 +1726,9 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 	// is kept. A part's slots (#435 item 2: the OffroadCar's painted shell is a part) are suggested the same way, and on the
 	// painted sections' own materials, when its parts were found just now.
 	const TArray<FString> Sections = UniqueSectionNames(Body.MaterialNames);
+	// What Paint and Lights name must be on the body (the publish check refuses a vehicle that names a section its body lacks): after a split, the sections that went to parts are
+	// taken out, and Paint is suggested afresh below if that leaves it empty.
+	NameOnlyBodySections(Source, Sections, Result.Notes);
 	if (Source.Paint.Sections.IsEmpty() && Source.Paint.Layers.IsEmpty())
 	{
 		// The body paint is what reads as car paint (or a GTA model's PRIMARY); the other layers are what the names say (a second paint, the rims, the interior,
@@ -1688,6 +1746,13 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 			{
 				if (SectionMaterial && !FMantleVehicleBuiltInMaterials::Detect(SectionMaterial, Sections[Index], false).IsEmpty())
 				{
+					continue;
+				}
+				// A layer replaces the section's look with Mantle's paint (white until a script recolors it), so the converter gives one only to what the model marks as a tint layer
+				// (a GTA model's PRIMARY, SECONDARY and WHEEL): a seat, a dashboard or a rim that is merely named like one keeps its own material, as the model draws it.
+				if (!IsGtaTintLayer(Sections[Index], SectionMaterial))
+				{
+					LeftOut.Add(FString::Printf(TEXT("%s (it keeps the model's own material, so the car looks as the model does; to recolor it, add it under Paint > Layers)"), *Sections[Index]));
 					continue;
 				}
 				MantleVehicleConverterPrivate::EnsurePaintLayer(Source.Paint, Guess.Layer).Sections.Add(Sections[Index]);
@@ -1755,15 +1820,46 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 		}
 	}
 	TArray<FString> PaintedSlots;
-	for (FMantleVehicleSourcePart& Part : Source.Parts)
+	for (int32 PartIndex = 0; PartIndex < Source.Parts.Num(); ++PartIndex)
 	{
-		if (bFreshParts && Part.PaintSlots.IsEmpty())
+		FMantleVehicleSourcePart& Part = Source.Parts[PartIndex];
+		const bool bFreshPart = PartIndex >= KeptParts;
+		const TSet<int32>* Restored = RestoredSlots.Find(PartIndex);
+		if (bFreshPart && !Restored && Part.PaintSlots.IsEmpty())
 		{
 			Part.PaintSlots = SuggestPartPaintSlots(Part, BodyPaintMaterials);
 		}
-		if (bFreshParts && Part.LayerSlots.IsEmpty())
+		else if (bFreshPart && Restored)
+		{
+			// The slots whose material an earlier part had are as that part left them; the others are suggested.
+			for (const int32 Slot : SuggestPartPaintSlots(Part, BodyPaintMaterials))
+			{
+				if (!Restored->Contains(Slot))
+				{
+					Part.PaintSlots.AddUnique(Slot);
+				}
+			}
+		}
+		if (bFreshPart && !Restored && Part.LayerSlots.IsEmpty())
 		{
 			Part.LayerSlots = SuggestPartLayerSlots(Part);
+		}
+		else if (bFreshPart && Restored)
+		{
+			TArray<FMantleVehicleSourcePartLayerSlots> Merged = Part.LayerSlots;
+			for (const FMantleVehicleSourcePartLayerSlots& Suggested : SuggestPartLayerSlots(Part))
+			{
+				FMantleVehicleSourcePartLayerSlots& Entry = Merged.AddDefaulted_GetRef();
+				Entry.Layer = Suggested.Layer;
+				for (const int32 Slot : Suggested.Slots)
+				{
+					if (!Restored->Contains(Slot) && !Part.PaintSlots.Contains(Slot))
+					{
+						Entry.Slots.AddUnique(Slot);
+					}
+				}
+			}
+			Part.LayerSlots = MergeLayerSlots(Merged).FilterByPredicate([](const FMantleVehicleSourcePartLayerSlots& Layer) { return Layer.Slots.Num() > 0; });
 		}
 		for (const FMantleVehicleSourcePartLayerSlots& LayerSlots : Part.LayerSlots)
 		{
@@ -1778,6 +1874,8 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 			PaintedSlots.Add(FString::Printf(TEXT("%s slot %d"), *Part.Mesh.GetAssetName(), Slot));
 		}
 	}
+	// A paint layer the body no longer has a section in and no part has a slot of is not kept.
+	NameOnlyBodySections(Source, Sections, Result.Notes);
 	const bool bPainted = Source.Paint.Sections.Num() > 0 || PaintedSlots.Num() > 0;
 	TArray<FString> PaintedList = Source.Paint.Sections;
 	PaintedList.Append(PaintedSlots);
@@ -1941,6 +2039,127 @@ void FMantleVehicleConverter::AddHinges(const FMantleVehicleModel& Model, const 
 	OutNotes.Append(Notes);
 }
 
+void FMantleVehicleConverter::BodyKeep(const TArray<FSkeletalMaterial>& Materials, const FMantleVehicleSourceLights& Lights, const TArray<FString>* PaintedSections, TSet<int32>& OutKeep,
+	TMap<int32, int32>& OutRank)
+{
+	OutKeep.Reset();
+	OutRank.Reset();
+	const TArray<FString> Sections = FMantleVehicleLights::SectionNames(Materials);
+	// The lights: each kind's first section is rank 1, and its second and later ones rank 3, 4, ... (after the rims, rank 2), so a body with room for few keeps the paint, one
+	// section of every kind of light and the rims a wheel swap needs before a second glow of any kind.
+	TSet<int32> LightSlots;
+	for (const EMantleLightKind Kind : { EMantleLightKind::Head, EMantleLightKind::Rear, EMantleLightKind::Reverse, EMantleLightKind::Left, EMantleLightKind::Right })
+	{
+		const TArray<FString>& List = FMantleVehicleLights::Sections(Lights, Kind);
+		for (int32 Index = 0; Index < List.Num(); ++Index)
+		{
+			const int32 Slot = Sections.IndexOfByPredicate([&List, Index](const FString& Section) { return Section.Equals(List[Index], ESearchCase::CaseSensitive); });
+			if (Slot != INDEX_NONE)
+			{
+				OutKeep.Add(Slot);
+				LightSlots.Add(Slot);
+				if (!OutRank.Contains(Slot))
+				{
+					OutRank.Add(Slot, Index == 0 ? 1 : 2 + Index);
+				}
+			}
+		}
+	}
+	for (int32 Slot = 0; Slot < Sections.Num(); ++Slot)
+	{
+		if (LightSlots.Contains(Slot))
+		{
+			continue;
+		}
+		bool bPaint = false;
+		if (PaintedSections)
+		{
+			bPaint = PaintedSections->ContainsByPredicate([&Sections, Slot](const FString& Painted) { return Painted.Equals(Sections[Slot], ESearchCase::IgnoreCase); });
+		}
+		else
+		{
+			const FPaintLayerGuess Guess = GuessPaintLayer(Sections[Slot], Materials.IsValidIndex(Slot) ? Materials[Slot].MaterialInterface.Get() : nullptr);
+			bPaint = Guess.bPainted && Guess.bPrimary;
+		}
+		if (bPaint)
+		{
+			OutKeep.Add(Slot);
+			OutRank.Add(Slot, 0);
+		}
+		else if (FMantleVehicleRims::NameIsRim(Sections[Slot]))
+		{
+			OutKeep.Add(Slot);
+			OutRank.Add(Slot, 2);
+		}
+	}
+}
+
+bool FMantleVehicleConverter::NameOnlyBodySections(UMantleVehicleSource& Source, const TArray<FString>& BodySections, TArray<FString>& OutNotes)
+{
+	const auto OnBody = [&BodySections](const FString& Section)
+	{
+		return BodySections.ContainsByPredicate([&Section](const FString& Has) { return Has.Equals(Section, ESearchCase::CaseSensitive); });
+	};
+	bool bChanged = false;
+	TArray<FString> PaintDropped;
+	const auto Drop = [&OnBody, &PaintDropped, &bChanged](TArray<FString>& List)
+	{
+		for (int32 Index = List.Num() - 1; Index >= 0; --Index)
+		{
+			if (!OnBody(List[Index]))
+			{
+				PaintDropped.Insert(List[Index], 0);
+				List.RemoveAt(Index);
+				bChanged = true;
+			}
+		}
+	};
+	Drop(Source.Paint.Sections);
+	for (FMantleVehicleSourcePaintLayer& Layer : Source.Paint.Layers)
+	{
+		Drop(Layer.Sections);
+	}
+	if (PaintDropped.Num() > 0)
+	{
+		OutNotes.Add(FString::Printf(TEXT("Paint: %s not on the body any more (a vehicle's body may draw only %d materials, so the rest ride on extra parts, which wear the paint on their slots): %s."),
+			PaintDropped.Num() == 1 ? TEXT("this section is") : TEXT("these sections are"), FMantleVehicleLimits::MaxSections, *FString::Join(PaintDropped, TEXT(", "))));
+	}
+	TArray<FString> LightsDropped;
+	for (const EMantleLightKind Kind : { EMantleLightKind::Head, EMantleLightKind::Rear, EMantleLightKind::Reverse, EMantleLightKind::Left, EMantleLightKind::Right })
+	{
+		TArray<FString>& List = FMantleVehicleLights::Sections(Source.Lights, Kind);
+		TArray<FString> Gone;
+		for (int32 Index = List.Num() - 1; Index >= 0; --Index)
+		{
+			if (!OnBody(List[Index]))
+			{
+				Gone.Insert(List[Index], 0);
+				List.RemoveAt(Index);
+			}
+		}
+		if (Gone.Num() > 0)
+		{
+			bChanged = true;
+			LightsDropped.Add(FString::Printf(TEXT("%s %s"), *FMantleVehicleLights::Label(Kind).ToString().ToLower(), *FString::Join(Gone, TEXT(", "))));
+		}
+	}
+	if (LightsDropped.Num() > 0)
+	{
+		OutNotes.Add(FString::Printf(TEXT("Lights: a vehicle's body may draw only %d materials and these light sections did not fit on it, so they ride on extra parts, where the game cannot switch them, and are not listed as lights: %s. Merge some of the model's materials, or remove the ones it does not need, to make room."),
+			FMantleVehicleLimits::MaxSections, *FString::Join(LightsDropped, TEXT("; "))));
+	}
+	// A paint layer with no section on the body and no part slot is not kept.
+	const int32 LayersBefore = Source.Paint.Layers.Num();
+	Source.Paint.Layers.RemoveAll([&Source](const FMantleVehicleSourcePaintLayer& Layer)
+	{
+		return Layer.Sections.IsEmpty() && !Source.Parts.ContainsByPredicate([&Layer](const FMantleVehicleSourcePart& Part)
+		{
+			return Part.LayerSlots.ContainsByPredicate([&Layer](const FMantleVehicleSourcePartLayerSlots& Has) { return Has.Layer == Layer.Layer && Has.Slots.Num() > 0; });
+		});
+	});
+	return bChanged || Source.Paint.Layers.Num() != LayersBefore;
+}
+
 bool FMantleVehicleConverter::SplitExtraMaterials(USkeletalMesh& Mesh, const UMantleVehicleSource& Source, const FString& SplitFolder, USkeletalMesh*& OutBody,
 	TArray<FMantleVehicleSourcePart>& OutParts, TArray<FString>& OutNotes, FString& OutProblem)
 {
@@ -1965,26 +2184,14 @@ bool FMantleVehicleConverter::SplitExtraMaterials(USkeletalMesh& Mesh, const UMa
 	Extras.UVs = Model.ExtraUVs;
 	Extras.Colors = Model.Colors;
 
-	// The light sections and the rims stay on the body, where the game switches them and a wheel swap hides them.
-	const TArray<FString> Sections = FMantleVehicleLights::SectionNames(Materials);
+	// The body paint, the light sections and the rims stay on the body, where the game paints and switches them and a wheel swap hides them; when they are more than a body may
+	// draw, the paint first, then each kind of light's first section, then the rims, then the lights' other sections (BodyKeep). Glass, the interior, seats and tires go to parts first.
 	TSet<int32> KeepInBody;
-	for (int32 Slot = 0; Slot < Sections.Num(); ++Slot)
-	{
-		for (const EMantleLightKind Kind : { EMantleLightKind::Head, EMantleLightKind::Rear, EMantleLightKind::Reverse, EMantleLightKind::Left, EMantleLightKind::Right })
-		{
-			if (FMantleVehicleLights::Sections(Source.Lights, Kind).Contains(Sections[Slot]))
-			{
-				KeepInBody.Add(Slot);
-			}
-		}
-		if (FMantleVehicleRims::NameIsRim(Sections[Slot]))
-		{
-			KeepInBody.Add(Slot);
-		}
-	}
+	TMap<int32, int32> KeepRank;
+	BodyKeep(Materials, Source.Lights, Source.Paint.Sections.IsEmpty() ? nullptr : &Source.Paint.Sections, KeepInBody, KeepRank);
 
 	FMantleVehicleBodySplitResult Split;
-	if (!FMantleVehicleBodySplit::Split(Body, Materials, Extras, FMantleVehicleLimits::MaxSections, FMantleVehicleLimits::MaxPartMaterials, FMantleVehicleLimits::MaxParts, Split, KeepInBody))
+	if (!FMantleVehicleBodySplit::Split(Body, Materials, Extras, FMantleVehicleLimits::MaxSections, FMantleVehicleLimits::MaxPartMaterials, FMantleVehicleLimits::MaxParts, Split, KeepInBody, &KeepRank))
 	{
 		OutProblem = Split.Problem;
 		return false;
@@ -2028,6 +2235,209 @@ bool FMantleVehicleConverter::SplitExtraMaterials(USkeletalMesh& Mesh, const UMa
 	return true;
 }
 
+USkeletalMesh* FMantleVehicleConverter::FindLights(USkeletalMesh& Mesh, UMantleVehicleSource& Source, const FString& SplitFolder, TArray<FString>& OutNotes)
+{
+	// The light finder the builder uses on a model of its own (FMantleVehicleBuilder::LightOwnBody): where each section glows and its color, or what its name says.
+	FMantleSkinnedMesh Body;
+	TArray<FSkeletalMaterial> Materials;
+	FString Why;
+	if (!FMantleSkinnedMesh::ExtractFromSkeletalMesh(&Mesh, Body, &Why, &Materials) || Body.LODs.Num() == 0)
+	{
+		OutNotes.Add(FString::Printf(TEXT("Mantle could not look for lights on %s (%s), so the car has none yet. Add them under Lights in the vehicle asset."), *Mesh.GetName(), *Why));
+		return nullptr;
+	}
+	// Slots drawn with the same material are one section (a model usually has more slots than materials): merged first, on this copy, before the lights, the paint and the rims
+	// read the sections. What Paint, Lights and the wheels' rims named of a merged slot now name the section it went into.
+	TMap<FString, FString> MergedInto;
+	const FMantleVehicleSlotMerge Merged = MergeIdenticalSlots(Body, Materials, Mesh.GetName(), MergedInto, OutNotes);
+	if (Merged.bMerged())
+	{
+		ApplyRenames(Source, MergedInto);
+	}
+	const TArray<FString> Sections = FMantleVehicleLights::SectionNames(Materials);
+	const TArray<EMantleLightKind> Kinds = { EMantleLightKind::Head, EMantleLightKind::Rear, EMantleLightKind::Reverse, EMantleLightKind::Left, EMantleLightKind::Right };
+
+	// A section the model does not have is a light of an earlier Convert's copy (the copy made one section for each light): found afresh now. The rest are the creator's, and kept.
+	FMantleVehicleSourceLights Wanted = Source.Lights;
+	int32 Kept = 0;
+	for (const EMantleLightKind Kind : Kinds)
+	{
+		TArray<FString>& List = FMantleVehicleLights::Sections(Wanted, Kind);
+		List.RemoveAll([&Sections](const FString& Section) { return !Sections.Contains(Section); });
+		Kept += List.Num();
+	}
+	if (Kept > 0)
+	{
+		OutNotes.Add(FString::Printf(TEXT("Lights: your %d section(s) are kept. Empty Lights in the vehicle asset and convert again to have Mantle find them."), Kept));
+	}
+	else
+	{
+		const FMantleVehicleLightGuess Guess = FMantleVehicleLights::Find(Body, Materials, false);
+		FMantleVehicleSourceLights Found;
+		FMantleVehicleLights::Cut(Body, Materials, Guess, Found);
+		Wanted.Head = Found.Head;
+		Wanted.Rear = Found.Rear;
+		Wanted.Reverse = Found.Reverse;
+		Wanted.Left = Found.Left;
+		Wanted.Right = Found.Right;
+		if (Wanted.Beams.IsEmpty())
+		{
+			Wanted.Beams = Found.Beams;
+		}
+		TArray<FString> Said;
+		for (const EMantleLightKind Kind : Kinds)
+		{
+			const TArray<FString>& List = FMantleVehicleLights::Sections(Wanted, Kind);
+			if (List.Num() > 0)
+			{
+				Said.Add(FString::Printf(TEXT("%s %s"), *FMantleVehicleLights::Label(Kind).ToString().ToLower(), *FString::Join(List, TEXT(", "))));
+			}
+		}
+		if (Said.IsEmpty())
+		{
+			OutNotes.Add(TEXT("Lights: no section of the model reads as a light (none is named like one and none glows), so the car has no lights. Add them under Lights in the vehicle asset."));
+		}
+		else
+		{
+			OutNotes.Add(FString::Printf(TEXT("Lights: %s. Mantle found them from where each section glows on the car and its color, or from its name, and gave each light a section of its own in a copy of your model; your own model was not changed. Change them under Lights in the vehicle asset."),
+				*FString::Join(Said, TEXT("; "))));
+		}
+	}
+	bool bAny = false;
+	for (const EMantleLightKind Kind : Kinds)
+	{
+		bAny = bAny || FMantleVehicleLights::Sections(Wanted, Kind).Num() > 0;
+	}
+	if (!bAny && !Merged.bMerged())
+	{
+		Source.Lights = Wanted;
+		return nullptr;
+	}
+
+	// The copy of the model that has them (the model itself is never changed): its light sections get their glowing materials, saved beside it.
+	// With no lights it is the copy that has its slots merged.
+	FMantleVehicleBodyExtras Extras;
+	FMantleVehicleModel Model;
+	if (FMantleVehicleModel::Read(&Mesh, Model, Why))
+	{
+		Extras.UVs = Model.ExtraUVs;
+		Extras.Colors = Model.Colors;
+	}
+	const FString Name = Mesh.GetName() + (bAny ? TEXT("_Lights") : TEXT("_Merged")) + (SplitFolder.IsEmpty() ? TEXT("_") + FGuid::NewGuid().ToString(EGuidFormats::Digits).Left(8) : FString());
+	const FString Folder = (SplitFolder.IsEmpty() ? FString(TEXT("/Temp/MantleVehicleConvert")) : SplitFolder) / Name;
+	FString Error;
+	USkeletalMesh* Lit = FMantleVehicleChassisMesh::Create(Body, Folder, Name, Error, &Materials, &Extras);
+	if (!Lit)
+	{
+		OutNotes.Add(FString::Printf(TEXT("Mantle found lights but could not save the copy of your model that has them (%s), so the car has none yet."), *Error));
+		return nullptr;
+	}
+	Source.Body = Lit;
+	if (bAny)
+	{
+		FMantleVehicleBuilder::ApplyLights(Source, Wanted, OutNotes);
+	}
+	else
+	{
+		Source.Lights = Wanted;
+	}
+	return Lit;
+}
+
+FMantleVehicleSlotMerge FMantleVehicleConverter::MergeIdenticalSlots(FMantleSkinnedMesh& Body, TArray<FSkeletalMaterial>& Materials, const FString& ModelName, TMap<FString, FString>& OutMergedInto,
+	TArray<FString>& OutNotes)
+{
+	OutMergedInto.Reset();
+	const TArray<FString> NamesBefore = FMantleVehicleLights::SectionNames(Materials);
+	const FBox3f Bounds = Body.LODs.Num() > 0 ? Body.ComputeBounds(0) : FBox3f(ForceInit);
+	const FVector3f Middle = Bounds.IsValid ? Bounds.GetCenter() : FVector3f::ZeroVector;
+	TSet<const UMaterialInterface*> Distinct;
+	int32 Unnamed = 0;
+	for (const FSkeletalMaterial& Slot : Materials)
+	{
+		if (const UMaterialInterface* Material = Slot.MaterialInterface.Get())
+		{
+			Distinct.Add(Material);
+		}
+		else
+		{
+			++Unnamed;
+		}
+	}
+	// Two slots are one section when the same material draws them and everything the finders read off a slot's name agrees: the kind of light its name says, whether it reads as a
+	// rim (a rim is each its own: whether it is one is a matter of its geometry), the paint layer it reads as, and the built-in material it suggests.
+	const auto Role = [&](const int32 Slot) -> FString
+	{
+		const FString& Name = NamesBefore.IsValidIndex(Slot) ? NamesBefore[Slot] : FString();
+		if (FMantleVehicleRims::NameIsRim(Name))
+		{
+			return FString::Printf(TEXT("rim%d"), Slot);
+		}
+		const TOptional<EMantleLightKind> Kind = FMantleVehicleLights::FromName(Name, Middle, Bounds);
+		const FPaintLayerGuess Guess = GuessPaintLayer(Name, Materials.IsValidIndex(Slot) ? Materials[Slot].MaterialInterface.Get() : nullptr);
+		return FString::Printf(TEXT("light%d|paint%d%d%d|%s"), Kind.IsSet() ? static_cast<int32>(Kind.GetValue()) : -1, Guess.bPainted ? 1 : 0, static_cast<int32>(Guess.Layer),
+			Guess.bPrimary ? 1 : 0, *FMantleVehicleBuiltInMaterials::Suggest(Name));
+	};
+	const FMantleVehicleSlotMerge Merged = FMantleVehicleBodySplit::MergeIdenticalMaterials(Body, Materials, Role);
+	if (!Merged.bMerged())
+	{
+		return Merged;
+	}
+	const TArray<FString> NamesAfter = FMantleVehicleLights::SectionNames(Materials);
+	TMap<int32, int32> SlotsInto;
+	for (int32 Slot = 0; Slot < Merged.NewSlotOfOld.Num(); ++Slot)
+	{
+		const int32 Now = Merged.NewSlotOfOld[Slot];
+		SlotsInto.FindOrAdd(Now)++;
+		if (NamesBefore.IsValidIndex(Slot) && NamesAfter.IsValidIndex(Now) && NamesBefore[Slot] != NamesAfter[Now])
+		{
+			OutMergedInto.Add(NamesBefore[Slot], NamesAfter[Now]);
+		}
+	}
+	TArray<FString> Said;
+	for (const TPair<int32, int32>& Into : SlotsInto)
+	{
+		if (Into.Value > 1 && NamesAfter.IsValidIndex(Into.Key))
+		{
+			Said.Add(FString::Printf(TEXT("%s: %d slots"), *NamesAfter[Into.Key], Into.Value));
+		}
+	}
+	OutNotes.Add(FString::Printf(TEXT("%s's %d material slots use %d different materials, and a published body draws one section for each material, so Mantle merged the slots that draw the same material into one section each (%s), leaving %d. They look as they did, your own model was not changed, and there is nothing for you to do."),
+		*ModelName, Merged.SlotsBefore, Distinct.Num() + Unnamed, *FString::Join(Said, TEXT("; ")), Merged.SlotsAfter));
+	return Merged;
+}
+
+void FMantleVehicleConverter::ApplyRenames(UMantleVehicleSource& Source, const TMap<FString, FString>& MergedInto)
+{
+	if (MergedInto.IsEmpty())
+	{
+		return;
+	}
+	const auto Rename = [&MergedInto](TArray<FString>& List)
+	{
+		TArray<FString> Now;
+		for (const FString& Section : List)
+		{
+			const FString* To = MergedInto.Find(Section);
+			Now.AddUnique(To ? *To : Section);
+		}
+		List = MoveTemp(Now);
+	};
+	Rename(Source.Paint.Sections);
+	for (FMantleVehicleSourcePaintLayer& Layer : Source.Paint.Layers)
+	{
+		Rename(Layer.Sections);
+	}
+	for (const EMantleLightKind Kind : { EMantleLightKind::Head, EMantleLightKind::Rear, EMantleLightKind::Reverse, EMantleLightKind::Left, EMantleLightKind::Right })
+	{
+		Rename(FMantleVehicleLights::Sections(Source.Lights, Kind));
+	}
+	for (FMantleVehicleSourceWheel& Wheel : Source.Wheels)
+	{
+		Rename(Wheel.RimSections);
+	}
+}
+
 UMantleVehicleSource* FMantleVehicleConverter::ConvertAsset(USkeletalMesh* Mesh, FMantleVehicleConversion& OutResult, const FMantleVehicleSurroundings* Around)
 {
 	OutResult = FMantleVehicleConversion();
@@ -2062,6 +2472,7 @@ UMantleVehicleSource* FMantleVehicleConverter::ConvertAsset(USkeletalMesh* Mesh,
 		Scratch->Paint.Layers = Source->Paint.Layers;
 		Scratch->Linkage = Source->Linkage;
 		Scratch->Parts = Source->Parts;
+		Scratch->Lights = Source->Lights;
 		OutResult = Convert(Mesh, *Scratch, Surroundings, FPackageName::GetLongPackagePath(Mesh->GetOutermost()->GetName()));
 		if (!OutResult.bSuccess)
 		{
@@ -2078,6 +2489,7 @@ UMantleVehicleSource* FMantleVehicleConverter::ConvertAsset(USkeletalMesh* Mesh,
 		// So is its linkage, found afresh only when it had none (#435 b), and its parts (#435 item 2).
 		Source->Linkage = Scratch->Linkage;
 		Source->Parts = Scratch->Parts;
+		Source->Lights = Scratch->Lights;
 		Source->MarkPackageDirty();
 		return Source;
 	}
@@ -2828,6 +3240,25 @@ const TCHAR* FMantleVehicleConverter::PaintFinishDocumentName(const EMantleVehic
 	return MantleVehicleConverterPrivate::PaintFinishName(Finish);
 }
 
+bool FMantleVehicleConverter::ParsePaintFinish(const FString& Name, EMantleVehicleSourcePaintFinish& OutFinish)
+{
+	for (int32 Each = 0; Each <= static_cast<int32>(EMantleVehicleSourcePaintFinish::SoftRubber); ++Each)
+	{
+		const EMantleVehicleSourcePaintFinish Finish = static_cast<EMantleVehicleSourcePaintFinish>(Each);
+		if (Name.Equals(MantleVehicleConverterPrivate::PaintFinishName(Finish), ESearchCase::IgnoreCase))
+		{
+			OutFinish = Finish;
+			return true;
+		}
+	}
+	return false;
+}
+
+const TCHAR* FMantleVehicleConverter::PaintLayerDocumentName(const EMantleVehicleSourcePaintLayer Layer)
+{
+	return MantleVehicleConverterPrivate::PaintLayerName(Layer);
+}
+
 bool FMantleVehicleConverter::IsGtaTintLayer(const FString& Name, const UMaterialInterface* Material)
 {
 	using namespace MantleVehicleConverterPrivate;
@@ -2967,6 +3398,90 @@ bool FMantleVehicleConverter::TakesTint(const UMaterialInterface* Material, FStr
 	return true;
 }
 
+TArray<FMantleVehicleConverter::FEarlierPartSlot> FMantleVehicleConverter::CaptureSplitPartPaint(const TArray<FMantleVehicleSourcePart>& Earlier)
+{
+	TArray<FEarlierPartSlot> Out;
+	for (const FMantleVehicleSourcePart& Part : Earlier)
+	{
+		if (Part.PaintSlots.IsEmpty() && Part.LayerSlots.IsEmpty())
+		{
+			continue;
+		}
+		const UStaticMesh* Mesh = Part.Mesh.LoadSynchronous();
+		if (!Mesh)
+		{
+			continue;
+		}
+		for (int32 Slot = 0; Slot < Mesh->GetStaticMaterials().Num(); ++Slot)
+		{
+			const UMaterialInterface* Material = PartSlotMaterial(Part, Mesh, Slot);
+			if (!Material)
+			{
+				continue;
+			}
+			FEarlierPartSlot& Entry = Out.AddDefaulted_GetRef();
+			Entry.Material = Material;
+			for (const FMantleVehicleSourcePartLayerSlots& Layer : Part.LayerSlots)
+			{
+				if (Layer.Slots.Contains(Slot))
+				{
+					Entry.bLayer = true;
+					Entry.Layer = Layer.Layer;
+				}
+			}
+			// A slot that wore the body's paint wears no layer: the paint is the stronger.
+			if (Part.PaintSlots.Contains(Slot))
+			{
+				Entry.bLayer = false;
+			}
+			Entry.bPaint = Part.PaintSlots.Contains(Slot);
+		}
+	}
+	return Out;
+}
+
+void FMantleVehicleConverter::RestoreSplitPartPaint(const TArray<FEarlierPartSlot>& Earlier, TArray<FMantleVehicleSourcePart>& Parts, TMap<int32, TSet<int32>>& OutKnown)
+{
+	OutKnown.Reset();
+	if (Earlier.IsEmpty())
+	{
+		return;
+	}
+	for (int32 PartIndex = 0; PartIndex < Parts.Num(); ++PartIndex)
+	{
+		FMantleVehicleSourcePart& Part = Parts[PartIndex];
+		const UStaticMesh* Mesh = Part.Mesh.LoadSynchronous();
+		if (!Mesh)
+		{
+			continue;
+		}
+		for (int32 Slot = 0; Slot < Mesh->GetStaticMaterials().Num(); ++Slot)
+		{
+			const UMaterialInterface* Material = PartSlotMaterial(Part, Mesh, Slot);
+			const FEarlierPartSlot* Was = Material ? Earlier.FindByPredicate([Material](const FEarlierPartSlot& Each) { return Each.Material == Material; }) : nullptr;
+			if (!Was)
+			{
+				continue;
+			}
+			OutKnown.FindOrAdd(PartIndex).Add(Slot);
+			if (Was->bPaint)
+			{
+				Part.PaintSlots.AddUnique(Slot);
+			}
+			else if (Was->bLayer)
+			{
+				FMantleVehicleSourcePartLayerSlots* Entry = Part.LayerSlots.FindByPredicate([Was](const FMantleVehicleSourcePartLayerSlots& Has) { return Has.Layer == Was->Layer; });
+				if (!Entry)
+				{
+					Entry = &Part.LayerSlots.AddDefaulted_GetRef();
+					Entry->Layer = Was->Layer;
+				}
+				Entry->Slots.AddUnique(Slot);
+			}
+		}
+	}
+}
+
 TArray<FMantleVehicleSourcePartLayerSlots> FMantleVehicleConverter::SuggestPartLayerSlots(const FMantleVehicleSourcePart& Part)
 {
 	TArray<FMantleVehicleSourcePartLayerSlots> Out;
@@ -2987,7 +3502,8 @@ TArray<FMantleVehicleSourcePartLayerSlots> FMantleVehicleConverter::SuggestPartL
 			continue;
 		}
 		const FPaintLayerGuess Guess = GuessPaintLayer(PartMesh->GetStaticMaterials()[Slot].MaterialSlotName.ToString(), Material);
-		if (!Guess.bPainted || Guess.bPrimary)
+		// Only what the model marks as a tint layer (see the section layers in Convert): a slot named like an interior keeps its own material.
+		if (!Guess.bPainted || Guess.bPrimary || !IsGtaTintLayer(PartMesh->GetStaticMaterials()[Slot].MaterialSlotName.ToString(), Material))
 		{
 			continue;
 		}

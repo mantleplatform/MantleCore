@@ -70,16 +70,71 @@ FString FMantleVehicleBuiltInMaterials::Suggest(const FString& SectionName)
 	return FString();
 }
 
+bool FMantleVehicleBuiltInMaterials::IsColoredLens(const UMaterialInterface* Material, const FString& SectionName)
+{
+	// A word of the section's or the material's name: lens_red, amber_lens, indicator_orange.
+	TArray<FString> Words;
+	for (const FString& Name : { SectionName, Material ? Material->GetName() : FString() })
+	{
+		FString Word;
+		TCHAR Last = 0;
+		for (const TCHAR Letter : Name)
+		{
+			if (!FChar::IsAlpha(Letter) || (FChar::IsUpper(Letter) && FChar::IsLower(Last)))
+			{
+				if (!Word.IsEmpty())
+				{
+					Words.Add(Word.ToLower());
+					Word.Reset();
+				}
+			}
+			if (FChar::IsAlpha(Letter))
+			{
+				Word.AppendChar(Letter);
+			}
+			Last = Letter;
+		}
+		if (!Word.IsEmpty())
+		{
+			Words.Add(Word.ToLower());
+		}
+	}
+	for (const FString& Word : Words)
+	{
+		if (Word == TEXT("red") || Word == TEXT("amber") || Word == TEXT("orange") || Word == TEXT("yellow"))
+		{
+			return true;
+		}
+	}
+	// Its own color: red through amber (red the strongest of the three, then green, then blue) and clearly a color, as a taillight's or a signal's lens is. A clear or white lens,
+	// or one tinted blue or green, is not: those are the shared lens's.
+	FColor Average;
+	bool bPicture = false;
+	if (!Material || !FMantlePlaceAssets::BaseColorAverage(Material, Average, bPicture))
+	{
+		return false;
+	}
+	const float Red = Average.R / 255.f;
+	const float Green = Average.G / 255.f;
+	const float Blue = Average.B / 255.f;
+	return Red >= 0.25f && Red >= Green && Green >= Blue && (Red - Blue) / Red > 0.4f;
+}
+
 FString FMantleVehicleBuiltInMaterials::Detect(const UMaterialInterface* Material, const FString& SectionName, const bool bLight)
 {
+	// A lens is the shared lens (clear plastic), except one that is red or amber: a taillight or a signal keeps its own material, which is that color, instead of losing it.
 	if (bLight)
 	{
-		return LightLens();
+		return IsColoredLens(Material, SectionName) ? FString() : FString(LightLens());
 	}
 	FString ByName = Suggest(SectionName);
 	if (ByName.IsEmpty() && Material)
 	{
 		ByName = Suggest(Material->GetName());
+	}
+	if (ByName == LightLens() && IsColoredLens(Material, SectionName))
+	{
+		return FString();
 	}
 	if (!ByName.IsEmpty())
 	{

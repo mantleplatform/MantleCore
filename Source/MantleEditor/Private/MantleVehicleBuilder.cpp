@@ -638,7 +638,7 @@ namespace MantleVehicleBuilderPrivate
 	// Mantle.Vehicle.BuildModel: what the Build a vehicle window's Build button does for a model that is worn as a skin, from the console or a script.
 	FAutoConsoleCommand BuildModelCommand(
 		TEXT("Mantle.Vehicle.BuildModel"),
-		TEXT("Mantle.Vehicle.BuildModel <model object path> <vehicle type id> [yaw=<deg>] [name=<Name>] [folder=</Game/...>] [bone.<chassis bone>=<model bone>] [section.<chassis bone>=<n>] [overwrite=1] [hideriders=1] [paint=<text>] [notpaint=<text>] "
+		TEXT("Mantle.Vehicle.BuildModel <model object path> <vehicle type id> [yaw=<deg>] [name=<Name>] [folder=</Game/...>] [bone.<chassis bone>=<model bone>] [section.<chassis bone>=<n>] [overwrite=1] [hideriders=1] [paint=<text>] [notpaint=<text>] [secondary=<text>] [wheels=<text>] [interior=<text>] [dashboard=<text>] [secondaryfinish=<finish>] [wheelsfinish=<finish>] [interiorfinish=<finish>] [dashboardfinish=<finish>] "
 			 "-- puts a static or skeletal mesh on the type's chassis (BuildFromModel), saves it under the folder (default /Game/MantleVehicles) and logs MANTLE_VEHICLE_BUILD_MODEL "
 			 "ok=<0|1> with the vehicle's path, its Size and every note. With no yaw or parts given Mantle chooses them. A name= that a vehicle already has is refused unless overwrite=1."),
 		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
@@ -710,6 +710,22 @@ namespace MantleVehicleBuilderPrivate
 				else if (Key.Equals(TEXT("dashboard"), ESearchCase::IgnoreCase))
 				{
 					LayerContains.Add(EMantleVehicleSourcePaintLayer::Dashboard, Value);
+				}
+				else if (Key.EndsWith(TEXT("finish"), ESearchCase::IgnoreCase)
+					&& (Key.StartsWith(TEXT("secondary"), ESearchCase::IgnoreCase) || Key.StartsWith(TEXT("wheels"), ESearchCase::IgnoreCase)
+						|| Key.StartsWith(TEXT("interior"), ESearchCase::IgnoreCase) || Key.StartsWith(TEXT("dashboard"), ESearchCase::IgnoreCase)))
+				{
+					// secondaryfinish=chrome (also wheelsfinish=, interiorfinish=, dashboardfinish=): the finish that paint layer starts with.
+					EMantleVehicleSourcePaintFinish Finish = EMantleVehicleSourcePaintFinish::Gloss;
+					if (!FMantleVehicleConverter::ParsePaintFinish(Value, Finish))
+					{
+						UE_LOG(LogTemp, Error, TEXT("MANTLE_VEHICLE_BUILD_MODEL ok=0 '%s' is not a paint finish (gloss, metallic, pearl, matte, satin, metal, chrome, trim, carbon, brushed, sandblast, anodized, leather, perforated, suede, fabric, woven, carpet, plastic_smooth, plastic_grain, plastic_soft, wood, soft_rubber)"), *Value);
+						return;
+					}
+					const EMantleVehicleSourcePaintLayer Layer = Key.StartsWith(TEXT("secondary"), ESearchCase::IgnoreCase) ? EMantleVehicleSourcePaintLayer::Secondary
+						: Key.StartsWith(TEXT("wheels"), ESearchCase::IgnoreCase) ? EMantleVehicleSourcePaintLayer::Wheels
+						: Key.StartsWith(TEXT("interior"), ESearchCase::IgnoreCase) ? EMantleVehicleSourcePaintLayer::Interior : EMantleVehicleSourcePaintLayer::Dashboard;
+					Options.LayerFinishes.Add(Layer, Finish);
 				}
 				else if (Key.StartsWith(TEXT("bone."), ESearchCase::IgnoreCase))
 				{
@@ -1523,6 +1539,53 @@ void FMantleVehicleBuilder::LightOwnBody(FMantleVehicleBuildResult& Built, const
 	}
 }
 
+void FMantleVehicleBuilder::ApplyLayerFinishes(UMantleVehicleSource& Source, const TMap<EMantleVehicleSourcePaintLayer, EMantleVehicleSourcePaintFinish>& Finishes, TArray<FString>& OutNotes)
+{
+	for (const TPair<EMantleVehicleSourcePaintLayer, EMantleVehicleSourcePaintFinish>& Wanted : Finishes)
+	{
+		const FString Layer = FMantleVehicleConverter::PaintLayerDocumentName(Wanted.Key);
+		const FString Finish = FMantleVehicleConverter::PaintFinishDocumentName(Wanted.Value);
+		FMantleVehicleSourcePaintLayer* Has = Source.Paint.Layers.FindByPredicate([&Wanted](const FMantleVehicleSourcePaintLayer& Existing) { return Existing.Layer == Wanted.Key; });
+		if (!Has)
+		{
+			OutNotes.Add(FString::Printf(TEXT("No section of the model is in the %s paint layer, so its %s finish was not set. Tick one for that layer in the builder, or name some with %s=<text>."), *Layer, *Finish, *Layer));
+			continue;
+		}
+		Source.Modify();
+		Has->Finish = Wanted.Value;
+		Source.MarkPackageDirty();
+		OutNotes.Add(FString::Printf(TEXT("The %s paint layer (%s) starts as %s. Change it under Paint > Layers in the vehicle asset."), *Layer, *FString::Join(Has->Sections, TEXT(", ")), *Finish));
+	}
+}
+
+void FMantleVehicleBuilder::ApplyHubs(UMantleVehicleSource& Source, const TConstArrayView<FMantleVehicleSkinnedHub> Hubs, TArray<FString>& OutNotes)
+{
+	if (Hubs.IsEmpty())
+	{
+		return;
+	}
+	Source.Modify();
+	// The rules an earlier build wrote for the same wheels' hubs (a copy about Z of one of these wheels) are made again below, so they are not kept twice.
+	Source.Linkage.RemoveAll([&Hubs](const FMantleVehicleSourceLinkage& Rule)
+	{
+		return Rule.Type == EMantleVehicleLinkageType::Copy && Rule.Axis == EMantleVehicleLinkageAxis::Z
+			&& Hubs.ContainsByPredicate([&Rule](const FMantleVehicleSkinnedHub& Hub) { return Hub.Wheel == Rule.Source; });
+	});
+	TArray<FString> Said;
+	for (const FMantleVehicleSkinnedHub& Hub : Hubs)
+	{
+		FMantleVehicleSourceLinkage& Rule = Source.Linkage.AddDefaulted_GetRef();
+		Rule.Type = EMantleVehicleLinkageType::Copy;
+		Rule.Bone = Hub.Bone;
+		Rule.Source = Hub.Wheel;
+		Rule.Axis = EMantleVehicleLinkageAxis::Z;
+		Said.Add(FString::Printf(TEXT("%s with %s"), *Hub.Bone.ToString(), *Hub.Wheel.ToString()));
+	}
+	OutNotes.Add(FString::Printf(TEXT("Hubs and brakes: %s. Each travels and steers with its wheel and does not spin, so a brake caliper stays with its rim. Change them under Linkage in the vehicle asset."),
+		*FString::Join(Said, TEXT(", "))));
+	Source.MarkPackageDirty();
+}
+
 void FMantleVehicleBuilder::ApplyHinges(UMantleVehicleSource& Source, const TConstArrayView<FMantleVehicleSkinnedHinge> Hinges, TArray<FString>& OutNotes)
 {
 	if (Hinges.Num() == 0)
@@ -1779,6 +1842,9 @@ bool FMantleVehicleBuilder::PrepareFromModel(UObject* ModelAsset, const FString&
 		return false;
 	}
 	Out.Notes.Append(Skinned.Notes);
+	// The slots drawn with the same material are one section, before the lights, the paint and the rims read the sections: a vehicle's body may draw only a few materials, and a model
+	// usually has far more slots than materials. Skin made the body from the model, so the model itself is not touched.
+	FMantleVehicleConverter::MergeIdenticalSlots(Skinned.Body, Skinned.Materials, Model.Name, Out.MergedInto, Out.Notes);
 	// The lights: the spots of the model that glow (or are named for a light) are cut into sections of their own, so the game can switch each one.
 	const FMantleVehicleLightGuess LightGuess = FMantleVehicleLights::Find(Skinned.Body, Skinned.Materials, Spec.bCenterline);
 	FMantleVehicleLights::Cut(Skinned.Body, Skinned.Materials, LightGuess, Out.Lights);
@@ -1816,6 +1882,18 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 	const FMantleChassisSpec& Spec = Prepared.Spec;
 	const TArray<FMantleVehiclePartSlot>& Slots = Prepared.Slots;
 	const FMantleVehicleModelMap& Map = Prepared.Map;
+	// The sections the creator ticked as paint are by the model's own names; the slots merged into one section are ticked as that section.
+	const auto Merged = [&Prepared](const FString& Name) { const FString* To = Prepared.MergedInto.Find(Name); return To ? *To : Name; };
+	TOptional<TArray<FString>> PaintedTicks;
+	if (Options.PaintedSections.IsSet())
+	{
+		TArray<FString> Now;
+		for (const FString& Ticked : Options.PaintedSections.GetValue())
+		{
+			Now.AddUnique(Merged(Ticked));
+		}
+		PaintedTicks = MoveTemp(Now);
+	}
 	const double Yaw = Prepared.Yaw;
 	FMantleVehicleSkinned& Skinned = Prepared.Skinned;
 	const FMantleVehicleSkinCollision& Collision = Prepared.Collision;
@@ -1891,29 +1969,13 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 		FString SplitProblem;
 		// The light sections stay on the body, where the game switches them.
 		const FMantleVehicleSourceLights& LightsWanted = Options.Lights.IsSet() ? Options.Lights.GetValue() : Prepared.Lights;
-		const TArray<FString> SectionsBefore = FMantleVehicleLights::SectionNames(Skinned.Materials);
+		// So do the body paint (the sections ticked, else what reads as the body color) and the rims (sections named for one): a wheel swap hides them, and only the body's
+		// sections can be hidden. When they are more than a body may draw: the paint first, then each kind of light's first section, then the rims, then the lights' other sections.
 		TSet<int32> LightSlots;
-		for (int32 Slot = 0; Slot < SectionsBefore.Num(); ++Slot)
-		{
-			for (const EMantleLightKind Kind : { EMantleLightKind::Head, EMantleLightKind::Rear, EMantleLightKind::Reverse,
-				EMantleLightKind::Left, EMantleLightKind::Right })
-			{
-				if (FMantleVehicleLights::Sections(LightsWanted, Kind).Contains(SectionsBefore[Slot]))
-				{
-					LightSlots.Add(Slot);
-				}
-			}
-		}
-		// So do the rims (sections named for one): a wheel swap hides them, and only the body's sections can be hidden.
-		for (int32 Slot = 0; Slot < SectionsBefore.Num(); ++Slot)
-		{
-			if (FMantleVehicleRims::NameIsRim(SectionsBefore[Slot]))
-			{
-				LightSlots.Add(Slot);
-			}
-		}
+		TMap<int32, int32> KeepRank;
+		FMantleVehicleConverter::BodyKeep(Skinned.Materials, LightsWanted, PaintedTicks.IsSet() ? &PaintedTicks.GetValue() : nullptr, LightSlots, KeepRank);
 		if (!FMantleVehicleBodySplit::Split(Skinned.Body, Skinned.Materials, Skinned.Extras, FMantleVehicleLimits::MaxSections, FMantleVehicleLimits::MaxPartMaterials,
-			FMantleVehicleLimits::MaxParts, Split, LightSlots))
+			FMantleVehicleLimits::MaxParts, Split, LightSlots, &KeepRank))
 		{
 			SplitProblem = Split.Problem;
 		}
@@ -2011,22 +2073,24 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 		SetHiddenRiders(*Out.Source, nullptr, true);
 	}
 	ApplyHinges(*Out.Source, Skinned.Hinges, Out.Notes);
+	// Its hubs and brakes (a caliper skinned to hub_lf or B_FLBrake) follow their wheel's steering and travel, each on a bone of its own (Skin gave it one).
+	ApplyHubs(*Out.Source, Skinned.Hubs, Out.Notes);
 	// A model that was split into a body and parts: the paint the creator ticked (else what looks like paint) goes onto whichever holds each painted material.
-	if (SplitParts.Num() > 0)
+	if (SplitParts.Num() > 0 || Options.PaintedSections.IsSet())
 	{
-		const TArray<FString> ModelSections = FMantleVehicleLights::SectionNames(PictureMaterials);
+		const TArray<FString> ModelSections = FMantleVehicleLights::SectionNames(SplitParts.Num() > 0 ? PictureMaterials : Skinned.Materials);
 		const FMantleVehicleSourceLights& LightsForPaint = Options.Lights.IsSet() ? Options.Lights.GetValue() : Prepared.Lights;
 		TArray<bool> Painted;
 		TArray<uint8> Layers;
 		for (int32 Index = 0; Index < ModelSections.Num(); ++Index)
 		{
 			Layers.Add(0);
-			if (Options.PaintedSections.IsSet())
+			if (PaintedTicks.IsSet())
 			{
-				Painted.Add(Options.PaintedSections.GetValue().ContainsByPredicate([&ModelSections, Index](const FString& Ticked) { return Ticked.Equals(ModelSections[Index], ESearchCase::IgnoreCase); }));
+				Painted.Add(PaintedTicks.GetValue().ContainsByPredicate([&ModelSections, Index](const FString& Ticked) { return Ticked.Equals(ModelSections[Index], ESearchCase::IgnoreCase); }));
 				for (const TPair<FString, EMantleVehicleSourcePaintLayer>& Pair : Options.PaintLayers)
 				{
-					if (Pair.Key.Equals(ModelSections[Index], ESearchCase::IgnoreCase))
+					if (Merged(Pair.Key).Equals(ModelSections[Index], ESearchCase::IgnoreCase))
 					{
 						Layers[Index] = PaintPick(Pair.Value);
 					}
@@ -2039,7 +2103,8 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 				bLight = bLight || FMantleVehicleLights::Sections(LightsForPaint, static_cast<EMantleLightKind>(Kind)).Contains(ModelSections[Index]);
 			}
 			// Mantle's guess from the names and how the material reads: the body paint, or a layer. Never a light, and never what becomes glass, a tire, chrome or a lens.
-			const UMaterialInterface* SectionMaterial = PictureMaterials.IsValidIndex(Index) ? PictureMaterials[Index].MaterialInterface.Get() : nullptr;
+			const TArray<FSkeletalMaterial>& SectionMaterials = SplitParts.Num() > 0 ? PictureMaterials : Skinned.Materials;
+			const UMaterialInterface* SectionMaterial = SectionMaterials.IsValidIndex(Index) ? SectionMaterials[Index].MaterialInterface.Get() : nullptr;
 			const FMantleVehicleConverter::FPaintLayerGuess Guess = FMantleVehicleConverter::GuessPaintLayer(ModelSections[Index], SectionMaterial);
 			const bool bBuiltIn = !Guess.bPrimary && SectionMaterial && !FMantleVehicleBuiltInMaterials::Detect(SectionMaterial, ModelSections[Index], false).IsEmpty();
 			Painted.Add(!bLight && Guess.bPainted && !bBuiltIn);
@@ -2047,6 +2112,8 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 		}
 		ApplyPaint(*Out.Source, ModelSections, Painted, Out.Notes, &Layers);
 	}
+	// The finish each paint layer starts with, where the build was asked for one (the console's secondaryfinish=chrome).
+	ApplyLayerFinishes(*Out.Source, Options.LayerFinishes, Out.Notes);
 	// The rims a wheel swap hides: found on the car as built (the body keeps the rim-named sections when a model is split), not on the model it came from.
 	{
 		FMantleGlbMesh RimBody;

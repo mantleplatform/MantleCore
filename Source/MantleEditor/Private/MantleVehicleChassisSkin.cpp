@@ -3,6 +3,7 @@
 
 #include "MantleVehicleAsset.h"
 #include "MantleVehicleChassisBuilder.h"
+#include "MantleVehicleConverter.h"
 #include "MantleVehicleFit.h"
 #include "MantleVehiclePreset.h"
 
@@ -1964,6 +1965,15 @@ bool FMantleVehicleChassisSkin::Skin(const FMantleSkinnedMesh& Chassis, const TC
 
 	// Each moving bone's part: its vertices and, for a bone that turns about a hub or a hinge, where that is.
 	const FMantleVehicleModelPlacement Turn = Placement;
+	// The wheels that were moved onto the chassis's: where the model's wheel was, where the chassis's is and how far the wheel moved. A hub or a brake at one of them follows it.
+	struct FWheelPlace
+	{
+		int32 ChassisBone = INDEX_NONE;
+		FVector Pivot = FVector::ZeroVector;
+		FVector Center = FVector::ZeroVector;
+		FVector Move = FVector::ZeroVector;
+	};
+	TArray<FWheelPlace> WheelPlaces;
 	for (const FMantleVehiclePartSlot& Slot : Slots)
 	{
 		const FMantleVehicleModelPiece* Piece = Map.Find(Slot.ChassisBone);
@@ -2037,6 +2047,97 @@ bool FMantleVehicleChassisSkin::Skin(const FMantleSkinnedMesh& Chassis, const TC
 					LOD.Positions[Vertex] += FVector3f(Move);
 				}
 			}
+			FWheelPlace& Place = WheelPlaces.AddDefaulted_GetRef();
+			Place.ChassisBone = *BoneIndex;
+			Place.Pivot = Pivot;
+			Place.Center = Center;
+			Place.Move = Move;
+		}
+	}
+
+	// Each hub and brake bone of the model at one of those wheels: a bone of its own under the root at the chassis's wheel center, with the vertices of the model's bone and its
+	// children (the caliper), moved with the wheel. It follows the wheel's steering and travel but not its spin (FMantleVehicleBuilder::ApplyHubs), so a caliper stays with its rim
+	// instead of riding the body, or spinning with the tire.
+	if (Model.bSkeletal && WheelPlaces.Num() > 0)
+	{
+		constexpr double MaxHubFromWheel = 25.0;
+		TArray<int32> HubRoot;
+		TArray<int32> HubWheel;
+		HubRoot.Init(INDEX_NONE, Model.Bones.Num());
+		HubWheel.Init(INDEX_NONE, Model.Bones.Num());
+		for (int32 Bone = 0; Bone < Model.Bones.Num(); ++Bone)
+		{
+			const int32 Parent = Model.Bones[Bone].ParentIndex;
+			if (Parent >= 0 && Parent < Bone && HubRoot[Parent] != INDEX_NONE)
+			{
+				HubRoot[Bone] = HubRoot[Parent];
+				HubWheel[Bone] = HubWheel[Parent];
+				continue;
+			}
+			const FString BoneName = Model.Bones[Bone].Name.ToString();
+			// A bone the creator (or the suggestion) assigned to a chassis part is that part, whatever it is called.
+			bool bAssigned = false;
+			for (const TPair<FName, FMantleVehicleModelPiece>& Part : Map.Parts)
+			{
+				bAssigned = bAssigned || (Part.Value.Kind == FMantleVehicleModelPiece::EKind::Bone && Part.Value.Bone == Model.Bones[Bone].Name);
+			}
+			if (bAssigned || !Model.BonePositions.IsValidIndex(Bone) || !(FMantleVehicleConverter::IsHubBoneName(BoneName) || FMantleVehicleConverter::IsBrakeBoneName(BoneName)))
+			{
+				continue;
+			}
+			const FVector At = Turn.Point(Model.BonePositions[Bone]);
+			double Nearest = MaxHubFromWheel;
+			for (int32 Place = 0; Place < WheelPlaces.Num(); ++Place)
+			{
+				const double Distance = FVector::Dist(At, WheelPlaces[Place].Pivot);
+				if (Distance <= Nearest)
+				{
+					Nearest = Distance;
+					HubRoot[Bone] = Bone;
+					HubWheel[Bone] = Place;
+				}
+			}
+		}
+		const TArray<int32> HubHeaviest = HeaviestBones(Model);
+		for (int32 Root = 0; Root < Model.Bones.Num(); ++Root)
+		{
+			if (HubRoot[Root] != Root)
+			{
+				continue;
+			}
+			const FWheelPlace& Place = WheelPlaces[HubWheel[Root]];
+			TArray<int32> Members;
+			for (int32 Vertex = 0; Vertex < NumVertices; ++Vertex)
+			{
+				const int32 Owner = HubHeaviest.IsValidIndex(Vertex) && HubHeaviest[Vertex] != INDEX_NONE && HubRoot.IsValidIndex(HubHeaviest[Vertex]) ? HubRoot[HubHeaviest[Vertex]] : INDEX_NONE;
+				// A vertex a door or the like owns (a negative mark) is left to it.
+				if (Owner == Root && BoneOf[Vertex] >= 0)
+				{
+					Members.Add(Vertex);
+				}
+			}
+			if (Members.IsEmpty())
+			{
+				continue;
+			}
+			const FName BoneName = UniqueBoneName(Body.Bones, Model.Bones[Root].Name);
+			const int32 NewBone = Body.Bones.Num();
+			FMantleSkinnedMeshBone& Added = Body.Bones.AddDefaulted_GetRef();
+			Added.Name = BoneName;
+			Added.ParentIndex = 0;
+			Body.ReferencePose.Add(FTransform(FRotator::ZeroRotator, Place.Center));
+			for (const int32 Vertex : Members)
+			{
+				// What rode the root was not moved with the wheel yet; what rode the wheel itself (a hub under it in the model) was.
+				if (BoneOf[Vertex] == 0)
+				{
+					LOD.Positions[Vertex] += FVector3f(Place.Move);
+				}
+				BoneOf[Vertex] = NewBone;
+			}
+			FMantleVehicleSkinnedHub& Hub = Out.Hubs.AddDefaulted_GetRef();
+			Hub.Bone = BoneName;
+			Hub.Wheel = Body.Bones[Place.ChassisBone].Name;
 		}
 	}
 

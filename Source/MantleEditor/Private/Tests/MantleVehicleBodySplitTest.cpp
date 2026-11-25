@@ -353,7 +353,7 @@ bool FMantleVehicleSplitPaintTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	// The creator ticks three of the sections in the paint step, whichever the split keeps on the body and whichever it puts on a part.
+	// The creator ticks three of the sections in the paint step; the split keeps painted sections on the body.
 	FMantleVehicleModelOptions Options;
 	Options.Folder = TEXT("/Temp/MantleBodySplitPaintTest");
 	Options.Name = TEXT("SplitPaintCar");
@@ -402,7 +402,8 @@ bool FMantleVehicleSplitPaintTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("exactly the ticked ones are painted: nothing on the body beyond them"), Source->Paint.Sections.Num(), PaintedOnBody);
 	TestEqual(TEXT("and nothing on the part beyond them"), Source->Parts[0].PaintSlots.Num(), PaintedOnPart);
-	TestTrue(*FString::Printf(TEXT("at least one ticked section rode on the part (%d), so the carry was tried"), PaintedOnPart), PaintedOnPart > 0);
+	// The split keeps the painted sections on the body first, so all three stay there (the body has room for them) and none rides on the part.
+	TestEqual(TEXT("every ticked section stays on the body"), PaintedOnBody, Ticked.Num());
 
 	// The paint step ticking another section later moves it with the same helper, and unticking one takes it off.
 	TArray<FString> AllSections;
