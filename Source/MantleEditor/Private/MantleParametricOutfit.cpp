@@ -997,7 +997,7 @@ UChaosOutfitAsset* FMantleParametricOutfit::WrapOnStandardBody(const FMantleCosm
 	// Collecting garbage below must not take the garment: it is held here, not only by the caller's draft.
 	KeepAlive.Emplace(Draft.Source.Get());
 	KeepAlive.Emplace(Worn);
-	const auto LogMemory = [&Draft](const TCHAR* When)
+	const auto LogMemoryUse = [&Draft](const TCHAR* When)
 	{
 		const FPlatformMemoryStats Stats = FPlatformMemory::GetStats();
 		UE_LOG(LogMantleParametricOutfit, Display, TEXT("MANTLE_STANDARD_BODY garment=%s memory %s: free RAM %.0f MB, editor %.0f MB"), *Draft.Source->GetName(), When,
@@ -1017,7 +1017,7 @@ UChaosOutfitAsset* FMantleParametricOutfit::WrapOnStandardBody(const FMantleCosm
 		if (ToMake > 0)
 		{
 			Task.MakeDialog();
-			LogMemory(TEXT("before making the standard bodies"));
+			LogMemoryUse(TEXT("before making the standard bodies"));
 		}
 		int32 Released = 0;
 		for (const FString& Id : Ids)
@@ -1039,7 +1039,7 @@ UChaosOutfitAsset* FMantleParametricOutfit::WrapOnStandardBody(const FMantleCosm
 			}
 		}
 		if (Released > 0) { CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS); }
-		if (ToMake > 0) { LogMemory(TEXT("after making the standard bodies")); }
+		if (ToMake > 0) { LogMemoryUse(TEXT("after making the standard bodies")); }
 	}
 	const FMantleStandardBodyMatch::FResult Result = FMantleStandardBodyMatch::Match(FMantleStandardBodyMatch::JointPositions(Glb.Joints), Skinned, Candidates);
 	for (const FMantleStandardBodyMatch::FScore& Score : Result.All)
