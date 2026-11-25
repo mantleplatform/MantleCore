@@ -1146,6 +1146,31 @@ bool FMantleVehicleSkinSteeringWheelTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the vehicle changed"), FMantleVehicleBuilder::ApplySkinnedSteeringWheel(*Source, Skinned, Notes));
 	TestEqual(TEXT("its bone is the body's new one"), Source->Tuning.SteeringWheelBone.ToString(), FString(TEXT("steering_wheel")));
 	TestTrue(TEXT("and the wheel is on"), Source->Tuning.bSteeringWheel);
+
+	// As the builder hands it over: the chassis's seat with the chassis's own wheel already on (a build starts the settings from the chassis). The measured wheel
+	// replaces it; a measure that is not sure leaves the chassis's, and says why.
+	UMantleVehicleSource* Built = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
+	Built->Tuning.bSeatLocation = true;
+	Built->Tuning.bSteeringWheel = true;
+	Built->Tuning.SteeringWheelLocation = FVector(-1, -66, 66);
+	Built->Tuning.SteeringWheelRadius = 19.f;
+	TArray<FString> BuiltNotes;
+	TestTrue(TEXT("a built car with the chassis's wheel changes"), FMantleVehicleBuilder::ApplySkinnedSteeringWheel(*Built, Skinned, BuiltNotes));
+	TestTrue(TEXT("and its wheel is the measured one, at the hub"), Built->Tuning.bSteeringWheel && Built->Tuning.SteeringWheelLocation.Equals(Skinned.Steering.Location, 0.01));
+	TestTrue(*FString::Printf(TEXT("pitched as measured (%.2f)"), Built->Tuning.SteeringWheelRotation.Pitch), FMath::Abs(Built->Tuning.SteeringWheelRotation.Pitch + 20.0) < 3.0);
+	TestTrue(TEXT("and the notes say it was placed from the bone"), BuiltNotes.ContainsByPredicate([](const FString& Note) { return Note.Contains(TEXT("placed from the bone")); }));
+	FMantleVehicleSkinned Unsure = Skinned;
+	Unsure.Steering.bPlaced = false;
+	Unsure.Steering.Why = TEXT("its vertices are not a ring");
+	UMantleVehicleSource* Kept = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
+	Kept->Tuning.bSeatLocation = true;
+	Kept->Tuning.bSteeringWheel = true;
+	Kept->Tuning.SteeringWheelLocation = FVector(-1, -66, 66);
+	TArray<FString> KeptNotes;
+	FMantleVehicleBuilder::ApplySkinnedSteeringWheel(*Kept, Unsure, KeptNotes);
+	TestTrue(TEXT("an unsure measure keeps the chassis's wheel"), Kept->Tuning.bSteeringWheel && Kept->Tuning.SteeringWheelLocation.Equals(FVector(-1, -66, 66)));
+	TestTrue(TEXT("and says why"), KeptNotes.ContainsByPredicate([](const FString& Note) { return Note.Contains(TEXT("not a ring")); }));
+
 	UMantleVehicleSource* Own = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
 	Own->Tuning.bSeatLocation = true;
 	Own->Tuning.SteeringWheelBone = FName(TEXT("MyWheel"));

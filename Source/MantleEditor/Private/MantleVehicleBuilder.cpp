@@ -1765,6 +1765,19 @@ bool FMantleVehicleBuilder::ApplySkinnedSteeringWheel(UMantleVehicleSource& Sour
 	}
 	if (T.SteeringWheelBone == Skinned.SteeringWheelBone)
 	{
+		// A build starts the vehicle's settings from the chassis (BuildChassisImpl), so a wheel already there is the chassis's own, not one the creator placed: the wheel
+		// measured on the model's bone replaces it. When the measure is not sure, the chassis's wheel stays, and the notes say why.
+		if (T.bSteeringWheel && T.bSeatLocation)
+		{
+			if (!Skinned.Steering.bPlaced)
+			{
+				OutNotes.Add(FString::Printf(TEXT("Steering wheel: the chassis's own wheel is kept, because %s (the bone %s). Move it under Driver > Steering Wheel in the vehicle asset."),
+					*Skinned.Steering.Why, *Skinned.SteeringWheelBone.ToString()));
+				return bChanged;
+			}
+			Source.Modify();
+			T.bSteeringWheel = false;
+		}
 		bChanged |= PlaceSteeringWheel(Source, Skinned.SteeringWheelBone, Skinned.Steering, OutNotes);
 	}
 	return bChanged;
