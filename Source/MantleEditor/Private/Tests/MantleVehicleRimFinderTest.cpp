@@ -111,14 +111,51 @@ bool FMantleVehicleRimsFindTest::RunTest(const FString& Parameters)
 	Rims = FMantleVehicleRims::Find(Far, Bones, Radii, { TEXT("alloy [WHEEL]"), TEXT("rs7_tire"), TEXT("rim_far") }, Notes);
 	TestFalse(TEXT("a rim-named section outside the wheel is not a rim"), Rims[0].Contains(TEXT("rim_far")));
 
-	// A car whose wheels are welded in (no section named like a rim): no rims, no notes.
+	// A car whose wheels are welded in (no section of its own for the rims): no rims, no notes. Here the body's section reaches the wheel's outer edge, as a tire welded in does.
 	FMantleGlbMesh Welded;
 	Welded.NumInfluences = 1;
 	Welded.Joints = Body.Joints;
-	AddSection(Welded, TEXT("vehicle_body"), 1, FVector(-150.0, 0.0, 40.0), 30.0, 20);
+	AddSection(Welded, TEXT("vehicle_body"), 1, FVector(-150.0, 0.0, 40.0), 40.0, 20);
 	Notes.Reset();
 	Rims = FMantleVehicleRims::Find(Welded, Bones, Radii, { TEXT("vehicle_body") }, Notes);
 	TestTrue(TEXT("a welded car has no rims"), Rims[0].IsEmpty() && Rims[1].IsEmpty() && Notes.IsEmpty());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleRimsNeutralNamesTest,
+	"Mantle.Vehicle.Rims.NeutralNames",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleRimsNeutralNamesTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleRimsTestPrivate;
+	TArray<FString> Notes;
+
+	// Geometry decides, not the name: a section called M_Part_07 that stays inside the tire (25 of 40 cm) is a rim; one called M_Part_09 that reaches the tire's outer edge is not.
+	FMantleGlbMesh Body = MakeBody();
+	AddSection(Body, TEXT("M_Part_07"), 1, FVector(-150.0, 0.0, 40.0), 25.0, 20);
+	AddSection(Body, TEXT("M_Part_09"), 1, FVector(-150.0, 0.0, 40.0), 40.0, 20);
+	// Names that say tire, brake or disc are never rims, whatever the geometry.
+	AddSection(Body, TEXT("brake_disc"), 1, FVector(-150.0, 0.0, 40.0), 20.0, 20);
+	AddSection(Body, TEXT("M_Part_11_tyre"), 1, FVector(-150.0, 0.0, 40.0), 20.0, 20);
+	const TArray<FString> Sections = { TEXT("alloy [WHEEL]"), TEXT("rs7_tire"), TEXT("M_Part_07"), TEXT("M_Part_09"), TEXT("brake_disc"), TEXT("M_Part_11_tyre") };
+	TArray<double> Reach;
+	const TArray<TArray<FString>> Rims = FMantleVehicleRims::Find(Body, Bones, Radii, Sections, Notes, &Reach);
+	TestTrue(TEXT("a neutral name inside the tire is a rim"), Rims[0].Contains(TEXT("M_Part_07")));
+	TestFalse(TEXT("a neutral name reaching the tire's outer edge is not"), Rims[0].Contains(TEXT("M_Part_09")));
+	TestFalse(TEXT("a brake disc is not, by its name"), Rims[0].Contains(TEXT("brake_disc")));
+	TestFalse(TEXT("a tyre is not, by its name"), Rims[0].Contains(TEXT("M_Part_11_tyre")));
+	TestTrue(TEXT("a section named as a rim is still one"), Rims[0].Contains(TEXT("alloy [WHEEL]")));
+	TestEqual(TEXT("the rim reaches as far as the rim sections do"), Reach[0], 30.0, 0.5);
+	TestEqual(TEXT("and the sections that are not the wheels' say nothing"), Notes.Num(), 0);
+
+	// A wheel whose radius is not known cannot tell a rim from a tire: a neutral name is left alone.
+	Notes.Reset();
+	const TArray<double> Unknown = { 0.0, 0.0 };
+	const TArray<TArray<FString>> NoRadius = FMantleVehicleRims::Find(Body, Bones, Unknown, Sections, Notes);
+	TestFalse(TEXT("with no radius a neutral name is not a rim"), NoRadius[0].Contains(TEXT("M_Part_07")));
+	TestTrue(TEXT("a named rim still is"), NoRadius[0].Contains(TEXT("alloy [WHEEL]")));
 	return true;
 }
 

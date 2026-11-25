@@ -162,6 +162,15 @@ public:
 	static TArray<FMantleVehicleWheelBone> FindWheelBones(const FReferenceSkeleton& Skeleton);
 
 	/**
+	 * The wheels of a body that a ChaosVehicles movement component set up (Setups, each naming the bone of its wheel): with two or more, and every one of them a bone of
+	 * Skeleton (not the root), those bones are the wheels, whatever they are called. Each one's corner is where its bone sits (front to back by X, in axles: the first is the
+	 * front, the last the back, any between them middle; left is -Y, right +Y; a bone on the center line has no side), so a car whose bones are called FLWheel, Wheel1 or
+	 * B_Wheel_Front_Left, or a scooter's FrontWheel and RearWheel, converts as one named by the recipe does. With no setups, or one that names a bone the skeleton lacks, it is
+	 * FindWheelBones(Skeleton), the names. OutHow, when given, says in plain words where the wheels came from.
+	 */
+	static TArray<FMantleVehicleWheelBone> FindWheelBones(const FReferenceSkeleton& Skeleton, TConstArrayView<FMantleVehicleWheelSetup> Setups, FString* OutHow = nullptr);
+
+	/**
 	 * A bone name's corner as the recipe's naming spells it ("_fl", "_fr", "_ml", "_mr", "_bl", "_br"; "_rl"/"_rr" read as "_bl"/"_br"),
 	 * or as the word naming does (wheel_rear_no_spin_l is "_bl"); empty for none.
 	 */
@@ -206,7 +215,18 @@ public:
 	 * read from its physics (ReadChassisPhysics) when the tuning sets neither. A movement component's wheel setups size the wheels
 	 * that have no size of their own, and its mass and steering angle replace the tuning's while those are the defaults.
 	 */
-	static FMantleVehicleConversion Convert(USkeletalMesh* Mesh, UMantleVehicleSource& Source, const FMantleVehicleSurroundings& Around);
+	static FMantleVehicleConversion Convert(USkeletalMesh* Mesh, UMantleVehicleSource& Source, const FMantleVehicleSurroundings& Around, const FString& SplitFolder = FString());
+
+	/**
+	 * A body that draws more materials than a published vehicle's body may (FMantleVehicleLimits::MaxSections) does not stop Convert: it is split as the builder splits a
+	 * model (FMantleVehicleBodySplit): the body keeps the materials with the most triangles, up to the limit, and the triangles of the others become parts that ride the
+	 * bones they were weighted to, each with its material and place, so the vehicle looks as the model does. Mesh itself is not touched: the body is a copy of it, saved as
+	 * SKM_<Mesh>_Body with the parts beside it in SplitFolder (a game path; empty makes throwaway /Temp assets, nothing on disk). OutBody is that copy, OutParts the parts
+	 * (FoundOn FMantleVehicleBodySplit::FoundOn()), OutNotes what was done. False, with OutProblem a clause for a sentence, when the body cannot be split.
+	 * Source's lights and rims stay on the body, where the game switches them.
+	 */
+	static bool SplitExtraMaterials(USkeletalMesh& Mesh, const UMantleVehicleSource& Source, const FString& SplitFolder, USkeletalMesh*& OutBody, TArray<FMantleVehicleSourcePart>& OutParts,
+		TArray<FString>& OutNotes, FString& OutProblem);
 
 	/**
 	 * Convert, into <Mesh>_Vehicle beside the mesh (made, or updated keeping its tuning, parts and the collision and center of
@@ -306,6 +326,23 @@ public:
 	 * a tire, a lamp, a brake or the like. Such a picture is a mask for the game to tint (FMantleBakeSurface::bTintMask), the one place a picture's color is changed.
 	 */
 	static bool IsGtaTintLayer(const FString& Name, const UMaterialInterface* Material);
+
+	/**
+	 * The rim sections to put on a Wheels paint layer (rims start paintable): the rims found on the wheels (Wheels > Rim Sections, all wheels, each once) that are among BodySections
+	 * and in no other place the paint already has (Paint > Sections or another layer's sections), and not a GTA tint layer (IsGtaTintLayer: GTA's own path owns those). Materials go with BodySections by index. Empty when the source already has a Wheels layer: that one is the creator's, or the
+	 * first convert's, and is left as it is. Exposed for tests.
+	 */
+	static TArray<FString> RimLayerSections(const UMantleVehicleSource& Source, const TArray<FString>& BodySections, const TArray<UMaterialInterface*>& Materials);
+
+	/**
+	 * The color a Wheels layer starts with so the rims look as they did: the client keeps the original picture and tints it by this, so white shows the picture as it is.
+	 * bPicture: the material has a base color picture. bHasColor: it has a base color (a factor, else a single color). With a picture the color is the factor unless that is white;
+	 * with none it is the material's own base color. Exposed for tests.
+	 */
+	static FLinearColor RimStartColor(bool bPicture, bool bHasColor, const FLinearColor& Color);
+
+	/** The finish nearest to a rim's own metallic and roughness: shiny metal is Chrome, other metal Metallic, shiny non-metal Gloss, the rest Matte. Exposed for tests. */
+	static EMantleVehicleSourcePaintFinish RimStartFinish(float Metallic, float Roughness);
 
 	/** The name the vehicle document writes for a paint finish ("gloss", ..., "plastic_smooth", "soft_rubber"). Exposed for tests. */
 	static const TCHAR* PaintFinishDocumentName(EMantleVehicleSourcePaintFinish Finish);

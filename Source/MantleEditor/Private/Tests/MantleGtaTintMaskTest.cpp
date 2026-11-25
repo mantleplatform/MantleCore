@@ -99,7 +99,9 @@ bool FMantleGtaTintMaskNamesTest::RunTest(const FString&)
 		TestTrue(*FString::Printf(TEXT("%s is a GTA tint layer"), Name), FMantleVehicleConverter::IsGtaTintLayer(Name, Plain.Get()));
 	}
 	// Nothing else is: not a body, a rim by another name, glass or a tire that carries the word.
-	for (const TCHAR* Name : { TEXT("body"), TEXT("alloy_rim"), TEXT("carbon_fiber"), TEXT("glass__PRIMARY_"), TEXT("tire__WHEEL_") })
+	for (const TCHAR* Name : { TEXT("body"), TEXT("alloy_rim"), TEXT("carbon_fiber"), TEXT("glass__PRIMARY_"), TEXT("tire__WHEEL_"),
+		// A Fab pack's rims (SUV04, 2026-11-24): the word is inside another name, not GTA's marker, so the rims keep their own look instead of white paint.
+		TEXT("WheelSet_07"), TEXT("MI_WheelSet_05_Inst"), TEXT("Wheel"), TEXT("primary_paint") })
 	{
 		TestFalse(*FString::Printf(TEXT("%s is not a GTA tint layer"), Name), FMantleVehicleConverter::IsGtaTintLayer(Name, Plain.Get()));
 	}

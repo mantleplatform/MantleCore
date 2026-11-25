@@ -1,6 +1,9 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleBuilder.h"
+#include "MantleVehicleBodySplit.h"
+#include "MantleVehicleChassisMesh.h"
+#include "MantleVehicleLightFinder.h"
 #include "MantleVehicleChassisSkin.h"
 #include "MantleVehicleRimFinder.h"
 #include "MantleVehicleBodyLODs.h"
@@ -425,14 +428,59 @@ namespace MantleVehicleConverterPrivate
 		return true;
 	}
 
+	/** A bone name with "_" put in where a capital starts a word (FLWheel is FL_Wheel, WheelFL is Wheel_FL, FrontLeftWheel is Front_Left_Wheel); the rest as it was. */
+	FString VehicleSnake(const FString& Bone)
+	{
+		FString Out;
+		for (int32 Index = 0; Index < Bone.Len(); ++Index)
+		{
+			const TCHAR Letter = Bone[Index];
+			if (Index > 0 && FChar::IsUpper(Letter))
+			{
+				const TCHAR Last = Bone[Index - 1];
+				const TCHAR Next = Index + 1 < Bone.Len() ? Bone[Index + 1] : TEXT('\0');
+				if (FChar::IsLower(Last) || (FChar::IsUpper(Last) && FChar::IsLower(Next)))
+				{
+					Out.AppendChar(TEXT('_'));
+				}
+			}
+			Out.AppendChar(Letter);
+		}
+		return Out;
+	}
+
+	/** A word that is a corner on its own, as the recipe spells it (fl, fr, ml, mr, bl, br, rl, rr) or GTA does (lf, rf, lm, rm, lr). */
+	bool VehicleCornerCode(const FString& Word, int32& OutAxle, bool& bOutLeft)
+	{
+		struct FCode
+		{
+			const TCHAR* Word;
+			int32 Axle;
+			bool bLeft;
+		};
+		static const FCode Codes[] = { { TEXT("fl"), 0, true }, { TEXT("fr"), 0, false }, { TEXT("ml"), 1, true }, { TEXT("mr"), 1, false }, { TEXT("bl"), 2, true },
+			{ TEXT("br"), 2, false }, { TEXT("rl"), 2, true }, { TEXT("rr"), 2, false }, { TEXT("lf"), 0, true }, { TEXT("rf"), 0, false }, { TEXT("lm"), 1, true },
+			{ TEXT("rm"), 1, false }, { TEXT("lr"), 2, true } };
+		for (const FCode& Code : Codes)
+		{
+			if (Word.Equals(Code.Word, ESearchCase::CaseSensitive))
+			{
+				OutAxle = Code.Axle;
+				bOutLeft = Code.bLeft;
+				return true;
+			}
+		}
+		return false;
+	}
+
 	/**
-	 * A bone name's corner in the word naming (wheel_front_l, Wheel_Rear_Right, left_front_wheel): its words split on "_", any
-	 * case, a position word anywhere (front; middle or mid; rear or back) and a side word first or last (l, left, r, right).
+	 * A bone name's corner in the word naming (wheel_front_l, Wheel_Rear_Right, left_front_wheel, FrontLeftWheel): its words split on "_" and at capitals, any
+	 * case, a position word anywhere (front; middle or mid; rear or back) and a side word first or last (l, left, r, right), or "left" or "right" anywhere.
 	 */
 	bool VehicleWordCorner(const FString& Bone, int32& OutAxle, bool& bOutLeft)
 	{
 		TArray<FString> Words;
-		Bone.ToLower().ParseIntoArray(Words, TEXT("_"), /*InCullEmpty*/ true);
+		VehicleSnake(Bone).ToLower().ParseIntoArray(Words, TEXT("_"), /*InCullEmpty*/ true);
 		if (Words.Num() < 2)
 		{
 			return false;
@@ -444,7 +492,20 @@ namespace MantleVehicleConverterPrivate
 		};
 		if (!Side(Words.Last(), bOutLeft) && !Side(Words[0], bOutLeft))
 		{
-			return false;
+			// "front_left_wheel": the side is a whole word of its own, not a lone letter, anywhere.
+			bool bFoundSide = false;
+			for (const FString& Word : Words)
+			{
+				if (Word.Len() > 1 && Side(Word, bOutLeft))
+				{
+					bFoundSide = true;
+					break;
+				}
+			}
+			if (!bFoundSide)
+			{
+				return false;
+			}
 		}
 		for (const FString& Word : Words)
 		{
@@ -684,10 +745,12 @@ bool FMantleVehicleConverter::IsUploadedId(const FString& Id)
 	return true;
 }
 
-bool FMantleVehicleConverter::ParseWheelBoneName(const FString& Bone, FMantleVehicleWheelBone& Out)
+bool FMantleVehicleConverter::ParseWheelBoneName(const FString& BoneName, FMantleVehicleWheelBone& Out)
 {
 	using namespace MantleVehicleConverterPrivate;
 	Out.bCenter = false;
+	// A capital that starts a word is a word break (FLWheel is FL_Wheel; B_NYC_Car02_WheelFL is B_NYC_Car02_Wheel_FL); the bone keeps its own name.
+	const FString Bone = VehicleSnake(BoneName);
 	// A steering pivot, a part that does not spin or a hub named like its wheel is not the wheel: the one beside it without those words is.
 	if (VehicleWheelHelper(Bone))
 	{
@@ -715,7 +778,7 @@ bool FMantleVehicleConverter::ParseWheelBoneName(const FString& Bone, FMantleVeh
 		if (Lower.EndsWith(Corner.Suffix, ESearchCase::CaseSensitive)
 			&& Lower.LeftChop(FCString::Strlen(Corner.Suffix)).Contains(TEXT("wheel"), ESearchCase::CaseSensitive))
 		{
-			Out.Bone = FName(*Bone);
+			Out.Bone = FName(*BoneName);
 			Out.Axle = Corner.Axle;
 			Out.bLeft = Corner.bLeft;
 			return true;
@@ -729,10 +792,25 @@ bool FMantleVehicleConverter::ParseWheelBoneName(const FString& Bone, FMantleVeh
 	const bool bWheelWord = Words.ContainsByPredicate([](const FString& Word) { return Word.Contains(TEXT("wheel"), ESearchCase::CaseSensitive); });
 	if (bWheelWord && VehicleWordCorner(Bone, Axle, bLeft))
 	{
-		Out.Bone = FName(*Bone);
+		Out.Bone = FName(*BoneName);
 		Out.Axle = Axle;
 		Out.bLeft = bLeft;
 		return true;
+	}
+	// The corner before the word wheel, which ends the name (B_FL_Wheel1, FL_Wheel): not Wheel_FL_Brake, which is the brake of the wheel.
+	if (bWheelWord && Words.Num() > 1 && Words.Last().Contains(TEXT("wheel"), ESearchCase::CaseSensitive))
+	{
+		for (int32 Index = 0; Index + 1 < Words.Num(); ++Index)
+		{
+			const FString& Word = Words[Index];
+			if (VehicleCornerCode(Word, Axle, bLeft))
+			{
+				Out.Bone = FName(*BoneName);
+				Out.Axle = Axle;
+				Out.bLeft = bLeft;
+				return true;
+			}
+		}
 	}
 	// A wheel on the center line (a motorcycle's two, a plane's nose wheel; #821): "wheel" and a position word and no side, as wheel_f and wheel_r, wheel_front and
 	// wheel_rear. Front is the front axle; rear, with the other corners' _R, is the back one.
@@ -742,7 +820,7 @@ bool FMantleVehicleConverter::ParseWheelBoneName(const FString& Bone, FMantleVeh
 		const bool bRear = Words.Contains(TEXT("r")) || Words.Contains(TEXT("rear")) || Words.Contains(TEXT("back"));
 		if (bFront != bRear)
 		{
-			Out.Bone = FName(*Bone);
+			Out.Bone = FName(*BoneName);
 			Out.Axle = bFront ? 0 : 2;
 			Out.bLeft = false;
 			Out.bCenter = true;
@@ -750,6 +828,92 @@ bool FMantleVehicleConverter::ParseWheelBoneName(const FString& Bone, FMantleVeh
 		}
 	}
 	return false;
+}
+
+TArray<FMantleVehicleWheelBone> FMantleVehicleConverter::FindWheelBones(const FReferenceSkeleton& Skeleton, const TConstArrayView<FMantleVehicleWheelSetup> Setups, FString* OutHow)
+{
+	using namespace MantleVehicleConverterPrivate;
+	// The bones the movement component's wheel setups name, each once: all of them must be bones of the skeleton (the root is the chassis's), or the names decide.
+	TArray<int32> SetupBones;
+	bool bAllThere = Setups.Num() > 0;
+	for (const FMantleVehicleWheelSetup& Setup : Setups)
+	{
+		const int32 Bone = Skeleton.FindRawBoneIndex(Setup.Bone);
+		if (Bone <= 0)
+		{
+			bAllThere = false;
+			break;
+		}
+		SetupBones.AddUnique(Bone);
+	}
+	if (!bAllThere || SetupBones.Num() < FMantleVehicleLimits::MinWheels)
+	{
+		if (OutHow && Setups.Num() > 0 && !bAllThere)
+		{
+			*OutHow = TEXT("The original vehicle's wheel settings name a bone this model does not have, so the wheels were found by their names.");
+		}
+		return FindWheelBones(Skeleton);
+	}
+
+	// Front to back by X (a gap of more than 30 cm starts the next axle), left (-Y) before right; a bone on the center line has no side.
+	const TArray<FTransform> Pose = VehicleComponentPose(Skeleton);
+	struct FPlaced
+	{
+		int32 Bone = 0;
+		double X = 0.0;
+		double Y = 0.0;
+		int32 Axle = 0;
+	};
+	TArray<FPlaced> Placed;
+	for (const int32 Bone : SetupBones)
+	{
+		FPlaced& Entry = Placed.AddDefaulted_GetRef();
+		Entry.Bone = Bone;
+		Entry.X = Pose[Bone].GetLocation().X;
+		Entry.Y = Pose[Bone].GetLocation().Y;
+	}
+	Placed.StableSort([](const FPlaced& A, const FPlaced& B) { return A.X > B.X; });
+	int32 Clusters = 0;
+	TArray<int32> ClusterOf;
+	for (int32 Index = 0; Index < Placed.Num(); ++Index)
+	{
+		if (Index > 0 && Placed[Index - 1].X - Placed[Index].X > 30.0)
+		{
+			++Clusters;
+		}
+		ClusterOf.Add(Clusters);
+	}
+	++Clusters;
+	TArray<FMantleVehicleWheelBone> Out;
+	for (int32 Index = 0; Index < Placed.Num(); ++Index)
+	{
+		FMantleVehicleWheelBone Wheel;
+		Wheel.Bone = Skeleton.GetBoneName(Placed[Index].Bone);
+		Wheel.Axle = ClusterOf[Index] == 0 ? 0 : (ClusterOf[Index] == Clusters - 1 ? 2 : 1);
+		Wheel.bCenter = FMath::Abs(Placed[Index].Y) < 5.0;
+		Wheel.bLeft = !Wheel.bCenter && Placed[Index].Y < 0.0;
+		Placed[Index].Axle = Wheel.Axle;
+		Out.Add(Wheel);
+	}
+	Out.StableSort([&Placed, &Skeleton](const FMantleVehicleWheelBone& A, const FMantleVehicleWheelBone& B)
+	{
+		if (A.Axle != B.Axle)
+		{
+			return A.Axle < B.Axle;
+		}
+		const FPlaced* PlacedA = Placed.FindByPredicate([&](const FPlaced& Entry) { return Skeleton.GetBoneName(Entry.Bone) == A.Bone; });
+		const FPlaced* PlacedB = Placed.FindByPredicate([&](const FPlaced& Entry) { return Skeleton.GetBoneName(Entry.Bone) == B.Bone; });
+		if (PlacedA && PlacedB && !FMath::IsNearlyEqual(PlacedA->X, PlacedB->X, 1.0))
+		{
+			return PlacedA->X > PlacedB->X;
+		}
+		return A.bLeft && !B.bLeft;
+	});
+	if (OutHow)
+	{
+		*OutHow = TEXT("The wheels are the bones the original vehicle's wheel settings name, and each one's corner is where its bone sits (front or back by length, left or right by side), not what the bone is called.");
+	}
+	return Out;
 }
 
 TArray<FMantleVehicleWheelBone> FMantleVehicleConverter::FindWheelBones(const FReferenceSkeleton& Skeleton)
@@ -827,7 +991,7 @@ FString FMantleVehicleConverter::CornerOf(const FString& Bone)
 {
 	static const TCHAR* const Corners[] = { TEXT("_fl"), TEXT("_fr"), TEXT("_ml"), TEXT("_mr"), TEXT("_bl"), TEXT("_br"), TEXT("_rl"), TEXT("_rr"),
 		TEXT("_lf"), TEXT("_rf"), TEXT("_lm"), TEXT("_rm"), TEXT("_lr") };
-	const FString Lower = Bone.ToLower();
+	const FString Lower = MantleVehicleConverterPrivate::VehicleSnake(Bone).ToLower();
 	for (const TCHAR* Corner : Corners)
 	{
 		if (Lower.Len() > 3 && Lower.EndsWith(Corner, ESearchCase::CaseSensitive))
@@ -852,6 +1016,21 @@ FString FMantleVehicleConverter::CornerOf(const FString& Bone)
 	{
 		static const TCHAR* const Axles[] = { TEXT("_f"), TEXT("_m"), TEXT("_b") };
 		return FString(Axles[Axle]) + (bLeft ? TEXT("l") : TEXT("r"));
+	}
+	// A wheel's corner before the word wheel or a number after it (B_FL_Wheel1), spelt as the suffix naming spells it.
+	TArray<FString> CornerWords;
+	Lower.ParseIntoArray(CornerWords, TEXT("_"), /*InCullEmpty*/ true);
+	if (CornerWords.Num() > 1 && CornerWords.Last().Contains(TEXT("wheel"), ESearchCase::CaseSensitive))
+	{
+		for (int32 Index = 0; Index + 1 < CornerWords.Num(); ++Index)
+		{
+			const FString& Word = CornerWords[Index];
+			if (MantleVehicleConverterPrivate::VehicleCornerCode(Word, Axle, bLeft))
+			{
+				static const TCHAR* const Axles[] = { TEXT("_f"), TEXT("_m"), TEXT("_b") };
+				return FString(Axles[Axle]) + (bLeft ? TEXT("l") : TEXT("r"));
+			}
+		}
 	}
 	return FString();
 }
@@ -1187,7 +1366,7 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 	return Convert(Mesh, Source, Mesh ? SurroundingsOfMesh(*Mesh) : FMantleVehicleSurroundings());
 }
 
-FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, UMantleVehicleSource& Source, const FMantleVehicleSurroundings& Around)
+FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, UMantleVehicleSource& Source, const FMantleVehicleSurroundings& Around, const FString& SplitFolder)
 {
 	using namespace MantleVehicleConverterPrivate;
 	FMantleVehicleConversion Result;
@@ -1205,10 +1384,11 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 			*Name, NumBones, FMantleVehicleLimits::MaxBones));
 	}
 
-	const TArray<FMantleVehicleWheelBone> Wheels = FindWheelBones(Skeleton);
+	FString WheelsHow;
+	const TArray<FMantleVehicleWheelBone> Wheels = FindWheelBones(Skeleton, Around.WheelSetups, &WheelsHow);
 	if (Wheels.Num() < FMantleVehicleLimits::MinWheels || Wheels.Num() > FMantleVehicleLimits::MaxWheels)
 	{
-		Result.Problems.Add(FString::Printf(TEXT("%s has %d wheels (%s), but a vehicle has %d to %d. Name each wheel so its name contains \"wheel\" and ends in its corner, such as Wheel_FL, Wheel_FR, Wheel_BL and Wheel_BR (_ML/_MR for a middle axle) or wheel_front_l and wheel_rear_r, and re-import it."),
+		Result.Problems.Add(FString::Printf(TEXT("%s has %d wheels (%s), but a vehicle has %d to %d. Name each wheel so its name contains \"wheel\" and its corner, such as Wheel_FL, Wheel_FR, Wheel_BL and Wheel_BR (_ML/_MR for a middle axle), FLWheel or wheel_front_l and wheel_rear_r, and re-import it."),
 			*Name, Wheels.Num(), *VehicleBoneList(Wheels), FMantleVehicleLimits::MinWheels, FMantleVehicleLimits::MaxWheels));
 	}
 	else if (!Wheels.ContainsByPredicate([](const FMantleVehicleWheelBone& Wheel) { return Wheel.Axle == 0; }))
@@ -1237,6 +1417,7 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 	TArray<UMaterialInterface*> Materials;
 	int32 Triangles = 0;
 	FString Error;
+	bool bSplitMaterials = false;
 	if (!FMantleCosmeticExport::ReadSkeletalMesh(Mesh, 0, Body, Materials, Triangles, Error))
 	{
 		Result.Problems.Add(Error);
@@ -1248,15 +1429,36 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 			Result.Problems.Add(FString::Printf(TEXT("%s has %d triangles; a vehicle body has at most %d. Use a lower-detail version of it."),
 				*Name, Triangles, FMantleVehicleLimits::MaxTriangles));
 		}
-		if (Body.MaterialNames.Num() > FMantleVehicleLimits::MaxSections)
-		{
-			Result.Problems.Add(FString::Printf(TEXT("%s has %d materials; a vehicle body has at most %d. Merge some of its materials and re-import it, or build it with Build a vehicle on a Mantle chassis, which carries the extra materials as parts for you."),
-				*Name, Body.MaterialNames.Num(), FMantleVehicleLimits::MaxSections));
-		}
+		bSplitMaterials = Body.MaterialNames.Num() > FMantleVehicleLimits::MaxSections;
 	}
 	if (Result.Problems.Num() > 0)
 	{
 		return Result;
+	}
+
+	// More materials than a published body may have: its extras ride along as parts, as the builder carries them (SplitExtraMaterials). The body is then the copy that keeps
+	// the most-used materials; the model the creator made is not touched. Parts a split made before are made afresh below, so they are not "the creator's".
+	Source.Parts.RemoveAll([](const FMantleVehicleSourcePart& Part) { return Part.FoundOn == FMantleVehicleBodySplit::FoundOn(); });
+	TArray<FMantleVehicleSourcePart> SplitParts;
+	TArray<FString> SplitNotes;
+	if (bSplitMaterials)
+	{
+		USkeletalMesh* SplitBody = nullptr;
+		FString SplitProblem;
+		if (!SplitExtraMaterials(*Mesh, Source, SplitFolder, SplitBody, SplitParts, SplitNotes, SplitProblem) || !SplitBody)
+		{
+			Result.Problems.Add(FString::Printf(TEXT("%s has %d materials and a vehicle body has at most %d. Mantle tried to carry the extra ones as separate parts, but %s. Merge some of its materials in your 3D tool and re-import it."),
+				*Name, Body.MaterialNames.Num(), FMantleVehicleLimits::MaxSections, SplitProblem.IsEmpty() ? TEXT("it could not") : *SplitProblem));
+			return Result;
+		}
+		Mesh = SplitBody;
+		Body = FMantleGlbMesh();
+		Materials.Reset();
+		if (!FMantleCosmeticExport::ReadSkeletalMesh(Mesh, 0, Body, Materials, Triangles, Error) || Body.MaterialNames.Num() > FMantleVehicleLimits::MaxSections)
+		{
+			Result.Problems.Add(FString::Printf(TEXT("%s's split body could not be read back (%s)."), *Name, Error.IsEmpty() ? TEXT("it still has too many materials") : *Error));
+			return Result;
+		}
 	}
 
 	// What the creator already set for a wheel (its steering, a tire mesh, a size) is kept.
@@ -1347,7 +1549,26 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 	{
 		PartNotes.Add(FString::Printf(TEXT("Attached parts: your %d are kept."), Source.Parts.Num()));
 	}
+	if (SplitParts.Num() > 0)
+	{
+		Source.Parts.Append(SplitParts);
+		PartNotes.Append(SplitNotes);
+		if (Source.Parts.Num() > FMantleVehicleLimits::MaxParts)
+		{
+			PartNotes.Add(FString::Printf(TEXT("That is more than the %d parts a vehicle may have: remove some under Parts before publishing."), FMantleVehicleLimits::MaxParts));
+		}
+	}
 
+	{
+		TArray<FString> Described;
+		for (const FMantleVehicleWheelBone& Found : Wheels)
+		{
+			Described.Add(FString::Printf(TEXT("%s (%s%s)"), *Found.Bone.ToString(), Found.Axle == 0 ? TEXT("front") : (Found.Axle == 1 ? TEXT("middle") : TEXT("rear")),
+				Found.bCenter ? TEXT("") : (Found.bLeft ? TEXT(" left") : TEXT(" right"))));
+		}
+		Result.Notes.Add(FString::Printf(TEXT("Wheels: %s. %s"), *FString::Join(Described, TEXT(", ")),
+			WheelsHow.IsEmpty() ? TEXT("Found by their names.") : *WheelsHow));
+	}
 	for (const FMantleVehicleSourceWheel& Entry : Source.Wheels)
 	{
 		FMantleVehicleWheelBone Wheel;
@@ -1467,6 +1688,43 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 		if (LeftOut.Num() > 0)
 		{
 			Result.Notes.Add(FString::Printf(TEXT("Not given a paint layer: %s."), *FString::Join(LeftOut, TEXT("; "))));
+		}
+	}
+	// The rims start paintable (they are found above, by their geometry): a Wheels layer holding them, wearing the rims' own look, unless the source already has a Wheels layer.
+	{
+		const TArray<FString> RimLayer = RimLayerSections(Source, Sections, Materials);
+		if (RimLayer.Num() > 0)
+		{
+			const UMaterialInterface* RimMaterial = nullptr;
+			for (const FString& Rim : RimLayer)
+			{
+				const int32 Index = Sections.IndexOfByKey(Rim);
+				if (Materials.IsValidIndex(Index) && Materials[Index])
+				{
+					RimMaterial = Materials[Index];
+					break;
+				}
+			}
+			FLinearColor Factor = FLinearColor::White;
+			bool bHasColor = false;
+			UTexture* Picture = nullptr;
+			if (RimMaterial)
+			{
+				FMantlePlaceAssets::BaseColorParts(RimMaterial, Factor, bHasColor, Picture);
+				if (!Picture)
+				{
+					bHasColor = FMantlePlaceAssets::BaseColorValue(RimMaterial, Factor);
+				}
+			}
+			float Metallic = 0.f;
+			float Roughness = 1.f;
+			const bool bKnownSurface = RimMaterial && FMantlePlaceAssets::SurfaceMetallicRoughness(RimMaterial, Metallic, Roughness);
+			FMantleVehicleSourcePaintLayer& Layer = MantleVehicleConverterPrivate::EnsurePaintLayer(Source.Paint, EMantleVehicleSourcePaintLayer::Wheels);
+			Layer.Sections = RimLayer;
+			Layer.Color = RimStartColor(Picture != nullptr, bHasColor, Factor);
+			Layer.Finish = bKnownSurface ? RimStartFinish(Metallic, Roughness) : EMantleVehicleSourcePaintFinish::Gloss;
+			Result.Notes.Add(FString::Printf(TEXT("Paint layer wheels: %s, starting as the rims' own look (%s finish). A color a script picks tints the rims' own picture. Change it under Paint > Layers in the vehicle asset."),
+				*FString::Join(RimLayer, TEXT(", ")), PaintFinishDocumentName(Layer.Finish)));
 		}
 	}
 	TArray<const UMaterialInterface*> BodyPaintMaterials;
@@ -1666,6 +1924,93 @@ void FMantleVehicleConverter::AddHinges(const FMantleVehicleModel& Model, const 
 	OutNotes.Append(Notes);
 }
 
+bool FMantleVehicleConverter::SplitExtraMaterials(USkeletalMesh& Mesh, const UMantleVehicleSource& Source, const FString& SplitFolder, USkeletalMesh*& OutBody,
+	TArray<FMantleVehicleSourcePart>& OutParts, TArray<FString>& OutNotes, FString& OutProblem)
+{
+	OutBody = nullptr;
+	OutParts.Reset();
+	// The model as the builder reads it: geometry with its bones and pose, its material slots, and its other UV channels and vertex colors.
+	FMantleVehicleModel Model;
+	FString Why;
+	if (!FMantleVehicleModel::Read(&Mesh, Model, Why))
+	{
+		OutProblem = FString::Printf(TEXT("its shape could not be read (%s)"), *Why);
+		return false;
+	}
+	FMantleSkinnedMesh Body;
+	TArray<FSkeletalMaterial> Materials;
+	if (!FMantleSkinnedMesh::ExtractFromSkeletalMesh(&Mesh, Body, &Why, &Materials) || Body.LODs.Num() == 0 || Body.ReferencePose.Num() != Body.Bones.Num())
+	{
+		OutProblem = FString::Printf(TEXT("its shape could not be read (%s)"), *Why);
+		return false;
+	}
+	FMantleVehicleBodyExtras Extras;
+	Extras.UVs = Model.ExtraUVs;
+	Extras.Colors = Model.Colors;
+
+	// The light sections and the rims stay on the body, where the game switches them and a wheel swap hides them.
+	const TArray<FString> Sections = FMantleVehicleLights::SectionNames(Materials);
+	TSet<int32> KeepInBody;
+	for (int32 Slot = 0; Slot < Sections.Num(); ++Slot)
+	{
+		for (const EMantleLightKind Kind : { EMantleLightKind::Head, EMantleLightKind::Rear, EMantleLightKind::Reverse, EMantleLightKind::Left, EMantleLightKind::Right })
+		{
+			if (FMantleVehicleLights::Sections(Source.Lights, Kind).Contains(Sections[Slot]))
+			{
+				KeepInBody.Add(Slot);
+			}
+		}
+		if (FMantleVehicleRims::NameIsRim(Sections[Slot]))
+		{
+			KeepInBody.Add(Slot);
+		}
+	}
+
+	FMantleVehicleBodySplitResult Split;
+	if (!FMantleVehicleBodySplit::Split(Body, Materials, Extras, FMantleVehicleLimits::MaxSections, FMantleVehicleLimits::MaxPartMaterials, FMantleVehicleLimits::MaxParts, Split, KeepInBody))
+	{
+		OutProblem = Split.Problem;
+		return false;
+	}
+	if (Split.Pieces.Num() == 0)
+	{
+		OutProblem = TEXT("it draws no more materials than a body may have (it has material slots it does not use: remove them)");
+		return false;
+	}
+
+	// The body is a copy of the model (the model is the creator's); its parts are saved beside it. With no folder they are throwaway /Temp assets.
+	// A throwaway split (a preview's) gets a name of its own each time, so one made a moment ago is never written into.
+	const FString Name = Mesh.GetName() + TEXT("_Body") + (SplitFolder.IsEmpty() ? TEXT("_") + FGuid::NewGuid().ToString(EGuidFormats::Digits).Left(8) : FString());
+	const FString Folder = (SplitFolder.IsEmpty() ? FString(TEXT("/Temp/MantleVehicleConvert")) : SplitFolder) / Name;
+	FString MeshError;
+	USkeletalMesh* BodyMesh = FMantleVehicleChassisMesh::Create(Body, Folder, Name, MeshError, &Materials, &Extras);
+	if (!BodyMesh)
+	{
+		OutProblem = MeshError;
+		return false;
+	}
+	for (int32 Number = 0; Number < Split.Pieces.Num(); ++Number)
+	{
+		const FMantleVehicleBodyPiece& Piece = Split.Pieces[Number];
+		UStaticMesh* PieceMesh = FMantleVehicleBodySplit::MakePieceMesh(Piece, Folder, FMantleVehicleBodySplit::PieceAssetName(Name, Number + 1), MeshError);
+		if (!PieceMesh)
+		{
+			OutProblem = MeshError;
+			return false;
+		}
+		FMantleVehicleSourcePart& Part = OutParts.AddDefaulted_GetRef();
+		Part.Mesh = PieceMesh;
+		Part.Bone = Piece.Bone;
+		Part.Transform = Piece.ToBone;
+		Part.FoundOn = FMantleVehicleBodySplit::FoundOn();
+	}
+	OutBody = BodyMesh;
+	OutNotes.Add(FString::Printf(TEXT("%s draws %d different materials, and a published vehicle's body may have %d, so Mantle split it for you: the vehicle's body (%s, a copy beside your model) keeps the %d with the most triangles, and the other %d ride along as %d extra part%s saved with it. It looks exactly as your model does, your own model was not changed, and there is nothing for you to do."),
+		*Mesh.GetName(), Split.MaterialsBefore, FMantleVehicleLimits::MaxSections, *BodyMesh->GetName(), Split.MaterialsAfter, Split.MaterialsBefore - Split.MaterialsAfter,
+		OutParts.Num(), OutParts.Num() == 1 ? TEXT("") : TEXT("s")));
+	return true;
+}
+
 UMantleVehicleSource* FMantleVehicleConverter::ConvertAsset(USkeletalMesh* Mesh, FMantleVehicleConversion& OutResult, const FMantleVehicleSurroundings* Around)
 {
 	OutResult = FMantleVehicleConversion();
@@ -1700,7 +2045,7 @@ UMantleVehicleSource* FMantleVehicleConverter::ConvertAsset(USkeletalMesh* Mesh,
 		Scratch->Paint.Layers = Source->Paint.Layers;
 		Scratch->Linkage = Source->Linkage;
 		Scratch->Parts = Source->Parts;
-		OutResult = Convert(Mesh, *Scratch, Surroundings);
+		OutResult = Convert(Mesh, *Scratch, Surroundings, FPackageName::GetLongPackagePath(Mesh->GetOutermost()->GetName()));
 		if (!OutResult.bSuccess)
 		{
 			return nullptr;
@@ -1721,7 +2066,7 @@ UMantleVehicleSource* FMantleVehicleConverter::ConvertAsset(USkeletalMesh* Mesh,
 	}
 
 	UMantleVehicleSource* Scratch = NewObject<UMantleVehicleSource>(GetTransientPackage());
-	OutResult = Convert(Mesh, *Scratch, Surroundings);
+	OutResult = Convert(Mesh, *Scratch, Surroundings, FPackageName::GetLongPackagePath(Mesh->GetOutermost()->GetName()));
 	if (!OutResult.bSuccess)
 	{
 		return nullptr;
@@ -2226,7 +2571,7 @@ void FMantleVehicleConverter::SplitBodyPieces(const USkeletalMesh& Mesh, const F
 		double Radius = 0.0;
 	};
 	TArray<FWheelAt> Wheels;
-	for (const FMantleVehicleWheelBone& Named : FindWheelBones(Skeleton))
+	for (const FMantleVehicleWheelBone& Named : FindWheelBones(Skeleton, Around.WheelSetups))
 	{
 		FWheelAt& At = Wheels.AddDefaulted_GetRef();
 		At.Bone = Skeleton.FindRawBoneIndex(Named.Bone);
@@ -2477,7 +2822,76 @@ bool FMantleVehicleConverter::IsGtaTintLayer(const FString& Name, const UMateria
 	const bool bExcluded = HasWord(Words, { TEXT("glass"), TEXT("window"), TEXT("windows"), TEXT("windshield"), TEXT("windscreen"), TEXT("tire"), TEXT("tires"), TEXT("tyre"), TEXT("tyres"),
 		TEXT("rubber"), TEXT("chrome"), TEXT("carbon"), TEXT("lens"), TEXT("lights"), TEXT("lamp"), TEXT("lamps"), TEXT("headlight"), TEXT("headlights"), TEXT("taillight"),
 		TEXT("taillights"), TEXT("brake"), TEXT("brakes"), TEXT("steering"), TEXT("signal"), TEXT("signals") });
-	return !bExcluded && HasWord(Words, { TEXT("primary"), TEXT("secondary"), TEXT("wheel") });
+	if (bExcluded)
+	{
+		return false;
+	}
+	// The marker is GTA's own spelling: PRIMARY, SECONDARY or WHEEL in capitals, a whole part of the name between underscores (vehicle_generic_smallspecmap__WHEEL_).
+	// A word inside another name is not one: a Fab pack's WheelSet_07 or MI_WheelSet_05_Inst is a rim with its own look, and a layer would draw it in white paint.
+	TArray<FString> Parts;
+	Name.ParseIntoArray(Parts, TEXT("_"), /*bCullEmpty*/ true);
+	if (Material)
+	{
+		TArray<FString> MaterialParts;
+		Material->GetName().ParseIntoArray(MaterialParts, TEXT("_"), /*bCullEmpty*/ true);
+		Parts.Append(MaterialParts);
+	}
+	return Parts.ContainsByPredicate([](const FString& Part)
+	{
+		return Part.Equals(TEXT("PRIMARY"), ESearchCase::CaseSensitive) || Part.Equals(TEXT("SECONDARY"), ESearchCase::CaseSensitive)
+			|| Part.Equals(TEXT("WHEEL"), ESearchCase::CaseSensitive);
+	});
+}
+
+TArray<FString> FMantleVehicleConverter::RimLayerSections(const UMantleVehicleSource& Source, const TArray<FString>& BodySections, const TArray<UMaterialInterface*>& Materials)
+{
+	TArray<FString> Out;
+	if (Source.Paint.Layers.ContainsByPredicate([](const FMantleVehicleSourcePaintLayer& Layer) { return Layer.Layer == EMantleVehicleSourcePaintLayer::Wheels; }))
+	{
+		return Out;
+	}
+	for (const FMantleVehicleSourceWheel& Wheel : Source.Wheels)
+	{
+		for (const FString& Rim : Wheel.RimSections)
+		{
+			const bool bTaken = Source.Paint.Sections.Contains(Rim)
+				|| Source.Paint.Layers.ContainsByPredicate([&Rim](const FMantleVehicleSourcePaintLayer& Layer) { return Layer.Sections.Contains(Rim); });
+			const int32 Index = BodySections.IndexOfByKey(Rim);
+			// A GTA tint layer (a __WHEEL_ section, even one GuessPaintLayer left out as too dark) is GTA's own path's: it is not brought back here.
+			if (!bTaken && Index != INDEX_NONE && !IsGtaTintLayer(Rim, Materials.IsValidIndex(Index) ? Materials[Index] : nullptr))
+			{
+				Out.AddUnique(Rim);
+			}
+		}
+	}
+	return Out;
+}
+
+FLinearColor FMantleVehicleConverter::RimStartColor(const bool bPicture, const bool bHasColor, const FLinearColor& Color)
+{
+	if (!bHasColor)
+	{
+		return FLinearColor::White;
+	}
+	if (bPicture)
+	{
+		const bool bWhite = Color.R > 0.98f && Color.G > 0.98f && Color.B > 0.98f;
+		return bWhite ? FLinearColor::White : FLinearColor(Color.R, Color.G, Color.B, 1.f);
+	}
+	return FLinearColor(Color.R, Color.G, Color.B, 1.f);
+}
+
+EMantleVehicleSourcePaintFinish FMantleVehicleConverter::RimStartFinish(const float Metallic, const float Roughness)
+{
+	if (Metallic >= 0.8f)
+	{
+		return Roughness <= 0.25f ? EMantleVehicleSourcePaintFinish::Chrome : EMantleVehicleSourcePaintFinish::Metallic;
+	}
+	if (Metallic >= 0.5f)
+	{
+		return EMantleVehicleSourcePaintFinish::Metallic;
+	}
+	return Roughness <= 0.35f ? EMantleVehicleSourcePaintFinish::Gloss : EMantleVehicleSourcePaintFinish::Matte;
 }
 
 bool FMantleVehicleConverter::BodySectionIsTintMask(const UMantleVehicleSource& Source, const FString& Section, const UMaterialInterface* Material)

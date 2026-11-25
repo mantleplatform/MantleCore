@@ -8,8 +8,9 @@ struct FMantleGlbMesh;
 /**
  * The vehicle builder's rims (vehicle-customization-plan.md section 3): which sections of a car's body are the rims a wheel swap hides.
  *
- * A section is a rim when its name reads as one (the whole words rim, wheel, alloy, hub, spoke; never tire, tyre, rubber, brake, disc or caliper;
- * "trim" and "primary" are not "rim") and its geometry agrees: nearly all of its vertices (RimShare) are weighted mostly to a wheel's bone and sit within that wheel's radius around its axle (the
+ * A section is a rim when its geometry says so: no name is needed (a name with tire, tyre, rubber, brake, disc, caliper or steering in it keeps a section out, and
+ * "trim" and "primary" are not "rim"). A section with a neutral name must also stay inside the tire (reach under TireReach of the wheel's radius); one that reaches the outer edge is a tire.
+ * The geometry: nearly all of its vertices (RimShare) are weighted mostly to a wheel's bone and sit within that wheel's radius around its axle (the
  * distance in the plane the wheel turns in). A GTA car's `[WHEEL]` material is one section for all four wheels, so a section belongs to every wheel that owns some of it. A section
  * that mixes the wheel's triangles with the rest of the body (brake discs inside the body's own material) is left alone: hiding it would hide
  * the car. A car with no such section (the wheels are welded into the body) gets none, and its wheels simply cannot be swapped.
@@ -26,8 +27,17 @@ struct MANTLEEDITOR_API FMantleVehicleRims
 	/** How far past the wheel's radius (as a multiple) a rim vertex may sit from the bone: the rim is inside the tire, the margin covers a flared lip. */
 	static constexpr double RadiusMargin = 1.15;
 
+	/**
+	 * How far out (as a multiple of the wheel's radius) a section with a neutral name may reach and still be a rim: a rim sits inside the tire, so a section that reaches
+	 * the outer edge is the tire. A section named as a rim is not held to this.
+	 */
+	static constexpr double TireReach = 0.9;
+
 	/** Whether a section's name reads as a rim (and not as a tire or a brake). */
 	static bool NameIsRim(const FString& Section);
+
+	/** Whether a section's name says it is a tire, a brake, a disc, a caliper or the steering wheel: never a rim, whatever its geometry. */
+	static bool NameIsNotRim(const FString& Section);
 
 	/**
 	 * Per wheel (by Bones), the names of the body sections that are its rim. SectionNames is the body's unique section names by
