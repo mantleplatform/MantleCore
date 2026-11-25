@@ -13,6 +13,8 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionAdd.h"
 #include "Materials/MaterialExpressionConstant.h"
+#include "Materials/MaterialExpressionConstant3Vector.h"
+#include "Materials/MaterialExpressionIf.h"
 #include "Materials/MaterialExpressionLinearInterpolate.h"
 #include "Materials/MaterialExpressionMultiply.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
@@ -599,6 +601,39 @@ bool FMantleVehicleLightsGlowMaskTest::RunTest(const FString& Parameters)
 	Materials[0].MaterialInterface = Wide;
 	const FMantleVehicleLightGuess Rejected = FMantleVehicleLights::Find(Body, Materials, false);
 	TestFalse(TEXT("too wide a masked glow finds no light"), Rejected.FoundAny());
+
+	// MM_Lights02's shape: ONE texture sampled twice, once as the outer Lerp's Alpha (the mask) and once inside an If that picks the zone's color (and again as the
+	// base color). Only the mask node is set aside: the other samples stay glow and color inputs, so the red zone is a rear light.
+	{
+		UMaterial* Zones = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+		UTexture2D* Masks = MakeGlowTexture(Zones, TEXT("T_Lights_Masks"), FColor::White, { FIntPoint(2, 0) });
+		UMaterialExpressionConstant* Zero = AddNode<UMaterialExpressionConstant>(Zones);
+		Zero->R = 0.f;
+		UMaterialExpressionConstant* Half = AddNode<UMaterialExpressionConstant>(Zones);
+		Half->R = 0.5f;
+		UMaterialExpressionConstant3Vector* Red = AddNode<UMaterialExpressionConstant3Vector>(Zones);
+		Red->Constant = FLinearColor(1.f, 0.f, 0.f);
+		UMaterialExpressionIf* Pick = AddNode<UMaterialExpressionIf>(Zones);
+		Pick->A.Connect(1, AddSample(Zones, TEXT("TextureMasks"), Masks));
+		Pick->B.Connect(0, Half);
+		Pick->AGreaterThanB.Connect(0, Red);
+		Pick->AEqualsB.Connect(0, Zero);
+		Pick->ALessThanB.Connect(0, Zero);
+		UMaterialExpressionLinearInterpolate* Outer = AddNode<UMaterialExpressionLinearInterpolate>(Zones);
+		Outer->A.Connect(0, Zero);
+		Outer->B.Connect(0, Pick);
+		UMaterialExpressionTextureSampleParameter2D* MaskSample = AddSample(Zones, TEXT("TextureMasksUV0"), Masks);
+		Outer->Alpha.Connect(1, MaskSample);
+		Zones->GetEditorOnlyData()->EmissiveColor.Connect(0, Outer);
+		Zones->GetEditorOnlyData()->BaseColor.Connect(0, AddSample(Zones, TEXT("TextureMasksBase"), Masks));
+		Zones->UpdateCachedExpressionData();
+		TestTrue(TEXT("the zones material glows"), FMantleMaterialGlow::Read(Zones, Glow));
+		TestTrue(TEXT("the mask is the texture"), Glow.MaskTexture == Masks);
+		TestTrue(TEXT("the other samples of it are still glow textures"), Glow.Textures.Num() == 1 && Glow.Texture == Masks);
+		TestTrue(TEXT("and the base color's"), Glow.BaseTexture == Masks);
+		Materials[0].MaterialInterface = Zones;
+		TestEqual(TEXT("the red zone is a rear light"), FMantleVehicleLights::Find(Body, Materials, false).Triangles[static_cast<int32>(EMantleLightKind::Rear)], TArray<int32>({ 4, 5 }));
+	}
 
 	// A lens switched off in the model (its intensity at 0) still glows where its texture says: the front quads.
 	UMaterial* Lens = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);

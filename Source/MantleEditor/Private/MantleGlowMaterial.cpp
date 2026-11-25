@@ -983,7 +983,10 @@ bool FMantleMaterialGlow::Read(const UMaterialInterface* Material, FMantleMateri
 	// The first texture in pre-order, a mask excepted: what the base color is drawn with.
 	TFunction<const UMaterialExpressionTextureBase*(const FExpressionInput*, TSet<const UMaterialExpression*>&)> FirstTexture;
 	int32 Budget = NodeBudget;
-	FirstTexture = [&FirstTexture, &Budget, &Out, &TextureOf](const FExpressionInput* Input, TSet<const UMaterialExpression*>& Seen) -> const UMaterialExpressionTextureBase*
+	// The one sample node the glow's mask was read from. Only that node is set aside: the same texture sampled elsewhere (MM_Lights02 reads its zone colors from the
+	// texture it masks with, at another UV set) is still a glow or color input.
+	const UMaterialExpressionTextureBase* MaskNode = nullptr;
+	FirstTexture = [&FirstTexture, &Budget, &MaskNode](const FExpressionInput* Input, TSet<const UMaterialExpression*>& Seen) -> const UMaterialExpressionTextureBase*
 	{
 		const UMaterialExpression* Expression = Through(Input);
 		if (!Expression || --Budget < 0 || Seen.Contains(Expression))
@@ -993,18 +996,13 @@ bool FMantleMaterialGlow::Read(const UMaterialInterface* Material, FMantleMateri
 		Seen.Add(Expression);
 		if (const UMaterialExpressionTextureBase* Texture = Cast<UMaterialExpressionTextureBase>(Expression))
 		{
-			// The glow's mask only says where the glow shows: it is never the picture.
-			return Out.MaskTexture && TextureOf(Texture) == Out.MaskTexture ? nullptr : Texture;
+			// The glow's mask node only says where the glow shows: it is never the picture.
+			return Texture == MaskNode ? nullptr : Texture;
 		}
 		TArray<const FExpressionInput*> Feeds;
 		FeedingInputs(Input, Feeds);
-		const UMaterialExpressionLinearInterpolate* Lerp = Cast<UMaterialExpressionLinearInterpolate>(Expression);
 		for (const FExpressionInput* Feed : Feeds)
 		{
-			if (Lerp && Feed == &Lerp->Alpha)
-			{
-				continue;
-			}
 			if (const UMaterialExpressionTextureBase* Found = FirstTexture(Feed, Seen))
 			{
 				return Found;
@@ -1106,6 +1104,7 @@ bool FMantleMaterialGlow::Read(const UMaterialInterface* Material, FMantleMateri
 		}
 		if (MaskFeed && !Out.MaskTexture)
 		{
+			MaskNode = MaskRead.Sample;
 			Out.MaskTexture = TextureOf(MaskRead.Sample);
 			Out.MaskChannel = MaskRead.Channel;
 			Out.MaskUV = MaskRead.UV;
