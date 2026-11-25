@@ -723,11 +723,14 @@ bool FMantleVehicleLightsOwnMaterialTest::RunTest(const FString& Parameters)
 		bCut = bCut || Found.Triangles[Kind].Num() > 0 || (Kind != Head && Found.WholeSlots[Kind].Num() > 0);
 	}
 	TestFalse(TEXT("nothing is cut out of it or given another kind"), bCut);
-	// A printed body is no lamp: the beams fall back to the front corners (40% up the body), not the body's middle.
+	// A printed body is no lamp: the beams fall back to the front corners (70% out to each side, 40% up the body), not the body's middle.
 	TestEqual(TEXT("two beams"), Found.Beams.Num(), 2);
+	const FBox3f Bounds = Body.ComputeBounds(0);
 	for (const FMantleVehicleSourceLightBeam& Beam : Found.Beams)
 	{
-		TestTrue(TEXT("each at a front corner"), FMath::IsNearlyEqual(Beam.Position.X, 200.0) && FMath::IsNearlyEqual(Beam.Position.Z, 40.0, 0.01));
+		TestTrue(*FString::Printf(TEXT("each at a front corner (%s)"), *Beam.Position.ToString()), FMath::IsNearlyEqual(Beam.Position.X, static_cast<double>(Bounds.Max.X), 0.01)
+			&& FMath::IsNearlyEqual(FMath::Abs(Beam.Position.Y - Bounds.GetCenter().Y), Bounds.GetExtent().Y * 0.7, 0.01)
+			&& FMath::IsNearlyEqual(Beam.Position.Z, Bounds.Min.Z + Bounds.GetExtent().Z * 2.0 * 0.4, 0.01));
 	}
 
 	FMantleVehicleSourceLights Lights;
