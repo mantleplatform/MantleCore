@@ -696,7 +696,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FMantleVehicleDocumentGroundHandlingTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleDocumentTestPrivate;
-	const TArray<FVector2D> WantCurve = { FVector2D(0.0, 1.0), FVector2D(20.0, 0.8), FVector2D(60.0, 0.4), FVector2D(120.0, 0.3) };
+	const TArray<FVector2D> WantCurve = { FVector2D(0.0, 1.0), FVector2D(20.0, 0.8), FVector2D(25.0, 0.75), FVector2D(37.5, 0.53), FVector2D(56.0, 0.35),
+		FVector2D(75.0, 0.27), FVector2D(120.0, 0.24) };
 	int32 Grounded = 0;
 	for (const FString& Selector : Selectors())
 	{
@@ -719,7 +720,7 @@ bool FMantleVehicleDocumentGroundHandlingTest::RunTest(const FString& Parameters
 		const double Friction = (Spec.Derived.IsSet() ? Spec.Derived.GetValue() : Spec.Archetype).TireFriction;
 		TestTrue(*FString::Printf(TEXT("%s: the front grips 6/7 of the preset's friction (%g of %g)"), *Selector, D.TireFriction, Friction), FMath::IsNearlyEqual(D.TireFriction, Friction * 6.0 / 7.0, 1.0e-9));
 		TestTrue(*FString::Printf(TEXT("%s: the rear grips 8/7 of it (%g)"), *Selector, D.TireRearFriction), D.bTireRearFriction && FMath::IsNearlyEqual(D.TireRearFriction, Friction * 8.0 / 7.0, 1.0e-9));
-		if (TestEqual(*FString::Printf(TEXT("%s: the steering curve has four points"), *Selector), D.SteeringSpeedCurve.Num(), WantCurve.Num()))
+		if (TestEqual(*FString::Printf(TEXT("%s: the steering curve has every point"), *Selector), D.SteeringSpeedCurve.Num(), WantCurve.Num()))
 		{
 			for (int32 Index = 0; Index < WantCurve.Num(); ++Index)
 			{

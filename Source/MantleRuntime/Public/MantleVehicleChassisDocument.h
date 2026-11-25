@@ -81,7 +81,7 @@ struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 	 */
 	static TArray<FString> HeldNumbers(const FMantleChassisSpec& Spec);
 
-	/** The steering speed curve ComposeGroundHandling writes: (mph, share of the lock), DA_SportsCar's. */
+	/** The steering speed curve ComposeGroundHandling writes: (mph, share of the lock), set from the drive probe's steering sweeps (#376). */
 	static TArray<FVector2D> GroundSteeringSpeedCurve();
 
 	/**
