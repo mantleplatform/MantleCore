@@ -2253,19 +2253,9 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 	}
 	// The finish each paint layer starts with, where the build was asked for one (the console's secondaryfinish=chrome).
 	ApplyLayerFinishes(*Out.Source, Options.LayerFinishes, Out.Notes);
-	// The rims a wheel swap hides: found on the car as built (the body keeps the rim-named sections when a model is split), not on the model it came from.
-	{
-		FMantleGlbMesh RimBody;
-		TArray<UMaterialInterface*> RimMaterials;
-		FString RimError;
-		if (FMantleVehicleConverter::ReadBody(*Out.Source, RimBody, RimMaterials, RimError, /*bApplyFitScale*/ true))
-		{
-			FMantleVehicleConverter::ApplyRims(RimBody, *Out.Source, Out.Notes);
-			// The paint above was set afresh (ticked or guessed), which drops the converter's rim layer: the rims found just now start paintable again, unless the
-			// build named a Wheels layer of its own.
-			FMantleVehicleConverter::ApplyRimLayer(*Out.Source, FMantleVehicleConverter::UniqueSectionNames(RimBody.MaterialNames), RimMaterials, Out.Notes);
-		}
-	}
+	// The rims a wheel swap hides: found on the car as built (the body keeps the rim-named sections when a model is split), not on the model it came from. The paint above
+	// was set afresh (ticked or guessed), which drops the converter's rim layer: the rims found just now start paintable again, unless the build named a Wheels layer.
+	ApplyRimPaint(*Out.Source, /*bFindRims*/ true, Out.Notes);
 	// The lights: the creator's rows and beams, else what the finder found; each light section gets its glowing copy of its material.
 	ApplyLights(*Out.Source, Options.Lights.IsSet() ? Options.Lights.GetValue() : Prepared.Lights, Out.Notes);
 	// Said, not asked: glass, tires, chrome, carbon fiber and lamps are Mantle's own materials when it is published (FMantleVehicleBuiltInMaterials).
@@ -2329,6 +2319,22 @@ void FMantleVehicleBuilder::ApplyLights(UMantleVehicleSource& Source, const FMan
 	Source.Lights = Kept;
 	FMantleVehicleLights::ApplyMaterials(Source, OutNotes);
 	Source.MarkPackageDirty();
+}
+
+void FMantleVehicleBuilder::ApplyRimPaint(UMantleVehicleSource& Source, const bool bFindRims, TArray<FString>& OutNotes, const TArray<FString>& LeaveUnpainted)
+{
+	FMantleGlbMesh RimBody;
+	TArray<UMaterialInterface*> RimMaterials;
+	FString RimError;
+	if (!FMantleVehicleConverter::ReadBody(Source, RimBody, RimMaterials, RimError, /*bApplyFitScale*/ true))
+	{
+		return;
+	}
+	if (bFindRims)
+	{
+		FMantleVehicleConverter::ApplyRims(RimBody, Source, OutNotes);
+	}
+	FMantleVehicleConverter::ApplyRimLayer(Source, FMantleVehicleConverter::UniqueSectionNames(RimBody.MaterialNames), RimMaterials, OutNotes, LeaveUnpainted);
 }
 
 void FMantleVehicleBuilder::ApplyPaint(UMantleVehicleSource& Source, const TArray<FString>& AllSections, const TArray<bool>& Painted, TArray<FString>& OutNotes,

@@ -3280,9 +3280,11 @@ bool FMantleVehicleConverter::IsGtaTintLayer(const FString& Name, const UMateria
 	});
 }
 
-void FMantleVehicleConverter::ApplyRimLayer(UMantleVehicleSource& Source, const TArray<FString>& Sections, const TArray<UMaterialInterface*>& Materials, TArray<FString>& OutNotes)
+void FMantleVehicleConverter::ApplyRimLayer(UMantleVehicleSource& Source, const TArray<FString>& Sections, const TArray<UMaterialInterface*>& Materials, TArray<FString>& OutNotes,
+	const TArray<FString>& LeaveUnpainted)
 {
-	const TArray<FString> RimLayer = RimLayerSections(Source, Sections, Materials);
+	TArray<FString> RimLayer = RimLayerSections(Source, Sections, Materials);
+	RimLayer.RemoveAll([&LeaveUnpainted](const FString& Rim) { return LeaveUnpainted.Contains(Rim); });
 	if (RimLayer.Num() > 0)
 	{
 		const UMaterialInterface* RimMaterial = nullptr;

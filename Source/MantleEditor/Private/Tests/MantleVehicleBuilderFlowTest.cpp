@@ -1,5 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleVehicleBuilder.h"
+#include "MantleVehicleChassisBuilder.h"
+#include "MantleVehicleChassisMesh.h"
 #include "MantleVehicleScratchBody.h"
 #include "MantleVehicleSource.h"
 #include "SMantleVehicleBuilder.h"
@@ -7,6 +9,7 @@
 #include "AssetRegistry/AssetData.h"
 #include "Engine/SkeletalMesh.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Materials/Material.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/ScopeExit.h"
 #include "UObject/Package.h"
@@ -233,5 +236,94 @@ bool FMantleVehicleBuilderFlowPaintTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("unticking it takes it out again"), Source->Paint.Sections.Contains(Section), bWas);
 	return true;
 }
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleBuilderFlowRimLayerTest,
+	"Mantle.Vehicle.Builder.PaintTicksKeepTheRimsPaintable",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleBuilderFlowRimLayerTest::RunTest(const FString& Parameters)
+{
+	using Access = FMantleVehicleBuilderFlowAccess;
+	if (!FSlateApplication::IsInitialized())
+	{
+		AddWarning(TEXT("SKIPPED, not passed: there is no Slate application in this runner, so the window cannot be made."));
+		return true;
+	}
+	// The sedan chassis cut into three sections, Paint, Trim and Rims (plain white materials, so the paint guess can read them), as a model in a throwaway package.
+	FString Error;
+	FMantleChassisSpec Spec;
+	FMantleVehicleAsset Asset;
+	if (!TestTrue(*FString::Printf(TEXT("the sample chassis is made (%s)"), *Error), FMantleVehicleChassisBuilder::LoadSpec(TEXT("sedan"), Spec, Error) && FMantleVehicleChassisBuilder::MakeAsset(Spec, Asset, Error)))
+	{
+		return false;
+	}
+	FMantleSkinnedMeshLOD& LOD = Asset.Body.LODs[0];
+	const int32 Triangles = LOD.Indices.Num() / 3;
+	const TCHAR* const Names[3] = { TEXT("Paint"), TEXT("Trim"), TEXT("Rims") };
+	TArray<FSkeletalMaterial> Materials;
+	LOD.Sections.Reset();
+	for (int32 Slot = 0; Slot < 3; ++Slot)
+	{
+		Materials.Add(FSkeletalMaterial(NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient), FName(Names[Slot])));
+		FMantleSkinnedMeshSection& Section = LOD.Sections.AddDefaulted_GetRef();
+		Section.MaterialIndex = Slot;
+		Section.FirstIndex = 3 * (Triangles * Slot / 3);
+		Section.IndexCount = 3 * (Triangles * (Slot + 1) / 3) - Section.FirstIndex;
+		Section.MaterialName = FName(Names[Slot]);
+	}
+	USkeletalMesh* Model = FMantleVehicleChassisMesh::Create(Asset.Body, TEXT("/Temp/MantleFlowTest"), TEXT("FlowRims"), Error, &Materials);
+	if (!TestNotNull(*FString::Printf(TEXT("the sample car is made (%s)"), *Error), Model))
+	{
+		return false;
+	}
+	ON_SCOPE_EXIT { MantleVehicleScratchBody::Discard(Model); };
+
+	const TSharedRef<SMantleVehicleBuilder> Panel = SNew(SMantleVehicleBuilder);
+	Access::PickType(*Panel, TEXT("sedan"), TEXT("Sedan"));
+	Access::SetMesh(*Panel, Model);
+	int32 TrimRow = INDEX_NONE;
+	int32 RimRow = INDEX_NONE;
+	for (int32 Row = 0; Row < Access::PaintSections(*Panel); ++Row)
+	{
+		TrimRow = Access::PaintName(*Panel, Row) == TEXT("Trim") ? Row : TrimRow;
+		RimRow = Access::PaintName(*Panel, Row) == TEXT("Rims") ? Row : RimRow;
+	}
+	if (!TestTrue(TEXT("the Trim and Rims rows are listed"), TrimRow != INDEX_NONE && RimRow != INDEX_NONE))
+	{
+		return false;
+	}
+
+	// The vehicle as a build left it: the rims found by their shape, on the Wheels layer.
+	UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
+	Source->Body = Model;
+	FMantleVehicleSourceWheel& Wheel = Source->Wheels.AddDefaulted_GetRef();
+	Wheel.Bone = FName(TEXT("wheel_fl"));
+	Wheel.RimSections = { TEXT("Rims") };
+	FMantleVehicleSourcePaintLayer& Built = Source->Paint.Layers.AddDefaulted_GetRef();
+	Built.Layer = EMantleVehicleSourcePaintLayer::Wheels;
+	Built.Sections = { TEXT("Rims") };
+	const auto RimLayer = [&Source]() -> TArray<FString>
+	{
+		const FMantleVehicleSourcePaintLayer* Found = Source->Paint.Layers.FindByPredicate([](const FMantleVehicleSourcePaintLayer& Has) { return Has.Layer == EMantleVehicleSourcePaintLayer::Wheels; });
+		return Found ? Found->Sections : TArray<FString>({ TEXT("(no Wheels layer)") });
+	};
+
+	// An unrelated tick: the paint is set afresh, and the rims keep their Wheels layer.
+	Access::Tick(*Panel, TrimRow, !Access::PaintOn(*Panel, TrimRow));
+	Access::Apply(*Panel, *Source);
+	TestEqual(TEXT("ticking the trim leaves the rims on the Wheels layer"), RimLayer(), TArray<FString>({ TEXT("Rims") }));
+	Access::Tick(*Panel, TrimRow, !Access::PaintOn(*Panel, TrimRow));
+	Access::Apply(*Panel, *Source);
+	TestEqual(TEXT("and so does ticking it back"), RimLayer(), TArray<FString>({ TEXT("Rims") }));
+
+	// The creator unticks the rims themselves: they stay unpainted.
+	Access::Tick(*Panel, RimRow, true);
+	Access::Tick(*Panel, RimRow, false);
+	Access::Apply(*Panel, *Source);
+	TestFalse(TEXT("rims the creator unticked are not painted"), Source->Paint.Sections.Contains(TEXT("Rims"))
+		|| Source->Paint.Layers.ContainsByPredicate([](const FMantleVehicleSourcePaintLayer& Has) { return Has.Sections.Contains(TEXT("Rims")); }));
+	return true;
+}
 
 #endif // WITH_DEV_AUTOMATION_TESTS
