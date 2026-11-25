@@ -311,6 +311,31 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	static void ApplyOwnHinges(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options);
 
 	/**
+	 * The steering wheel of a model that keeps its own skeleton: its bone, found from the model's bone names (FMantleVehicleChassisSkin::SuggestSteeringWheelBone) when Source's is
+	 * empty (a bone the creator set is kept; the wheels' bones, what they hang from and the doors', hood's and trunk's are never taken, as the cook turns each bone for one part
+	 * only), and then, when Steering Wheel is off, its place measured from the vertices weighted to the bone (PlaceSteeringWheel). True when it changed Source, with notes in
+	 * OutNotes; nothing is said when no bone is named like one.
+	 */
+	static bool ApplySteeringWheelBone(const FMantleVehicleModel& Model, UMantleVehicleSource& Source, TArray<FString>& OutNotes);
+
+	/**
+	 * Puts Source's steering wheel where Fit says, for the bone Bone, when Steering Wheel is off (the creator's own placement is always kept): ticks it and sets its location,
+	 * rotation and radius, with a note. Nothing is placed, and a note says why, when Fit is not sure or the driver has no seat (the wheel is part of the seat; convert again
+	 * once it is set). True when it placed one.
+	 */
+	static bool PlaceSteeringWheel(UMantleVehicleSource& Source, FName Bone, const FMantleVehicleSteeringFit& Fit, TArray<FString>& OutNotes);
+
+	/** How far to the side of the driver's seat (cm, across the car) a model's measured steering wheel may be and still replace the chassis's own: about a rim's width. */
+	static constexpr double MaxSteeringWheelAside = 25.0;
+
+	/**
+	 * A model skinned onto a chassis (Skin): its steering wheel's own bone in the body becomes Source's Steering Wheel Bone when that is empty, and the wheel is placed.
+	 * The chassis's own wheel (every build starts from the chassis) is replaced by the measured one, with the driver's hands moved onto its rim, unless the measure is
+	 * not sure or the wheel is not in front of the driver's seat (MaxSteeringWheelAside): the chassis's wheel then stays, and a note says why. True when it changed Source.
+	 */
+	static bool ApplySkinnedSteeringWheel(UMantleVehicleSource& Source, const FMantleVehicleSkinned& Skinned, TArray<FString>& OutNotes);
+
+	/**
 	 * Where the driver sits when Source has no seat placed. A vehicle of a type gets its chassis's seat fitted to the model's wheels,
 	 * as Build places it (a built vehicle always has its seat, so this is for older ones). With no type, where the cook puts the driver
 	 * (vehicle.go, "Behind the middle, on the left"): a tenth of the length behind the middle, a fifth of the width to the left of it

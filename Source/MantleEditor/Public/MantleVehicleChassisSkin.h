@@ -232,6 +232,23 @@ struct FMantleVehicleSkinnedHub
 	FName Wheel;
 };
 
+/**
+ * A steering wheel measured from the vertices weighted to its bone (FMantleVehicleChassisSkin::MeasureSteeringWheel): where its hub is, how it is turned and how big its rim
+ * is, in the same space and units as the points (the body's: nose on +X, cm). bPlaced is false, with Why in plain words, when the measure is not sure.
+ */
+struct FMantleVehicleSteeringFit
+{
+	bool bPlaced = false;
+	/** The hub: the bone's place. */
+	FVector Location = FVector::ZeroVector;
+	/** As Tuning.SteeringWheelRotation: X along the column away from the driver, Z towards the top of the rim. */
+	FRotator Rotation = FRotator::ZeroRotator;
+	/** The rim, where the hands grip it. */
+	double Radius = 0.0;
+	/** Why nothing was placed, in plain words, for the notes. */
+	FString Why;
+};
+
 /** The result of putting a model on a chassis as its skin. */
 struct FMantleVehicleSkinned
 {
@@ -247,6 +264,12 @@ struct FMantleVehicleSkinned
 	TArray<FMantleVehicleSkinnedHinge> Hinges;
 	/** The model's hub and brake bones that sit at a wheel Skin moved onto the chassis's: each on a bone of its own under the root, with the vertices of the model bone and its children. */
 	TArray<FMantleVehicleSkinnedHub> Hubs;
+	/**
+	 * The steering wheel, when the model has a bone named like one (SuggestSteeringWheelBone) with vertices weighted mostly to it: the bone Skin gave it in Body (None when it
+	 * has none; separate from the hinge bones), and what its vertices measure (Steering; bPlaced false says why not).
+	 */
+	FName SteeringWheelBone;
+	FMantleVehicleSteeringFit Steering;
 };
 
 /** Where a proposed collision came from. */
@@ -380,6 +403,32 @@ struct MANTLEEDITOR_API FMantleVehicleChassisSkin
 	 * OutNotes, when given, says in plain words which door-looking bones were not taken and why.
 	 */
 	static FMantleVehicleHingeMap SuggestHinges(const FMantleVehicleModel& Model, TArray<FString>* OutNotes = nullptr);
+
+	/**
+	 * Whether a bone's name says it is the steering wheel. Read in words as SuggestHinges reads them: "steering" alone or followed by "wheel" (Steering_Wheel, steering_wheel,
+	 * B_SteeringWheel, steering), the one word "steeringwheel" (GTA V's standard name for it, from its published bone list, not checked against a file here), or a whole
+	 * underscore part "SW" in any case with at least one other part (B_SUV01_SW, B_NYC_Car02_SW). "Sw" inside another word (swing_arm) or alone is not it.
+	 */
+	static bool IsSteeringWheelBoneName(const FString& BoneName);
+
+	/**
+	 * The model's bone that is the steering wheel, by its name (IsSteeringWheelBoneName), or none. Only a bone inside the cabin counts: within the model's bounds and above the
+	 * lowest third of its height, and, when Seat is given (the driver's seat, body's space, nose on +X), in front of it by at most 120 cm, so a stray part elsewhere never wins.
+	 * Of several, the one nearest the driver (the seat's side and just ahead of it; with no seat, the driver's side, -Y). The root and the bones in Avoid (the wheels' bones and
+	 * what they hang from, a door's) are never taken. A static model gives none.
+	 */
+	static FName SuggestSteeringWheelBone(const FMantleVehicleModel& Model, const FVector* Seat, TConstArrayView<FName> Avoid);
+
+	/** The model's vertices (in its own space) whose heaviest weight is on Bone: what that bone carries, with none of its children's. */
+	static TArray<FVector> VerticesOnBone(const FMantleVehicleModel& Model, int32 Bone);
+
+	/**
+	 * Fits a steering wheel to Points, the vertices weighted to its bone, with Hub the bone's place. Nose on +X, Z up. The wheel's plane is the one the points are flattest
+	 * about (the smallest spread of the three axes is the column), the column pointing forward; the rim is the 90th percentile of the points' distance from the column through
+	 * Hub. Sure only when there are enough points, they are clearly flat and round, a good share of them lie on the rim, the hub is near their middle, the face looks along the
+	 * car and the rim is 10 to 30 cm (the vehicle asset's own range); otherwise bPlaced is false and Why says which.
+	 */
+	static FMantleVehicleSteeringFit MeasureSteeringWheel(TConstArrayView<FVector> Points, const FVector& Hub);
 
 	/**
 	 * Where Part's hinge goes, from the box around its vertices and where its bone is (the pure part of Skin, also used for a model that keeps its own skeleton), all in the

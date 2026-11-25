@@ -1674,6 +1674,135 @@ void FMantleVehicleBuilder::ApplyHinges(UMantleVehicleSource& Source, const TCon
 	OutNotes.Add(FString::Printf(TEXT("The %s open%s in the game."), *List, Opens.Num() == 1 ? TEXT("s") : TEXT("")));
 }
 
+bool FMantleVehicleBuilder::ApplySteeringWheelBone(const FMantleVehicleModel& Model, UMantleVehicleSource& Source, TArray<FString>& OutNotes)
+{
+	FMantleVehicleSourceTuning& T = Source.Tuning;
+	if (!Model.bSkeletal)
+	{
+		return false;
+	}
+	bool bChanged = false;
+	if (T.SteeringWheelBone.IsNone())
+	{
+		// Not the wheels' bones nor any bone a wheel hangs from, and not one a door, the hood or the trunk already turns.
+		TArray<FName> Avoid;
+		for (const FMantleVehicleSourceWheel& Wheel : Source.Wheels)
+		{
+			for (int32 Up = Model.FindBone(Wheel.Bone), Guard = 0; Up != INDEX_NONE && Guard < 1024; Up = Model.Bones[Up].ParentIndex, ++Guard)
+			{
+				Avoid.AddUnique(Model.Bones[Up].Name);
+			}
+		}
+		if (T.bHasDriverDoor) { Avoid.Add(T.DriverDoor.Bone); }
+		if (T.bHasPassengerDoor) { Avoid.Add(T.PassengerDoor.Bone); }
+		if (T.bRearLeftDoor) { Avoid.Add(T.RearLeftDoor.Bone); }
+		if (T.bRearRightDoor) { Avoid.Add(T.RearRightDoor.Bone); }
+		if (T.bHood) { Avoid.Add(T.HoodLid.Bone); }
+		if (T.bTrunk) { Avoid.Add(T.TrunkLid.Bone); }
+		const FName Found = FMantleVehicleChassisSkin::SuggestSteeringWheelBone(Model, T.bSeatLocation ? &T.SeatLocation : nullptr, Avoid);
+		if (Found.IsNone())
+		{
+			return false;
+		}
+		Source.Modify();
+		T.SteeringWheelBone = Found;
+		OutNotes.Add(FString::Printf(TEXT("Steering wheel: the bone %s turns with the steering (found from its name). Change it under Driver > Steering Wheel Bone in the vehicle asset."), *Found.ToString()));
+		bChanged = true;
+	}
+	// Placed from the vertices weighted to the bone, unless the creator placed it.
+	const int32 Bone = Model.FindBone(T.SteeringWheelBone);
+	if (!T.bSteeringWheel && Bone != INDEX_NONE && Bone != 0 && Model.BonePositions.IsValidIndex(Bone))
+	{
+		const FMantleVehicleSteeringFit Fit = FMantleVehicleChassisSkin::MeasureSteeringWheel(FMantleVehicleChassisSkin::VerticesOnBone(Model, Bone), Model.BonePositions[Bone]);
+		bChanged |= PlaceSteeringWheel(Source, T.SteeringWheelBone, Fit, OutNotes);
+	}
+	return bChanged;
+}
+
+bool FMantleVehicleBuilder::PlaceSteeringWheel(UMantleVehicleSource& Source, const FName Bone, const FMantleVehicleSteeringFit& Fit, TArray<FString>& OutNotes)
+{
+	FMantleVehicleSourceTuning& T = Source.Tuning;
+	if (T.bSteeringWheel)
+	{
+		return false;
+	}
+	if (!Fit.bPlaced)
+	{
+		OutNotes.Add(FString::Printf(TEXT("Steering wheel: not placed, because %s (the bone %s). Place it under Driver > Steering Wheel in the vehicle asset."), *Fit.Why, *Bone.ToString()));
+		return false;
+	}
+	if (!T.bSeatLocation)
+	{
+		OutNotes.Add(FString::Printf(TEXT("Steering wheel: the bone %s is found, but the driver has no seat yet and the wheel is part of the seat. Set Seat Location and convert again to place it."), *Bone.ToString()));
+		return false;
+	}
+	Source.Modify();
+	T.bSteeringWheel = true;
+	T.SteeringWheelLocation = Fit.Location;
+	T.SteeringWheelRotation = Fit.Rotation.GetNormalized();
+	T.SteeringWheelRadius = static_cast<float>(Fit.Radius);
+	OutNotes.Add(FString::Printf(TEXT("Steering wheel: placed from the bone %s (radius %.0f cm, pitched %.0f\u00B0); move it under Driver > Steering Wheel in the vehicle asset."), *Bone.ToString(), Fit.Radius,
+		static_cast<double>(T.SteeringWheelRotation.Pitch)));
+	return true;
+}
+
+bool FMantleVehicleBuilder::ApplySkinnedSteeringWheel(UMantleVehicleSource& Source, const FMantleVehicleSkinned& Skinned, TArray<FString>& OutNotes)
+{
+	FMantleVehicleSourceTuning& T = Source.Tuning;
+	if (Skinned.SteeringWheelBone.IsNone())
+	{
+		return false;
+	}
+	bool bChanged = false;
+	// The creator's own bone is kept; the wheel is then placed from the vertices of the one Skin found only when it is that bone.
+	if (T.SteeringWheelBone.IsNone())
+	{
+		Source.Modify();
+		T.SteeringWheelBone = Skinned.SteeringWheelBone;
+		OutNotes.Add(FString::Printf(TEXT("Steering wheel: the bone %s turns with the steering (found from its name). Change it under Driver > Steering Wheel Bone in the vehicle asset."),
+			*Skinned.SteeringWheelBone.ToString()));
+		bChanged = true;
+	}
+	if (T.SteeringWheelBone == Skinned.SteeringWheelBone)
+	{
+		// A build starts the vehicle's settings from the chassis (BuildChassisImpl), so a wheel already there is the chassis's own, not one the creator placed: the wheel
+		// measured on the model's bone replaces it. When the measure is not sure, the chassis's wheel stays, and the notes say why.
+		if (T.bSteeringWheel && T.bSeatLocation)
+		{
+			// The driver sits where the chassis puts them, so the model's wheel must be in front of that seat: one off to the side (a model whose cabin is mirrored,
+			// or a wheel on the other side of the car) would have the driver reach across the car.
+			const double Aside = FMath::Abs(Skinned.Steering.Location.Y - T.SeatLocation.Y);
+			FString Why = Skinned.Steering.bPlaced ? FString() : Skinned.Steering.Why;
+			if (Why.IsEmpty() && Aside > MaxSteeringWheelAside)
+			{
+				Why = FString::Printf(TEXT("it is %.0f cm to the side of the driver's seat, not in front of it"), Aside);
+			}
+			if (!Why.IsEmpty())
+			{
+				OutNotes.Add(FString::Printf(TEXT("Steering wheel: the chassis's own wheel is kept, because %s (the bone %s). Move it under Driver > Steering Wheel in the vehicle asset."),
+					*Why, *Skinned.SteeringWheelBone.ToString()));
+				return bChanged;
+			}
+			Source.Modify();
+			T.bSteeringWheel = false;
+			if (PlaceSteeringWheel(Source, Skinned.SteeringWheelBone, Skinned.Steering, OutNotes))
+			{
+				// The chassis's hands held the chassis's rim: they go to ten and two on this one, as a Convert puts them (the publish check wants them on the rim).
+				if (T.DriverContacts.Hands == EMantleVehicleHandsKind::Wheel)
+				{
+					const FMantleVehicleSourceSeatContacts Guess = FMantleVehicleConverter::GuessSeatContacts(T, false);
+					T.DriverContacts.LeftHand = Guess.LeftHand;
+					T.DriverContacts.RightHand = Guess.RightHand;
+				}
+				return true;
+			}
+			return bChanged;
+		}
+		bChanged |= PlaceSteeringWheel(Source, Skinned.SteeringWheelBone, Skinned.Steering, OutNotes);
+	}
+	return bChanged;
+}
+
 void FMantleVehicleBuilder::ApplyOwnHinges(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options)
 {
 	UMantleVehicleSource* Source = Built.Source;
@@ -1718,7 +1847,9 @@ void FMantleVehicleBuilder::ApplyOwnHinges(FMantleVehicleBuildResult& Built, con
 		}
 		Built.Notes = MoveTemp(Once);
 	}
-	if ((Found.Num() > 0 || bCleared || bHide) && Built.bSaved)
+	// The steering wheel's bone, from the bones' names, after the hinges so a door's bone is never taken for it.
+	const bool bWheelBone = ApplySteeringWheelBone(Read, *Source, Built.Notes);
+	if ((Found.Num() > 0 || bCleared || bHide || bWheelBone) && Built.bSaved)
 	{
 		Built.bSaved = SaveVehicle(*Source, Built.SaveProblem);
 	}
@@ -2075,6 +2206,8 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 	ApplyHinges(*Out.Source, Skinned.Hinges, Out.Notes);
 	// Its hubs and brakes (a caliper skinned to hub_lf or B_FLBrake) follow their wheel's steering and travel, each on a bone of its own (Skin gave it one).
 	ApplyHubs(*Out.Source, Skinned.Hubs, Out.Notes);
+	// The steering wheel has a bone of its own in the body too, with its place measured from its vertices.
+	ApplySkinnedSteeringWheel(*Out.Source, Skinned, Out.Notes);
 	// The paint the creator ticked, else Mantle's guess (what reads as car paint, a GTA model's PRIMARY, a layer by the names): on a model that was split into a body and
 	// parts it goes onto whichever holds each painted material. Every build sets it, so a car built with nothing ticked still has its paint for liveries and the color picker.
 	{
