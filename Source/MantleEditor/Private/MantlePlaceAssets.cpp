@@ -4275,18 +4275,22 @@ TSharedPtr<const FMantleBakeMesh> FMantleBakeMesh::FromSection(const FMantleGlbM
 			{
 				const uint32 Copy = static_cast<uint32>(Out->Positions.Num());
 				Out->SplitFrom.Add(static_cast<int32>(Vertex));
-				Out->Positions.Add(Out->Positions[Vertex]);
-				Out->Normals.Add(Out->Normals[Vertex]);
-				if (Out->Tangents.Num() > 0)
+				// Each element copied out before it is added: TArray refuses (and asserts on) adding one of its own elements, which a
+				// reallocation would leave dangling.
+				auto AddCopyOf = [Vertex](auto& Stream)
 				{
-					Out->Tangents.Add(Out->Tangents[Vertex]);
-				}
-				Out->UV0s.Add(Out->UV0s[Vertex]);
-				Out->UV1s.Add(Out->UV1s[Vertex]);
-				if (Out->Colors.Num() > 0)
-				{
-					Out->Colors.Add(Out->Colors[Vertex]);
-				}
+					if (Stream.Num() > 0)
+					{
+						const auto Element = Stream[Vertex];
+						Stream.Add(Element);
+					}
+				};
+				AddCopyOf(Out->Positions);
+				AddCopyOf(Out->Normals);
+				AddCopyOf(Out->Tangents);
+				AddCopyOf(Out->UV0s);
+				AddCopyOf(Out->UV1s);
+				AddCopyOf(Out->Colors);
 				Out->Layout.Add(Place);
 				Existing = &Copies.Add(TPair<uint32, int32>(Vertex, Corner), Copy);
 			}
