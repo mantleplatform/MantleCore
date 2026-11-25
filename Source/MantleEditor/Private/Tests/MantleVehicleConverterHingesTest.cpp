@@ -557,7 +557,7 @@ namespace MantleVehicleSteeringWheelTestPrivate
 	/** Count vertices of a wheel's rim on Bone: a ring of Radius about Center, its column pitched PitchDegrees (negative: forward and down), a little thick along it. */
 	void AddRing(FMantleVehicleModel& Model, const FVector& Center, const double Radius, const double PitchDegrees, const int32 Bone, const int32 Count)
 	{
-		const FRotationMatrix Frame = FRotationMatrix::MakeFromXZ(FRotator(PitchDegrees, 0.0, 0.0).Vector(), FVector::UpVector);
+		const FMatrix Frame = FRotationMatrix::MakeFromXZ(FRotator(PitchDegrees, 0.0, 0.0).Vector(), FVector::UpVector);
 		const FVector Column = Frame.GetUnitAxis(EAxis::X);
 		const FVector Side = Frame.GetUnitAxis(EAxis::Y);
 		const FVector Top = Frame.GetUnitAxis(EAxis::Z);

@@ -1097,7 +1097,7 @@ bool FMantleVehicleSkinSteeringWheelTest::RunTest(const FString& Parameters)
 	Model.Bones.Add({ FName(TEXT("steering_wheel")), 0 });
 	const FVector Hub(70, -40, 110);
 	Model.BonePositions.Add(Hub);
-	const FRotationMatrix Frame = FRotationMatrix::MakeFromXZ(FRotator(-20.0, 0.0, 0.0).Vector(), FVector::UpVector);
+	const FMatrix Frame = FRotationMatrix::MakeFromXZ(FRotator(-20.0, 0.0, 0.0).Vector(), FVector::UpVector);
 	for (int32 Index = 0; Index < 32; ++Index)
 	{
 		const double Angle = 2.0 * PI * Index / 32;
