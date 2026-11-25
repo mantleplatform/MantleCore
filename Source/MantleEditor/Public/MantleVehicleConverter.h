@@ -353,9 +353,19 @@ public:
 		/** The body paint (the primary layer); else Layer. */
 		bool bPrimary = true;
 		EMantleVehicleSourcePaintLayer Layer = EMantleVehicleSourcePaintLayer::Secondary;
-		/** Why a part that looks like it belongs to a layer is left out (a dark picture); empty otherwise. */
+		/** Why a part that looks like it belongs to a layer is left out (a dark picture, or the rule keeps its own material); empty otherwise. */
 		FString LeftOut;
+		/** Left out only because the starting paint gives layers to a model's tint layers alone (GuessStartingPaint): it keeps its own material. */
+		bool bKeepsOwnMaterial = false;
 	};
+
+	/**
+	 * The starting paint of a section nobody ticked, the one rule every route uses (Convert and its parts, Build, BuildFromModel, the BuildModel command) and the builder
+	 * window shows: the body paint as GuessPaintLayer reads it, and a layer only for what the model marks as a tint layer (IsGtaTintLayer). A seat, an interior, a
+	 * dashboard or a rim merely named like one keeps its own material (a layer wears Mantle's paint, so a non-GTA interior would come out flat white); the rims are made
+	 * paintable from their shape afterwards (ApplyRimLayer).
+	 */
+	static FPaintLayerGuess GuessStartingPaint(const FString& Name, const UMaterialInterface* Material);
 
 	/**
 	 * Which paint layer the section or slot named Name, drawn with Material, is for, in this order (Joshua's rule: the converter detects, the creator

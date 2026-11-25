@@ -1512,8 +1512,9 @@ void SMantleVehicleBuilder::RefreshPaintChoices()
 			{
 				bLight = bLight || FMantleVehicleLights::Sections(Lights, static_cast<EMantleLightKind>(Kind)).Contains(Choice.Section);
 			}
-			// Mantle's guess: the body paint, or a layer by the names (the same guess the builder and Convert Vehicle make). Never a light, nor what becomes glass, a tire, chrome or a lens.
-			const FMantleVehicleConverter::FPaintLayerGuess Guess = FMantleVehicleConverter::GuessPaintLayer(Choice.Section, Materials[Index].MaterialInterface);
+			// Mantle's starting paint, the one rule every route uses (so the ticks start as what the vehicle gets when they are left alone): the body paint, or a layer
+			// only for a tint layer the model marks. Never a light, nor what becomes glass, a tire, chrome or a lens.
+			const FMantleVehicleConverter::FPaintLayerGuess Guess = FMantleVehicleConverter::GuessStartingPaint(Choice.Section, Materials[Index].MaterialInterface);
 			const bool bBuiltIn = !Guess.bPrimary && Materials[Index].MaterialInterface && !FMantleVehicleBuiltInMaterials::Detect(Materials[Index].MaterialInterface, Choice.Section, false).IsEmpty();
 			Choice.bOn = !bLight && Guess.bPainted && !bBuiltIn;
 			Choice.Pick = Guess.bPrimary ? 0 : FMantleVehicleBuilder::PaintPick(Guess.Layer);

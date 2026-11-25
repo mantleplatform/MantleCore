@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "MantleChassisSpec.h"
 #include "MantleVehicleChassisSkin.h"
+#include "MantleVehicleConverter.h"
 #include "MantleVehicleFit.h"
 #include "MantleVehicleAsset.h"
 #include "MantleVehicleSource.h"

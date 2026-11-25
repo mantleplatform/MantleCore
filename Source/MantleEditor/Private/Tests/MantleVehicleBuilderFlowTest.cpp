@@ -45,6 +45,48 @@ namespace MantleVehicleBuilderFlowTestPrivate
 	{
 		return Step.Title.ToString() + TEXT(" ") + Step.Help.ToString();
 	}
+
+	/**
+	 * The sedan chassis cut into one section per name (plain white materials, so the paint guess can read them), as a model in a throwaway package. Null with the reason;
+	 * drop it with MantleVehicleScratchBody::Discard.
+	 */
+	USkeletalMesh* SectionedCar(const TArray<FString>& Names, const FString& Name, FString& OutError)
+	{
+		FMantleChassisSpec Spec;
+		FMantleVehicleAsset Asset;
+		if (!FMantleVehicleChassisBuilder::LoadSpec(TEXT("sedan"), Spec, OutError) || !FMantleVehicleChassisBuilder::MakeAsset(Spec, Asset, OutError))
+		{
+			return nullptr;
+		}
+		FMantleSkinnedMeshLOD& LOD = Asset.Body.LODs[0];
+		const int32 Triangles = LOD.Indices.Num() / 3;
+		const int32 Count = Names.Num();
+		TArray<FSkeletalMaterial> Materials;
+		LOD.Sections.Reset();
+		for (int32 Slot = 0; Slot < Count; ++Slot)
+		{
+			Materials.Add(FSkeletalMaterial(NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient), FName(*Names[Slot])));
+			FMantleSkinnedMeshSection& Section = LOD.Sections.AddDefaulted_GetRef();
+			Section.MaterialIndex = Slot;
+			Section.FirstIndex = 3 * (Triangles * Slot / Count);
+			Section.IndexCount = 3 * (Triangles * (Slot + 1) / Count) - Section.FirstIndex;
+			Section.MaterialName = FName(*Names[Slot]);
+		}
+		return FMantleVehicleChassisMesh::Create(Asset.Body, TEXT("/Temp/MantleFlowTest"), Name, OutError, &Materials);
+	}
+
+	/** The row of Section in the window's paint list, or INDEX_NONE. */
+	int32 RowOf(const SMantleVehicleBuilder& Panel, const TCHAR* Section)
+	{
+		for (int32 Row = 0; Row < FMantleVehicleBuilderFlowAccess::PaintSections(Panel); ++Row)
+		{
+			if (FMantleVehicleBuilderFlowAccess::PaintName(Panel, Row) == Section)
+			{
+				return Row;
+			}
+		}
+		return INDEX_NONE;
+	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -250,29 +292,9 @@ bool FMantleVehicleBuilderFlowRimLayerTest::RunTest(const FString& Parameters)
 		AddWarning(TEXT("SKIPPED, not passed: there is no Slate application in this runner, so the window cannot be made."));
 		return true;
 	}
-	// The sedan chassis cut into three sections, Paint, Trim and Rims (plain white materials, so the paint guess can read them), as a model in a throwaway package.
+	// The sedan chassis cut into three sections, Paint, Trim and Rims.
 	FString Error;
-	FMantleChassisSpec Spec;
-	FMantleVehicleAsset Asset;
-	if (!TestTrue(*FString::Printf(TEXT("the sample chassis is made (%s)"), *Error), FMantleVehicleChassisBuilder::LoadSpec(TEXT("sedan"), Spec, Error) && FMantleVehicleChassisBuilder::MakeAsset(Spec, Asset, Error)))
-	{
-		return false;
-	}
-	FMantleSkinnedMeshLOD& LOD = Asset.Body.LODs[0];
-	const int32 Triangles = LOD.Indices.Num() / 3;
-	const TCHAR* const Names[3] = { TEXT("Paint"), TEXT("Trim"), TEXT("Rims") };
-	TArray<FSkeletalMaterial> Materials;
-	LOD.Sections.Reset();
-	for (int32 Slot = 0; Slot < 3; ++Slot)
-	{
-		Materials.Add(FSkeletalMaterial(NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient), FName(Names[Slot])));
-		FMantleSkinnedMeshSection& Section = LOD.Sections.AddDefaulted_GetRef();
-		Section.MaterialIndex = Slot;
-		Section.FirstIndex = 3 * (Triangles * Slot / 3);
-		Section.IndexCount = 3 * (Triangles * (Slot + 1) / 3) - Section.FirstIndex;
-		Section.MaterialName = FName(Names[Slot]);
-	}
-	USkeletalMesh* Model = FMantleVehicleChassisMesh::Create(Asset.Body, TEXT("/Temp/MantleFlowTest"), TEXT("FlowRims"), Error, &Materials);
+	USkeletalMesh* Model = MantleVehicleBuilderFlowTestPrivate::SectionedCar({ TEXT("Paint"), TEXT("Trim"), TEXT("Rims") }, TEXT("FlowRims"), Error);
 	if (!TestNotNull(*FString::Printf(TEXT("the sample car is made (%s)"), *Error), Model))
 	{
 		return false;
@@ -282,13 +304,8 @@ bool FMantleVehicleBuilderFlowRimLayerTest::RunTest(const FString& Parameters)
 	const TSharedRef<SMantleVehicleBuilder> Panel = SNew(SMantleVehicleBuilder);
 	Access::PickType(*Panel, TEXT("sedan"), TEXT("Sedan"));
 	Access::SetMesh(*Panel, Model);
-	int32 TrimRow = INDEX_NONE;
-	int32 RimRow = INDEX_NONE;
-	for (int32 Row = 0; Row < Access::PaintSections(*Panel); ++Row)
-	{
-		TrimRow = Access::PaintName(*Panel, Row) == TEXT("Trim") ? Row : TrimRow;
-		RimRow = Access::PaintName(*Panel, Row) == TEXT("Rims") ? Row : RimRow;
-	}
+	const int32 TrimRow = MantleVehicleBuilderFlowTestPrivate::RowOf(*Panel, TEXT("Trim"));
+	const int32 RimRow = MantleVehicleBuilderFlowTestPrivate::RowOf(*Panel, TEXT("Rims"));
 	if (!TestTrue(TEXT("the Trim and Rims rows are listed"), TrimRow != INDEX_NONE && RimRow != INDEX_NONE))
 	{
 		return false;
@@ -323,6 +340,76 @@ bool FMantleVehicleBuilderFlowRimLayerTest::RunTest(const FString& Parameters)
 	Access::Apply(*Panel, *Source);
 	TestFalse(TEXT("rims the creator unticked are not painted"), Source->Paint.Sections.Contains(TEXT("Rims"))
 		|| Source->Paint.Layers.ContainsByPredicate([](const FMantleVehicleSourcePaintLayer& Has) { return Has.Sections.Contains(TEXT("Rims")); }));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleBuilderFlowOnePaintRuleTest,
+	"Mantle.Vehicle.Builder.OnePaintRuleForEveryRoute",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleBuilderFlowOnePaintRuleTest::RunTest(const FString& Parameters)
+{
+	using Access = FMantleVehicleBuilderFlowAccess;
+	// Joshua's pick on #281 (a): the converter's narrow rule everywhere. A model worn as a skin with nothing ticked (BuildFromModel, the BuildModel command) and the
+	// window's starting ticks give a layer only to what the model marks as a tint layer: a GTA PRIMARY is the body paint, SECONDARY the second paint, and an interior,
+	// a dashboard or a section merely named like a rim keep their own material.
+	FString Error;
+	const TArray<FString> Names = { TEXT("carbody_PRIMARY_"), TEXT("stripe_SECONDARY_"), TEXT("SUV_Interior"), TEXT("vehicle_dashboard"), TEXT("Rim_FL") };
+	USkeletalMesh* Model = MantleVehicleBuilderFlowTestPrivate::SectionedCar(Names, TEXT("FlowOneRule"), Error);
+	if (!TestNotNull(*FString::Printf(TEXT("the sample car is made (%s)"), *Error), Model))
+	{
+		return false;
+	}
+	ON_SCOPE_EXIT { MantleVehicleScratchBody::Discard(Model); };
+
+	FMantleVehicleModelOptions Options;
+	Options.Folder = TEXT("/Temp/MantleFlowOneRuleOut");
+	const FMantleVehicleBuildResult Built = FMantleVehicleBuilder::BuildFromModel(Model, TEXT("sedan"), Options);
+	if (TestTrue(*FString::Printf(TEXT("the build works (%s)"), *FString::Join(Built.Problems, TEXT(" "))), Built.bOk && Built.Source != nullptr))
+	{
+		const FMantleVehicleSourcePaint& Paint = Built.Source->Paint;
+		TestTrue(TEXT("nothing ticked: PRIMARY is the body paint"), Paint.Sections == TArray<FString>({ TEXT("carbody_PRIMARY_") }));
+		const FMantleVehicleSourcePaintLayer* Second = Paint.Layers.FindByPredicate([](const FMantleVehicleSourcePaintLayer& Has) { return Has.Layer == EMantleVehicleSourcePaintLayer::Secondary; });
+		TestTrue(TEXT("and SECONDARY the second paint"), Second && Second->Sections == TArray<FString>({ TEXT("stripe_SECONDARY_") }));
+		for (const TCHAR* Own : { TEXT("SUV_Interior"), TEXT("vehicle_dashboard") })
+		{
+			TestFalse(*FString::Printf(TEXT("%s keeps its own material: no layer from its name"), Own),
+				Paint.Layers.ContainsByPredicate([Own](const FMantleVehicleSourcePaintLayer& Has) { return Has.Sections.Contains(Own); }));
+		}
+		// A section named like a rim gets no layer from its name. It is on the Wheels layer only when the rim step found it a wheel's rim by its shape (#286), which
+		// the rim finder decides, not the paint guess.
+		const bool bShapeRim = Built.Source->Wheels.ContainsByPredicate([](const FMantleVehicleSourceWheel& Wheel) { return Wheel.RimSections.Contains(TEXT("Rim_FL")); });
+		FString RimLayers;
+		for (const FMantleVehicleSourcePaintLayer& Layer : Paint.Layers)
+		{
+			RimLayers += Layer.Sections.Contains(TEXT("Rim_FL")) ? FString::Printf(TEXT(" layer %d"), static_cast<int32>(Layer.Layer)) : FString();
+		}
+		const bool bOnWheels = Paint.Layers.ContainsByPredicate([](const FMantleVehicleSourcePaintLayer& Has) { return Has.Layer == EMantleVehicleSourcePaintLayer::Wheels && Has.Sections.Contains(TEXT("Rim_FL")); });
+		const bool bOnOther = Paint.Layers.ContainsByPredicate([](const FMantleVehicleSourcePaintLayer& Has) { return Has.Layer != EMantleVehicleSourcePaintLayer::Wheels && Has.Sections.Contains(TEXT("Rim_FL")); });
+		TestTrue(*FString::Printf(TEXT("Rim_FL is on a layer only as a rim found by its shape (on:%s; a wheel's rim by shape: %s)"), RimLayers.IsEmpty() ? TEXT(" none") : *RimLayers, bShapeRim ? TEXT("yes") : TEXT("no")),
+			!bOnOther && bOnWheels == bShapeRim);
+	}
+
+	// The window starts its ticks from the same rule.
+	if (!FSlateApplication::IsInitialized())
+	{
+		AddWarning(TEXT("The window half is SKIPPED, not passed: there is no Slate application in this runner."));
+		return true;
+	}
+	const TSharedRef<SMantleVehicleBuilder> Panel = SNew(SMantleVehicleBuilder);
+	Access::PickType(*Panel, TEXT("sedan"), TEXT("Sedan"));
+	Access::SetMesh(*Panel, Model);
+	for (const FString& Name : Names)
+	{
+		const int32 Row = MantleVehicleBuilderFlowTestPrivate::RowOf(*Panel, *Name);
+		if (!TestTrue(*FString::Printf(TEXT("%s is listed"), *Name), Row != INDEX_NONE))
+		{
+			continue;
+		}
+		const bool bTint = Name.Contains(TEXT("PRIMARY")) || Name.Contains(TEXT("SECONDARY"));
+		TestEqual(*FString::Printf(TEXT("the window starts %s %s"), *Name, bTint ? TEXT("ticked") : TEXT("unticked")), Access::PaintOn(*Panel, Row), bTint);
+	}
 	return true;
 }
 
