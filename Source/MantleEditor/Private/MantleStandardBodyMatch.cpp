@@ -187,7 +187,7 @@ bool FMantleStandardBodyMatch::IsCached(const FString& Id)
 	return MantleStandardBodyMatchPrivate::JointCache().Contains(Id);
 }
 
-bool FMantleStandardBodyMatch::BodyJoints(const FString& Id, FMantleFitBodyPool& Pool, TFunctionRef<bool(const FString&)> Keep,
+bool FMantleStandardBodyMatch::BodyJoints(const FString& Id, FMantleFitBodyPool& Pool, TFunctionRef<bool(const FString&, const TMap<FName, FVector3f>&)> Keep,
 	TMap<FName, FVector3f>& OutJoints, int32& OutReleased, FString& OutError)
 {
 	using namespace MantleStandardBodyMatchPrivate;
@@ -209,7 +209,7 @@ bool FMantleStandardBodyMatch::BodyJoints(const FString& Id, FMantleFitBodyPool&
 	OutJoints = JointPositions(JointsOf(Body.BodyMesh->GetRefSkeleton()));
 	JointCache().Add(Id, OutJoints);
 	UE_LOG(LogMantleStandardBodyMatch, Display, TEXT("MANTLE_STANDARD_BODY %s made to read its %d joints (kept for this editor session)"), *Id, OutJoints.Num());
-	if (Keep(Id)) { Pool.Bodies.Add(MoveTemp(Body)); }
+	if (Keep(Id, OutJoints)) { Pool.Bodies.Add(MoveTemp(Body)); }
 	else
 	{
 		FMantleFitBodies::Release(Body);

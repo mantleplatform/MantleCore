@@ -82,10 +82,10 @@ struct MANTLEEDITOR_API FMantleStandardBodyMatch
 	/**
 	 * Editor: Id's joint positions (the raw reference pose of its body mesh), from the body made in memory
 	 * (FMantleFitBodies::Make) on the first ask in an editor session, then from a cache. A body made here goes into Pool when
-	 * Keep says so (for the fit to reuse), else is released and OutReleased counts it (for the caller to collect garbage).
-	 * False with why.
+	 * Keep says so, given its id and joints (for the fit or the wrap to reuse), else is released and OutReleased counts it
+	 * (for the caller to collect garbage). False with why.
 	 */
-	static bool BodyJoints(const FString& Id, FMantleFitBodyPool& Pool, TFunctionRef<bool(const FString&)> Keep, TMap<FName, FVector3f>& OutJoints,
+	static bool BodyJoints(const FString& Id, FMantleFitBodyPool& Pool, TFunctionRef<bool(const FString&, const TMap<FName, FVector3f>&)> Keep, TMap<FName, FVector3f>& OutJoints,
 		int32& OutReleased, FString& OutError);
 
 	/** Editor: Id's joints are cached, so BodyJoints makes no body for it. */

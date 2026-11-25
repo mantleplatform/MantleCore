@@ -1003,11 +1003,33 @@ UChaosOutfitAsset* FMantleParametricOutfit::WrapOnStandardBody(const FMantleCosm
 		UE_LOG(LogMantleParametricOutfit, Display, TEXT("MANTLE_STANDARD_BODY garment=%s memory %s: free RAM %.0f MB, editor %.0f MB"), *Draft.Source->GetName(), When,
 			static_cast<double>(Stats.AvailablePhysical) / (1024.0 * 1024.0), static_cast<double>(Stats.UsedPhysical) / (1024.0 * 1024.0));
 	};
-	// Every standard body's joints (made once per editor session); the bodies the fit uses are kept for it, of the creator's
-	// chosen sex only when they chose one.
+	// Every standard body's joints (made once per editor session). Kept while they are made: the bodies the fit uses (of the
+	// creator's chosen sex only, when they chose one), and the best match so far, so the matched body is never made twice; any
+	// other body is released at once. So at most the fit bodies and one more are alive.
 	const TArray<FString> FitTypes = FMantleFitBodies::SanitizeBodyTypes(Contract.GarmentFitBodyTypes);
 	const FString ChosenSex = Draft.FitSex == EMantleFitSex::Male ? TEXT("m_") : Draft.FitSex == EMantleFitSex::Female ? TEXT("f_") : TEXT("");
-	const auto KeepForFit = [&FitTypes, &ChosenSex](const FString& Id) { return FitTypes.Contains(Id.Mid(2)) && (ChosenSex.IsEmpty() || Id.StartsWith(ChosenSex)); };
+	const auto IsFitBody = [&FitTypes, &ChosenSex](const FString& Id) { return FitTypes.Contains(Id.Mid(2)) && (ChosenSex.IsEmpty() || Id.StartsWith(ChosenSex)); };
+	const TMap<FName, FVector3f> GarmentJoints = FMantleStandardBodyMatch::JointPositions(Glb.Joints);
+	float BestSoFar = TNumericLimits<float>::Max();
+	FString KeptAsBest;
+	int32 Released = 0;
+	const auto Keep = [&](const FString& Id, const TMap<FName, FVector3f>& Joints)
+	{
+		const FMantleStandardBodyMatch::FCandidate One{ Id, Joints };
+		const float Score = FMantleStandardBodyMatch::Match(GarmentJoints, Skinned, MakeArrayView(&One, 1)).Best.MeanCm;
+		if (Score < 0.0f || Score >= BestSoFar) { return IsFitBody(Id); }
+		BestSoFar = Score;
+		// The previous best goes, unless the fit keeps it.
+		const int32 Previous = KeptAsBest.IsEmpty() ? INDEX_NONE : Pool.Bodies.IndexOfByPredicate([&KeptAsBest](const FMantleFitBody& Body) { return Body.Id == KeptAsBest; });
+		if (Previous != INDEX_NONE)
+		{
+			FMantleFitBodies::Release(Pool.Bodies[Previous]);
+			Pool.Bodies.RemoveAt(Previous);
+			++Released;
+		}
+		KeptAsBest = IsFitBody(Id) ? FString() : Id;
+		return true;
+	};
 	const TArray<FString> Ids = FMantleStandardBodyMatch::AllBodyIds();
 	const int32 ToMake = Ids.FilterByPredicate([](const FString& Id) { return !FMantleStandardBodyMatch::IsCached(Id); }).Num();
 	TArray<FMantleStandardBodyMatch::FCandidate> Candidates;
@@ -1019,14 +1041,13 @@ UChaosOutfitAsset* FMantleParametricOutfit::WrapOnStandardBody(const FMantleCosm
 			Task.MakeDialog();
 			LogMemoryUse(TEXT("before making the standard bodies"));
 		}
-		int32 Released = 0;
 		for (const FString& Id : Ids)
 		{
 			Task.EnterProgressFrame(1.0f, FText::FromString(FString::Printf(TEXT("Standard body %s (%s)"), *Id, *FMantleStandardBodyMatch::BodyWords(Id))));
 			FMantleStandardBodyMatch::FCandidate& Candidate = Candidates.AddDefaulted_GetRef();
 			Candidate.Id = Id;
 			FString Error;
-			if (!FMantleStandardBodyMatch::BodyJoints(Id, Pool, KeepForFit, Candidate.Joints, Released, Error))
+			if (!FMantleStandardBodyMatch::BodyJoints(Id, Pool, Keep, Candidate.Joints, Released, Error))
 			{
 				OutWhy = FString::Printf(TEXT("Epic's standard body %s could not be made to compare it with (%s)"), *Id, *Error);
 				return nullptr;
@@ -1041,7 +1062,7 @@ UChaosOutfitAsset* FMantleParametricOutfit::WrapOnStandardBody(const FMantleCosm
 		if (Released > 0) { CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS); }
 		if (ToMake > 0) { LogMemoryUse(TEXT("after making the standard bodies")); }
 	}
-	const FMantleStandardBodyMatch::FResult Result = FMantleStandardBodyMatch::Match(FMantleStandardBodyMatch::JointPositions(Glb.Joints), Skinned, Candidates);
+	const FMantleStandardBodyMatch::FResult Result = FMantleStandardBodyMatch::Match(GarmentJoints, Skinned, Candidates);
 	for (const FMantleStandardBodyMatch::FScore& Score : Result.All)
 	{
 		UE_LOG(LogMantleParametricOutfit, Display, TEXT("MANTLE_STANDARD_BODY garment=%s body=%s joints mean %.2f largest %.2f cm (%s) over %d skinned bones"),
@@ -1074,7 +1095,7 @@ UChaosOutfitAsset* FMantleParametricOutfit::WrapOnStandardBody(const FMantleCosm
 		++Pruned;
 	}
 	if (Pruned > 0) { CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS); }
-	// The matched body itself (made again when it isn't one the fit keeps; its joints came from the cache).
+	// The matched body itself: kept from the pass as the best so far, or made now when its joints came from the cache.
 	FMantleFitBody* Body = Pool.Find(MatchedId);
 	if (!Body)
 	{
