@@ -2251,7 +2251,7 @@ bool FMantleGltfMaterialFlattener::Flatten(UMaterialInterface* Material, const F
 		// A section's own bake holds the whole section, every repeat of its tiled UV0 laid out apart, packed square (FMantleBakeMesh::Layout):
 		// the same, and square, whatever its textures' shape. Auto-detect baked SUV04's lenses at their mask's 512x2048, which halved the
 		// layout across and let neighbouring islands bleed into each other.
-		if (Settings.Surface.CoversTerrain() || Settings.Surface.Mesh.IsValid())
+		if (Settings.Surface.CoversTerrain() || (Settings.Surface.Mesh.IsValid() && Settings.Surface.Mesh->bOwnLayout))
 		{
 			bOverride = true;
 			Fallback = static_cast<int32>(FMath::RoundUpToPowerOfTwo(static_cast<uint32>(MaxBake) + 1) / 2);
@@ -3408,7 +3408,8 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 			}
 			// A material that reads a second UV set is baked over this section's own triangles (gathered the same way): the section takes
 			// that bake's layout as its UV0, before its far-away versions are made from it.
-			const TSharedPtr<const FMantleBakeMesh> BakeMesh = FMantlePlaceAssets::SectionBakeMesh(Converted.Body, Index, Material);
+			const TSharedPtr<const FMantleBakeMesh> BakeMesh = FMantlePlaceAssets::SectionBakeMesh(Converted.Body, Index, Material,
+				!FMantlePlaceAssets::VehicleSectionKeepsUv0(*Vehicle, Converted.Body.MaterialNames[Index]));
 			if (BakeMesh.IsValid())
 			{
 				BakeMesh->ApplyLayout(Converted.Body, Index);

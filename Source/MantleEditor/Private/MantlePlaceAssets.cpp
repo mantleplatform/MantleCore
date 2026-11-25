@@ -3260,7 +3260,8 @@ void FMantlePlaceDependencies::AddVehicleSpawn(const AActor* Actor)
 			continue;
 		}
 		AddMaterial(BodyMaterials[Index], Label, BodySections.IsValidIndex(Index) && FMantleVehicleConverter::BodySectionIsTintMask(*Source, BodySections[Index], BodyMaterials[Index]),
-			FMantlePlaceAssets::SectionBakeMesh(Body, Index, BodyMaterials[Index]));
+			FMantlePlaceAssets::SectionBakeMesh(Body, Index, BodyMaterials[Index], !BodySections.IsValidIndex(Index) ? false
+				: !FMantlePlaceAssets::VehicleSectionKeepsUv0(*Source, BodySections[Index])));
 	}
 }
 
@@ -3903,13 +3904,20 @@ bool FMantlePlaceAssets::SamplesSecondUv(const UMaterialInterface* Material)
 	return Material && AnalyzeMaterial(Material).Has(EMantleMaterialLoss::SecondUv);
 }
 
-TSharedPtr<const FMantleBakeMesh> FMantlePlaceAssets::SectionBakeMesh(const FMantleGlbMesh& Mesh, const int32 MaterialIndex, const UMaterialInterface* Material)
+TSharedPtr<const FMantleBakeMesh> FMantlePlaceAssets::SectionBakeMesh(const FMantleGlbMesh& Mesh, const int32 MaterialIndex, const UMaterialInterface* Material,
+	const bool bMayRelayout)
 {
 	if (!Material || IsLibraryAsset(Material) || !SamplesSecondUv(Material))
 	{
 		return nullptr;
 	}
-	return FMantleBakeMesh::FromSection(Mesh, MaterialIndex);
+	return FMantleBakeMesh::FromSection(Mesh, MaterialIndex, bMayRelayout);
+}
+
+bool FMantlePlaceAssets::VehicleSectionKeepsUv0(const UMantleVehicleSource& Source, const FString& Section)
+{
+	return Source.Paint.Sections.Contains(Section)
+		|| Source.Paint.Layers.ContainsByPredicate([&Section](const FMantleVehicleSourcePaintLayer& Layer) { return Layer.Sections.Contains(Section); });
 }
 
 FString FMantlePlaceAssets::MaterialKey(const UMaterialInterface* Material)
@@ -4141,7 +4149,7 @@ namespace MantlePlaceAssetsPrivate
 	}
 }
 
-TSharedPtr<const FMantleBakeMesh> FMantleBakeMesh::FromSection(const FMantleGlbMesh& Mesh, const int32 MaterialIndex)
+TSharedPtr<const FMantleBakeMesh> FMantleBakeMesh::FromSection(const FMantleGlbMesh& Mesh, const int32 MaterialIndex, const bool bMayRelayout)
 {
 	using namespace MantlePlaceAssetsPrivate;
 	const TSharedRef<FMantleBakeMesh> Out = MakeShared<FMantleBakeMesh>();
@@ -4197,82 +4205,95 @@ TSharedPtr<const FMantleBakeMesh> FMantleBakeMesh::FromSection(const FMantleGlbM
 
 	// Unreal's lightmap packer: every island of the section's UV0 (triangles joined by a shared edge with matching UVs) packed apart, scaled
 	// by its size in the world, within 0 to 1. Mirrored and tiled islands are separate islands, so nothing ends up on the same texels.
+	// Only where UV0 overlaps itself and nothing else reads it (bMayRelayout); everywhere else the bake is laid out by UV0 and the mesh is kept.
+	const double Uv0Overlap = Overlap(Out->UV0s, Out->Indices);
 	FBakeMeshLayoutView View(*Out);
-	const FOverlappingCorners Corners(View, UE_THRESH_POINTS_ARE_SAME);
-	FLayoutUV Packer(View);
-	Packer.SetVersion(ELightmapUVVersion::Latest);
-	Packer.FindCharts(Corners);
-	if (!Packer.FindBestPacking(LayoutResolution))
+	bool bPacked = false;
+	if (bMayRelayout && Uv0Overlap > OverlapsItself)
 	{
-		UE_LOG(LogMantle, Warning, TEXT("MANTLE_UV_BAKE section %d of %s: the packer could not lay out its %d triangles; it bakes on a card"), MaterialIndex, *Mesh.Name,
-			Out->Indices.Num() / 3);
-		return nullptr;
+		const FOverlappingCorners Corners(View, UE_THRESH_POINTS_ARE_SAME);
+		FLayoutUV Packer(View);
+		Packer.SetVersion(ELightmapUVVersion::Latest);
+		Packer.FindCharts(Corners);
+		if (Packer.FindBestPacking(LayoutResolution))
+		{
+			Packer.CommitPackedUVs();
+			bPacked = View.Output.Num() == Out->Indices.Num();
+		}
+		if (!bPacked)
+		{
+			UE_LOG(LogMantle, Warning, TEXT("MANTLE_UV_BAKE section %d of %s: the packer could not lay out its %d triangles; it bakes by its UV0"), MaterialIndex,
+				*Mesh.Name, Out->Indices.Num() / 3);
+		}
 	}
-	Packer.CommitPackedUVs();
-	if (View.Output.Num() != Out->Indices.Num())
-	{
-		return nullptr;
-	}
-	// Per vertex: every corner of a vertex inside one island gets the same place. A vertex only a corner joins to two islands (a bow tie)
-	// is placed in each: the corners of the second island get a copy of it (SplitFrom), so no triangle is stretched across the layout.
-	// The copy goes at the end of the section's vertices, which ApplyLayout can do on a section of one primitive; on more, the vertex
-	// keeps its first place (counted for the log).
-	const int32 Original = Out->Positions.Num();
-	const bool bCanSplit = CanSplitSection(Mesh, MaterialIndex);
-	Out->Layout.Init(FVector2f::ZeroVector, Original); // a vertex no triangle draws stays at 0
-	TBitArray<> Placed(false, Original);
-	TMap<TPair<uint32, int32>, uint32> Copies; // (vertex, the first corner placed where this one is) -> its copy
 	int32 Unsplit = 0;
-	for (int32 Corner = 0; Corner < Out->Indices.Num(); ++Corner)
+	if (!bPacked)
 	{
-		const uint32 Vertex = Out->Indices[Corner];
-		const FVector2f Place = View.Output[Corner];
-		if (!Placed[Vertex])
-		{
-			Placed[Vertex] = true;
-			Out->Layout[Vertex] = Place;
-			continue;
-		}
-		if (Out->Layout[Vertex].Equals(Place, 1.0e-5f))
-		{
-			continue;
-		}
-		if (!bCanSplit)
-		{
-			++Unsplit;
-			continue;
-		}
-		// One copy per (vertex, place): every corner of the vertex in the same other island shares it.
-		uint32* Existing = nullptr;
-		for (TPair<TPair<uint32, int32>, uint32>& Pair : Copies)
-		{
-			if (Pair.Key.Key == Vertex && Out->Layout[Pair.Value].Equals(Place, 1.0e-5f))
-			{
-				Existing = &Pair.Value;
-				break;
-			}
-		}
-		if (!Existing)
-		{
-			const uint32 Copy = static_cast<uint32>(Out->Positions.Num());
-			Out->SplitFrom.Add(static_cast<int32>(Vertex));
-			Out->Positions.Add(Out->Positions[Vertex]);
-			Out->Normals.Add(Out->Normals[Vertex]);
-			if (Out->Tangents.Num() > 0)
-			{
-				Out->Tangents.Add(Out->Tangents[Vertex]);
-			}
-			Out->UV0s.Add(Out->UV0s[Vertex]);
-			Out->UV1s.Add(Out->UV1s[Vertex]);
-			if (Out->Colors.Num() > 0)
-			{
-				Out->Colors.Add(Out->Colors[Vertex]);
-			}
-			Out->Layout.Add(Place);
-			Existing = &Copies.Add(TPair<uint32, int32>(Vertex, Corner), Copy);
-		}
-		Out->Indices[Corner] = *Existing;
+		Out->Layout = Out->UV0s;
 	}
+	else
+	{
+		// Per vertex: every corner of a vertex inside one island gets the same place. A vertex only a corner joins to two islands (a bow tie)
+		// is placed in each: the corners of the second island get a copy of it (SplitFrom), so no triangle is stretched across the layout.
+		// The copy goes at the end of the section's vertices, which ApplyLayout can do on a section of one primitive; on more, the vertex
+		// keeps its first place (counted for the log).
+		const int32 Original = Out->Positions.Num();
+		const bool bCanSplit = CanSplitSection(Mesh, MaterialIndex);
+		Out->Layout.Init(FVector2f::ZeroVector, Original); // a vertex no triangle draws stays at 0
+		TBitArray<> Placed(false, Original);
+		TMap<TPair<uint32, int32>, uint32> Copies; // (vertex, the first corner placed where this one is) -> its copy
+		for (int32 Corner = 0; Corner < Out->Indices.Num(); ++Corner)
+		{
+			const uint32 Vertex = Out->Indices[Corner];
+			const FVector2f Place = View.Output[Corner];
+			if (!Placed[Vertex])
+			{
+				Placed[Vertex] = true;
+				Out->Layout[Vertex] = Place;
+				continue;
+			}
+			if (Out->Layout[Vertex].Equals(Place, 1.0e-5f))
+			{
+				continue;
+			}
+			if (!bCanSplit)
+			{
+				++Unsplit;
+				continue;
+			}
+			// One copy per (vertex, place): every corner of the vertex in the same other island shares it.
+			uint32* Existing = nullptr;
+			for (TPair<TPair<uint32, int32>, uint32>& Pair : Copies)
+			{
+				if (Pair.Key.Key == Vertex && Out->Layout[Pair.Value].Equals(Place, 1.0e-5f))
+				{
+					Existing = &Pair.Value;
+					break;
+				}
+			}
+			if (!Existing)
+			{
+				const uint32 Copy = static_cast<uint32>(Out->Positions.Num());
+				Out->SplitFrom.Add(static_cast<int32>(Vertex));
+				Out->Positions.Add(Out->Positions[Vertex]);
+				Out->Normals.Add(Out->Normals[Vertex]);
+				if (Out->Tangents.Num() > 0)
+				{
+					Out->Tangents.Add(Out->Tangents[Vertex]);
+				}
+				Out->UV0s.Add(Out->UV0s[Vertex]);
+				Out->UV1s.Add(Out->UV1s[Vertex]);
+				if (Out->Colors.Num() > 0)
+				{
+					Out->Colors.Add(Out->Colors[Vertex]);
+				}
+				Out->Layout.Add(Place);
+				Existing = &Copies.Add(TPair<uint32, int32>(Vertex, Corner), Copy);
+			}
+			Out->Indices[Corner] = *Existing;
+		}
+	}
+	Out->bOwnLayout = bPacked;
 	const int32 Split = Out->SplitFrom.Num();
 
 	FSHA1 Sha;
@@ -4286,12 +4307,15 @@ TSharedPtr<const FMantleBakeMesh> FMantleBakeMesh::FromSection(const FMantleGlbM
 	Hash(Out->Layout);
 	Hash(Out->Indices);
 	Hash(Out->SplitFrom);
+	const uint8 Own = Out->bOwnLayout ? 1 : 0;
+	Sha.Update(&Own, 1);
 	Sha.Final();
 	uint8 Digest[FSHA1::DigestSize];
 	Sha.GetHash(Digest);
 	Out->Hash = BytesToHex(Digest, 8).ToLower();
-	UE_LOG(LogMantle, Log, TEXT("MANTLE_UV_BAKE section %d of %s: %d triangles laid out for its bake, %.1f%% of the layout drawn twice, %d vertex copies for bow-tie corners%s; hash %s"),
-		MaterialIndex, *Mesh.Name, Out->Indices.Num() / 3, 100.0 * Out->LayoutOverlap(), Split,
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_UV_BAKE section %d of %s: %d triangles; its UV0 draws %.1f%% of its texels twice; baked by %s, %.1f%% of that layout drawn twice, %d vertex copies for bow-tie corners%s; hash %s"),
+		MaterialIndex, *Mesh.Name, Out->Indices.Num() / 3, 100.0 * Uv0Overlap, Out->bOwnLayout ? TEXT("a layout of its own") : (bMayRelayout ? TEXT("its UV0") : TEXT("its UV0 (other things read it)")),
+		100.0 * Out->LayoutOverlap(), Split,
 		Unsplit > 0 ? *FString::Printf(TEXT(", %d corner(s) left unsplit (a section of several primitives)"), Unsplit) : TEXT(""), *Out->Hash);
 	return Out;
 }
@@ -4299,6 +4323,10 @@ TSharedPtr<const FMantleBakeMesh> FMantleBakeMesh::FromSection(const FMantleGlbM
 void FMantleBakeMesh::ApplyLayout(FMantleGlbMesh& Mesh, const int32 MaterialIndex) const
 {
 	using namespace MantlePlaceAssetsPrivate;
+	if (!bOwnLayout)
+	{
+		return; // laid out by the section's own UV0: the mesh stays as it is
+	}
 	const int32 Original = Layout.Num() - SplitFrom.Num();
 	TArray<int32> Vertices = SectionVertices(Mesh, MaterialIndex);
 	if (Vertices.Num() != Original || Mesh.UVs.Num() != Mesh.Positions.Num())
@@ -4369,16 +4397,39 @@ void FMantleBakeMesh::ApplyLayout(FMantleGlbMesh& Mesh, const int32 MaterialInde
 
 double FMantleBakeMesh::LayoutOverlap() const
 {
-	// Each triangle drawn on the grid by the texel centers strictly inside it (a center on the edge two triangles share is neither's, so a
-	// quad's own diagonal does not count); a texel two triangles reach is drawn twice.
+	return Overlap(Layout, Indices);
+}
+
+double FMantleBakeMesh::Overlap(const TConstArrayView<FVector2f> Uvs, const TConstArrayView<uint32> Indices)
+{
+	// Each triangle drawn on a grid over the UVs' bounds by the texel centers strictly inside it (a center on the edge two triangles share
+	// is neither's, so a quad's own diagonal does not count); a texel two triangles reach is drawn twice.
 	constexpr int32 Size = LayoutResolution;
+	FBox2f Bounds(ForceInit);
+	for (const uint32 Index : Indices)
+	{
+		if (Uvs.IsValidIndex(static_cast<int32>(Index)))
+		{
+			Bounds += Uvs[Index];
+		}
+	}
+	const FVector2f Extent = Bounds.GetSize();
+	if (!Bounds.bIsValid || Extent.X <= 0.0f || Extent.Y <= 0.0f)
+	{
+		return 0.0;
+	}
+	const FVector2f Scale(Size / Extent.X, Size / Extent.Y);
 	TArray<uint8> Hits;
 	Hits.Init(0, Size * Size);
 	for (int32 Corner = 0; Corner + 2 < Indices.Num(); Corner += 3)
 	{
-		const FVector2f A = Layout[Indices[Corner]] * Size;
-		const FVector2f B = Layout[Indices[Corner + 1]] * Size;
-		const FVector2f C = Layout[Indices[Corner + 2]] * Size;
+		if (!Uvs.IsValidIndex(static_cast<int32>(FMath::Max3(Indices[Corner], Indices[Corner + 1], Indices[Corner + 2]))))
+		{
+			continue;
+		}
+		const FVector2f A = (Uvs[Indices[Corner]] - Bounds.Min) * Scale;
+		const FVector2f B = (Uvs[Indices[Corner + 1]] - Bounds.Min) * Scale;
+		const FVector2f C = (Uvs[Indices[Corner + 2]] - Bounds.Min) * Scale;
 		const float Area = (B.X - A.X) * (C.Y - A.Y) - (C.X - A.X) * (B.Y - A.Y);
 		if (FMath::Abs(Area) < 1.0e-8f)
 		{

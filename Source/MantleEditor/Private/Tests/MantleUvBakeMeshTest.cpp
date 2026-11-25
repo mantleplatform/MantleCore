@@ -2,6 +2,7 @@
 #include "MantleGlbWriter.h"
 #include "MantlePlaceAssetConverter.h"
 #include "MantlePlaceAssets.h"
+#include "MantleVehicleSource.h"
 
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
@@ -200,6 +201,8 @@ bool FMantleUvBakeLayoutTest::RunTest(const FString& Parameters)
 
 	// Both quads have UV0 0 to 1: any picture laid out by UV0 gives them one color. The layout puts them apart.
 	TestTrue(TEXT("the two quads' UV0 is the same"), Mesh.UVs[0].Equals(Mesh.UVs[4]) && Mesh.UVs[3].Equals(Mesh.UVs[7]));
+	TestTrue(TEXT("its UV0 overlaps itself (both quads on 0 to 1)"), FMantleBakeMesh::Overlap(Bake->UV0s, Bake->Indices) > FMantleBakeMesh::OverlapsItself);
+	TestTrue(TEXT("so it gets a layout of its own"), Bake->bOwnLayout);
 	TestTrue(TEXT("no texel of the layout is drawn twice"), Bake->LayoutOverlap() < 0.001);
 	TestTrue(TEXT("the quads are apart in it"), FVector2f::Distance(QuadCenter(*Bake, 0), QuadCenter(*Bake, 4)) > 0.1f);
 	bool bInside = true;
@@ -238,17 +241,18 @@ bool FMantleUvBakeBowTieTest::RunTest(const FString& Parameters)
 	using namespace MantleUvBakeMeshTestPrivate;
 	// Two triangles that share only their middle vertex (no edge): two islands, which the packer places apart. Kept once, that vertex
 	// would stretch one triangle across the layout (SUV04's lenses had 77 such corners): it is copied into the second island instead.
+	// A third triangle on the first one's UV0 makes the section's UV0 overlap itself, so it gets a layout of its own.
 	FMantleGlbMesh Mesh;
 	Mesh.Name = TEXT("BowTie");
 	Mesh.MaterialNames = { TEXT("Lens"), TEXT("Body") };
-	const FVector3f Points[] = { { 0, 0, 0 }, { 100, 0, 0 }, { 50, 50, 0 }, { 0, 100, 0 }, { 100, 100, 0 } };
-	const FVector2f Uvs[] = { { 0, 0 }, { 1, 0 }, { 0.5f, 0.5f }, { 0, 1 }, { 1, 1 } };
+	const FVector3f Points[] = { { 0, 0, 0 }, { 100, 0, 0 }, { 50, 50, 0 }, { 0, 100, 0 }, { 100, 100, 0 }, { 0, 0, 50 }, { 100, 0, 50 }, { 50, 50, 50 } };
+	const FVector2f Uvs[] = { { 0, 0 }, { 1, 0 }, { 0.5f, 0.5f }, { 0, 1 }, { 1, 1 }, { 0, 0 }, { 1, 0 }, { 0.5f, 0.5f } };
 	FMantleGlbPrimitive& Lens = Mesh.Primitives.AddDefaulted_GetRef();
 	Lens.MaterialIndex = 0;
 	Lens.FirstVertex = 0;
-	Lens.NumVertices = 5;
-	Lens.Indices = { 0, 1, 2, 2, 4, 3 };
-	for (int32 Vertex = 0; Vertex < 5; ++Vertex)
+	Lens.NumVertices = 8;
+	Lens.Indices = { 0, 1, 2, 2, 4, 3, 5, 6, 7 };
+	for (int32 Vertex = 0; Vertex < 8; ++Vertex)
 	{
 		Mesh.Positions.Add(Points[Vertex]);
 		Mesh.Normals.Add(FVector3f(0.0f, 0.0f, 1.0f));
@@ -257,7 +261,7 @@ bool FMantleUvBakeBowTieTest::RunTest(const FString& Parameters)
 	}
 	FMantleGlbPrimitive& Body = Mesh.Primitives.AddDefaulted_GetRef();
 	Body.MaterialIndex = 1;
-	Body.FirstVertex = 5;
+	Body.FirstVertex = 8;
 	Body.NumVertices = 3;
 	Body.Indices = { 0, 1, 2 };
 	for (int32 Vertex = 0; Vertex < 3; ++Vertex)
@@ -273,27 +277,78 @@ bool FMantleUvBakeBowTieTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+	TestTrue(TEXT("its UV0 overlaps itself, so it gets a layout of its own"), Bake->bOwnLayout);
 	TestEqual(TEXT("the shared vertex is copied once"), Bake->SplitFrom.Num(), 1);
 	TestEqual(TEXT("it is the middle one"), Bake->SplitFrom.Num() == 1 ? Bake->SplitFrom[0] : -1, 2);
 	TestTrue(TEXT("no texel of the layout is drawn twice"), Bake->LayoutOverlap() < 0.001);
 
 	FMantleGlbMesh Published = Mesh;
 	Bake->ApplyLayout(Published, 0);
-	TestEqual(TEXT("the mesh gains the copy"), Published.Positions.Num(), 9);
-	TestTrue(TEXT("every per-vertex stream with it"), Published.Normals.Num() == 9 && Published.UVs.Num() == 9 && Published.UV1s.Num() == 9);
-	TestEqual(TEXT("at the end of the lens"), Published.Primitives[0].NumVertices, 6);
-	TestEqual(TEXT("the body moves along"), Published.Primitives[1].FirstVertex, 6);
-	TestTrue(TEXT("and keeps its own UVs"), Published.UVs[6].Equals(FVector2f(0.25f, 0.75f)));
-	TestTrue(TEXT("the copy is the middle vertex"), Published.Positions[5].Equals(Points[2]) && Published.UV1s[5].Equals(Uvs[2]));
+	TestEqual(TEXT("the mesh gains the copy"), Published.Positions.Num(), 12);
+	TestTrue(TEXT("every per-vertex stream with it"), Published.Normals.Num() == 12 && Published.UVs.Num() == 12 && Published.UV1s.Num() == 12);
+	TestEqual(TEXT("at the end of the lens"), Published.Primitives[0].NumVertices, 9);
+	TestEqual(TEXT("the body moves along"), Published.Primitives[1].FirstVertex, 9);
+	TestTrue(TEXT("and keeps its own UVs"), Published.UVs[9].Equals(FVector2f(0.25f, 0.75f)));
+	TestTrue(TEXT("the copy is the middle vertex"), Published.Positions[8].Equals(Points[2]) && Published.UV1s[8].Equals(Uvs[2]));
 	TestTrue(TEXT("the lens draws the bake's triangles"), Published.Primitives[0].Indices == Bake->Indices);
 	TestTrue(TEXT("one triangle on the original middle vertex, the other on its copy"),
-		Published.Primitives[0].Indices.Contains(2u) && Published.Primitives[0].Indices.Contains(5u));
+		Published.Primitives[0].Indices.Contains(2u) && Published.Primitives[0].Indices.Contains(8u));
 	bool bLaidOut = true;
-	for (int32 Vertex = 0; Vertex < 6; ++Vertex)
+	for (int32 Vertex = 0; Vertex < 9; ++Vertex)
 	{
 		bLaidOut = bLaidOut && Published.UVs[Vertex].Equals(Bake->Layout[Vertex]);
 	}
 	TestTrue(TEXT("every lens vertex, the copy too, is at its place in the layout"), bLaidOut);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleUvBakeKeepsUv0Test,
+	"Mantle.Editor.UvBake.CleanOrPaintedUv0IsKept",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleUvBakeKeepsUv0Test::RunTest(const FString& Parameters)
+{
+	using namespace MantleUvBakeMeshTestPrivate;
+	// A section whose UV0 covers each texel once bakes laid out by it: the mesh keeps every UV.
+	FMantleGlbMesh Clean = NewTwoSectionMesh();
+	for (int32 Vertex = 4; Vertex < 8; ++Vertex)
+	{
+		Clean.UVs[Vertex].X += 2.0f; // the second quad beside the first, not on it
+	}
+	const TSharedPtr<const FMantleBakeMesh> Kept = FMantleBakeMesh::FromSection(Clean, 0);
+	if (TestTrue(TEXT("a clean section is set up"), Kept.IsValid()))
+	{
+		TestFalse(TEXT("its UV0 does not overlap itself"), FMantleBakeMesh::Overlap(Kept->UV0s, Kept->Indices) > FMantleBakeMesh::OverlapsItself);
+		TestFalse(TEXT("so it bakes by its UV0"), Kept->bOwnLayout);
+		TestTrue(TEXT("the layout is its UV0"), Kept->Layout == Kept->UV0s);
+		FMantleGlbMesh Published = Clean;
+		Kept->ApplyLayout(Published, 0);
+		TestTrue(TEXT("and the mesh is left exactly as it was"), Published.UVs == Clean.UVs && Published.Positions == Clean.Positions
+			&& Published.Primitives[0].Indices == Clean.Primitives[0].Indices);
+	}
+
+	// An overlapping UV0 that something else reads (a painted section: liveries) is kept too.
+	const FMantleGlbMesh Overlapping = NewTwoSectionMesh();
+	const TSharedPtr<const FMantleBakeMesh> Painted = FMantleBakeMesh::FromSection(Overlapping, 0, /*bMayRelayout*/ false);
+	const TSharedPtr<const FMantleBakeMesh> Relaid = FMantleBakeMesh::FromSection(Overlapping, 0, /*bMayRelayout*/ true);
+	if (TestTrue(TEXT("a painted section is set up"), Painted.IsValid() && Relaid.IsValid()))
+	{
+		TestFalse(TEXT("it bakes by its UV0 though it overlaps"), Painted->bOwnLayout);
+		TestNotEqual(TEXT("its key is not the relaid one's"), Painted->Hash, Relaid->Hash);
+		FMantleGlbMesh Published = Overlapping;
+		Painted->ApplyLayout(Published, 0);
+		TestTrue(TEXT("and its UVs are untouched"), Published.UVs == Overlapping.UVs);
+	}
+
+	// Which body sections keep their UV0: the painted ones, by Paint.Sections or a paint layer's sections.
+	UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
+	Source->Paint.Sections.Add(TEXT("Body"));
+	FMantleVehicleSourcePaintLayer& Layer = Source->Paint.Layers.AddDefaulted_GetRef();
+	Layer.Sections.Add(TEXT("Trim"));
+	TestTrue(TEXT("a painted section keeps its UV0"), FMantlePlaceAssets::VehicleSectionKeepsUv0(*Source, TEXT("Body")));
+	TestTrue(TEXT("so does a paint layer's"), FMantlePlaceAssets::VehicleSectionKeepsUv0(*Source, TEXT("Trim")));
+	TestFalse(TEXT("a lamp's may be laid out anew"), FMantlePlaceAssets::VehicleSectionKeepsUv0(*Source, TEXT("Lights")));
 	return true;
 }
 
@@ -311,9 +366,9 @@ bool FMantleUvBakeKeyTest::RunTest(const FString& Parameters)
 	UMaterialExpressionConstant3Vector* Color = AddNode<UMaterialExpressionConstant3Vector>(Plain);
 	Plain->GetEditorOnlyData()->BaseColor.Connect(0, Color);
 
-	const TSharedPtr<const FMantleBakeMesh> Bake = FMantlePlaceAssets::SectionBakeMesh(Mesh, 0, Lens);
+	const TSharedPtr<const FMantleBakeMesh> Bake = FMantlePlaceAssets::SectionBakeMesh(Mesh, 0, Lens, true);
 	TestTrue(TEXT("a material reading UV1 bakes over its section"), Bake.IsValid());
-	TestFalse(TEXT("one that does not bakes on a card, as before"), FMantlePlaceAssets::SectionBakeMesh(Mesh, 0, Plain).IsValid());
+	TestFalse(TEXT("one that does not bakes on a card, as before"), FMantlePlaceAssets::SectionBakeMesh(Mesh, 0, Plain, true).IsValid());
 	if (!Bake.IsValid())
 	{
 		return false;
@@ -377,7 +432,7 @@ bool FMantleUvBakeRenderTest::RunTest(const FString& Parameters)
 	}
 	const FMantleGlbMesh Mesh = NewTwoSectionMesh();
 	UMaterial* Lens = NewUv1MaskMaterial();
-	const TSharedPtr<const FMantleBakeMesh> Bake = FMantlePlaceAssets::SectionBakeMesh(Mesh, 0, Lens);
+	const TSharedPtr<const FMantleBakeMesh> Bake = FMantlePlaceAssets::SectionBakeMesh(Mesh, 0, Lens, true);
 	if (!TestTrue(TEXT("the section is laid out"), Bake.IsValid()))
 	{
 		return false;
