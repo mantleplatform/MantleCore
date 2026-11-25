@@ -2005,9 +2005,76 @@ namespace MantlePlaceAssetConverterPrivate
 			static_cast<double>(Memory.UsedPhysical) / GiB, static_cast<double>(Memory.UsedVirtual) / GiB);
 	}
 
+	/** The UV channel of a section's bake card (FMantleBakeSurface::Mesh) that holds its layout: after UV0 and UV1, which the graph reads. */
+	constexpr int32 BakeMeshLayoutChannel = 2;
+
+	/**
+	 * A section bake's document: GLTFExporter wrote every baked texture on the layout's channel (BakeMeshLayoutChannel). The section is published
+	 * with the layout as its UV0, so they are read on UV0. Returns how many texture references were on another channel (a texture GLTFExporter
+	 * passed through as it is, which the layout does not place): none is expected, as the bake reads a copy where every input is baked.
+	 */
+	int32 MoveBakeTexturesToFirstUv(FMantleGlbDocument& Document)
+	{
+		int32 Other = 0;
+		const TArray<TSharedPtr<FJsonValue>>* Materials = nullptr;
+		if (!Document.Json.IsValid() || !Document.Json->TryGetArrayField(TEXT("materials"), Materials))
+		{
+			return 0;
+		}
+		TFunction<void(const TSharedPtr<FJsonObject>&, bool)> Visit = [&](const TSharedPtr<FJsonObject>& Object, const bool bTextureInfo)
+		{
+			if (!Object.IsValid())
+			{
+				return;
+			}
+			if (bTextureInfo)
+			{
+				double TexCoordValue = 0.0;
+				Object->TryGetNumberField(TEXT("texCoord"), TexCoordValue);
+				const int32 TexCoord = static_cast<int32>(TexCoordValue);
+				if (Object->HasField(TEXT("index")))
+				{
+					if (TexCoord == BakeMeshLayoutChannel)
+					{
+						Object->SetNumberField(TEXT("texCoord"), 0);
+					}
+					else
+					{
+						++Other;
+					}
+				}
+				const TSharedPtr<FJsonObject>* Extensions = nullptr;
+				const TSharedPtr<FJsonObject>* Transform = nullptr;
+				if (Object->TryGetObjectField(TEXT("extensions"), Extensions) && (*Extensions)->TryGetObjectField(TEXT("KHR_texture_transform"), Transform)
+					&& (*Transform)->HasField(TEXT("texCoord")) && static_cast<int32>((*Transform)->GetNumberField(TEXT("texCoord"))) == BakeMeshLayoutChannel)
+				{
+					(*Transform)->SetNumberField(TEXT("texCoord"), 0);
+				}
+				return;
+			}
+			for (const auto& Pair : Object->Values)
+			{
+				if (Pair.Value.IsValid() && Pair.Value->Type == EJson::Object)
+				{
+					// A texture info is any object named *Texture (baseColorTexture, normalTexture, a KHR extension's own).
+					Visit(Pair.Value->AsObject(), FString(Pair.Key.ToView()).EndsWith(TEXT("Texture")));
+				}
+			}
+		};
+		for (const TSharedPtr<FJsonValue>& Material : *Materials)
+		{
+			if (Material.IsValid() && Material->Type == EJson::Object)
+			{
+				Visit(Material->AsObject(), false);
+			}
+		}
+		return Other;
+	}
+
 	/**
 	 * The card a material is baked on when the bake surface is not GLTFExporter's own: one quad, 1 m (or Surface.WorldTileCm) a side, facing up, its UVs 0 to
 	 * Surface.UvRange and every corner Surface.VertexColor, drawn with Material in its only slot. Transient; null when it cannot be built.
+	 * With Surface.Mesh it is that section's own triangles instead (BakeMeshLayoutChannel).
 	 */
 	UStaticMesh* MakeBakeCard(UMaterialInterface* Material, const FMantleBakeSurface& Surface)
 	{
@@ -2020,36 +2087,76 @@ namespace MantlePlaceAssetConverterPrivate
 		// The bake writes the color back out as sRGB bytes (FMeshMaterialRenderItem::PopulateWithMeshData), so the corners hold the bytes
 		// as linear: the Vertex Color node then reads exactly the bytes over 255, as it does on the meshes the color was averaged from.
 		const FVector4f Color(FLinearColor(Surface.VertexColor));
-		const float Range = static_cast<float>(FMath::Max(Surface.UvRange, 1.0));
-		const float Side = Surface.WorldTileCm > 0.0 ? static_cast<float>(Surface.WorldTileCm) : 100.0f;
-		const float Shift = static_cast<float>(Surface.WorldShiftCm);
-		TArray<FVertexInstanceID> Corners;
-		for (int32 Corner = 0; Corner < 4; ++Corner)
+		if (const FMantleBakeMesh* Mesh = Surface.Mesh.Get())
 		{
-			const int32 X = Corner & 1;
-			const int32 Y = (Corner >> 1) & 1;
-			const FVertexID Vertex = Description.CreateVertex();
-			Attributes.GetVertexPositions()[Vertex] = FVector3f(Side * X + Shift, Side * Y + Shift, 0.0f);
-			const FVertexInstanceID Instance = Description.CreateVertexInstance(Vertex);
-			Attributes.GetVertexInstanceNormals()[Instance] = FVector3f(0.0f, 0.0f, 1.0f);
-			Attributes.GetVertexInstanceTangents()[Instance] = FVector3f(1.0f, 0.0f, 0.0f);
-			Attributes.GetVertexInstanceBinormalSigns()[Instance] = 1.0f;
-			Attributes.GetVertexInstanceColors()[Instance] = Color;
-			Attributes.GetVertexInstanceUVs().Set(Instance, 0, FVector2f(Range * X, Range * Y));
-			Corners.Add(Instance);
+			// The section as it is drawn: its positions, normals and both UV sets (what the graph reads as Texture Coordinate 0 and 1), and the
+			// layout the bake is drawn by in the channel after them (GLTFExporter bakes a static mesh by its lightmap coordinate, FGLTFMeshData).
+			// Its own vertex colors when the material reads them (EffectiveBakeSurface left the surface's color as it was), else that color.
+			const bool bOwnColors = Surface.VertexColor != FColor::White && Mesh->Colors.Num() == Mesh->Positions.Num();
+			const bool bTangents = Mesh->Tangents.Num() == Mesh->Positions.Num();
+			Attributes.GetVertexInstanceUVs().SetNumChannels(BakeMeshLayoutChannel + 1);
+			TArray<FVertexInstanceID> Instances;
+			for (int32 Index = 0; Index < Mesh->Positions.Num(); ++Index)
+			{
+				const FVertexID Vertex = Description.CreateVertex();
+				Attributes.GetVertexPositions()[Vertex] = Mesh->Positions[Index];
+				const FVertexInstanceID Instance = Description.CreateVertexInstance(Vertex);
+				Attributes.GetVertexInstanceNormals()[Instance] = Mesh->Normals[Index];
+				Attributes.GetVertexInstanceTangents()[Instance] = bTangents ? FVector3f(Mesh->Tangents[Index]) : FVector3f::ZeroVector;
+				Attributes.GetVertexInstanceBinormalSigns()[Instance] = bTangents && Mesh->Tangents[Index].W < 0.0f ? -1.0f : 1.0f;
+				Attributes.GetVertexInstanceColors()[Instance] = bOwnColors ? FVector4f(FLinearColor(Mesh->Colors[Index])) : Color;
+				Attributes.GetVertexInstanceUVs().Set(Instance, 0, Mesh->UV0s[Index]);
+				Attributes.GetVertexInstanceUVs().Set(Instance, 1, Mesh->UV1s[Index]);
+				Attributes.GetVertexInstanceUVs().Set(Instance, BakeMeshLayoutChannel, Mesh->Layout[Index]);
+				Instances.Add(Instance);
+			}
+			for (int32 Corner = 0; Corner + 2 < Mesh->Indices.Num(); Corner += 3)
+			{
+				const FVertexInstanceID A = Instances[Mesh->Indices[Corner]];
+				const FVertexInstanceID B = Instances[Mesh->Indices[Corner + 1]];
+				const FVertexInstanceID C = Instances[Mesh->Indices[Corner + 2]];
+				if (A != B && B != C && A != C)
+				{
+					Description.CreateTriangle(Group, { A, B, C });
+				}
+			}
 		}
-		Description.CreateTriangle(Group, { Corners[0], Corners[2], Corners[1] });
-		Description.CreateTriangle(Group, { Corners[2], Corners[3], Corners[1] });
+		else
+		{
+			const float Range = static_cast<float>(FMath::Max(Surface.UvRange, 1.0));
+			const float Side = Surface.WorldTileCm > 0.0 ? static_cast<float>(Surface.WorldTileCm) : 100.0f;
+			const float Shift = static_cast<float>(Surface.WorldShiftCm);
+			TArray<FVertexInstanceID> Corners;
+			for (int32 Corner = 0; Corner < 4; ++Corner)
+			{
+				const int32 X = Corner & 1;
+				const int32 Y = (Corner >> 1) & 1;
+				const FVertexID Vertex = Description.CreateVertex();
+				Attributes.GetVertexPositions()[Vertex] = FVector3f(Side * X + Shift, Side * Y + Shift, 0.0f);
+				const FVertexInstanceID Instance = Description.CreateVertexInstance(Vertex);
+				Attributes.GetVertexInstanceNormals()[Instance] = FVector3f(0.0f, 0.0f, 1.0f);
+				Attributes.GetVertexInstanceTangents()[Instance] = FVector3f(1.0f, 0.0f, 0.0f);
+				Attributes.GetVertexInstanceBinormalSigns()[Instance] = 1.0f;
+				Attributes.GetVertexInstanceColors()[Instance] = Color;
+				Attributes.GetVertexInstanceUVs().Set(Instance, 0, FVector2f(Range * X, Range * Y));
+				Corners.Add(Instance);
+			}
+			Description.CreateTriangle(Group, { Corners[0], Corners[2], Corners[1] });
+			Description.CreateTriangle(Group, { Corners[2], Corners[3], Corners[1] });
+		}
 
 		UObject* Outer = GetTransientPackage();
 		UStaticMesh* Card = NewObject<UStaticMesh>(Outer, FMantlePlaceAssets::UniqueBakedMeshName(Outer, TEXT("MantleBakeCard")), RF_Transient);
 		Card->GetStaticMaterials().Add(FStaticMaterial(Material, SlotName, SlotName));
 		Card->bAllowCPUAccess = true;
-		Card->SetLightMapCoordinateIndex(0);
+		Card->SetLightMapCoordinateIndex(Surface.Mesh.IsValid() ? BakeMeshLayoutChannel : 0);
 		Card->SetNumSourceModels(1);
 		FMeshBuildSettings& Build = Card->GetSourceModel(0).BuildSettings;
 		Build.bRecomputeNormals = false;
-		Build.bRecomputeTangents = false;
+		// A section with no tangents of its own gets Unreal's, from its UV0, as the mesh it came from would.
+		Build.bRecomputeTangents = Surface.Mesh.IsValid() && Surface.Mesh->Tangents.Num() != Surface.Mesh->Positions.Num();
+		// A section's UV0 may run to several repeats (SUV04's lamps: 0 to 4.5); half precision would move it by texels.
+		Build.bUseFullPrecisionUVs = true;
 		Build.bGenerateLightmapUVs = false;
 		Build.bBuildReversedIndexBuffer = false;
 		Build.DistanceFieldResolutionScale = 0.0f;
@@ -2189,6 +2296,12 @@ bool FMantleGltfMaterialFlattener::Flatten(UMaterialInterface* Material, const F
 		{
 			ReadsCard = FMantlePlaceAssets::ReadsVertexColorCopy(Material);
 		}
+		// A section's own bake must be drawn by its layout, every input of it: the copy reads mesh data in each one, so none is passed
+		// through as a texture on the section's own UV0.
+		else if (Settings.Surface.Mesh.IsValid())
+		{
+			ReadsCard = FMantlePlaceAssets::ReadsVertexColorCopy(Material, /*bEveryInput*/ true);
+		}
 		Card.Reset(MantlePlaceAssetConverterPrivate::MakeBakeCard(ReadsCard.IsValid() ? ReadsCard.Get() : Material, Settings.Surface));
 		if (!Card.IsValid())
 		{
@@ -2220,6 +2333,14 @@ bool FMantleGltfMaterialFlattener::Flatten(UMaterialInterface* Material, const F
 	{
 		OutError = OutError.IsEmpty() ? FString(TEXT("GLTFExporter's file could not be read")) : OutError;
 		return false;
+	}
+	if (Settings.Surface.Mesh.IsValid())
+	{
+		if (const int32 Other = MantlePlaceAssetConverterPrivate::MoveBakeTexturesToFirstUv(OutDocument); Other > 0)
+		{
+			OutMessages.Add(FString::Printf(TEXT("%d texture(s) of %s were not drawn by its section's layout, so they may land in the wrong place"), Other,
+				*Material->GetName()));
+		}
 	}
 	return true;
 }
@@ -3282,9 +3403,15 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 				Converted.BuiltInSections.Add(Converted.Body.MaterialNames[Index], BuiltIn);
 				continue;
 			}
-			const FString SectionKey = FMantlePlaceAssets::MaterialKey(Material);
-			Converted.SectionMaterialKeys.Add(Converted.Body.MaterialNames[Index],
-				FMantleVehicleConverter::BodySectionIsTintMask(*Vehicle, Converted.Body.MaterialNames[Index], Material) ? FMantlePlaceAssets::TintMaskKey(SectionKey) : SectionKey);
+			// A material that reads a second UV set is baked over this section's own triangles (gathered the same way): the section takes
+			// that bake's layout as its UV0, before its far-away versions are made from it.
+			const TSharedPtr<const FMantleBakeMesh> BakeMesh = FMantlePlaceAssets::SectionBakeMesh(Converted.Body, Index, Material);
+			if (BakeMesh.IsValid())
+			{
+				BakeMesh->ApplyLayout(Converted.Body, Index);
+			}
+			Converted.SectionMaterialKeys.Add(Converted.Body.MaterialNames[Index], FMantlePlaceAssets::SurfaceMaterialKey(Material,
+				FMantleVehicleConverter::BodySectionIsTintMask(*Vehicle, Converted.Body.MaterialNames[Index], Material), BakeMesh.Get()));
 		}
 	}
 	// Its liveries (#488) convert as decal base colors (FMantlePlaceDependencies::AddVehicleSpawn gathers them), and
@@ -4228,7 +4355,8 @@ FMantleBakeSurface FMantlePlaceAssetConverter::EffectiveBakeSurface(const FMantl
 	}
 	// Mapped by world position, and not the plain pattern kept from its source textures (Fidelity2's worldAligned): bake one world tile.
 	// A landscape layer (a UV range) keeps its own tiling.
-	if (Analysis.Has(EMantleMaterialLoss::WorldAligned) && !Analysis.Fidelity2.bWorldAligned && !Effective.CoversTerrain())
+	// A section's own bake (Mesh) is drawn where its triangles really are, so its world mapping bakes as it is.
+	if (Analysis.Has(EMantleMaterialLoss::WorldAligned) && !Analysis.Fidelity2.bWorldAligned && !Effective.CoversTerrain() && !Effective.Mesh.IsValid())
 	{
 		Effective.WorldTileCm = FMantleBakeSurface::DefaultWorldTileCm;
 	}
@@ -4735,7 +4863,7 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 		Out.Issues.Add(ErrorIssue(TEXT("A material this place uses could not be loaded."), TEXT("Check the level for missing assets, then try again.")));
 		return false;
 	}
-	const FString Key = InSurface.bTintMask ? FMantlePlaceAssets::TintMaskKey(FMantlePlaceAssets::MaterialKey(Material)) : FMantlePlaceAssets::MaterialKey(Material);
+	const FString Key = FMantlePlaceAssets::SurfaceMaterialKey(Material, InSurface.bTintMask, InSurface.Mesh.Get());
 	if (Out.FindMaterial(Key))
 	{
 		return true;
@@ -4848,7 +4976,12 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 	FMantleFlattenSettings FlattenSettings = Settings;
 	FlattenSettings.MaxBakeSize = Limits.MaxTextureSize;
 	FlattenSettings.Surface = Surface;
-	if (!Surface.IsPlain())
+	if (Surface.Mesh.IsValid())
+	{
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE %s: it reads a second UV set, so it is baked over its section's own %d triangles, laid out apart (section %s)"),
+			*Material->GetName(), Surface.Mesh->Indices.Num() / 3, *Surface.Mesh->Hash);
+	}
+	else if (!Surface.IsPlain())
 	{
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE %s: baked on a card with vertex color %s and UVs 0 to %g%s"), *Material->GetName(), *Surface.VertexColor.ToHex(), Surface.UvRange,
 			Surface.WorldTileCm > 0.0 ? *FString::Printf(TEXT(", %g cm a side for its world mapping"), Surface.WorldTileCm) : TEXT(""));

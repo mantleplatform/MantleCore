@@ -107,6 +107,10 @@
 #include "ShaderCompiler.h"
 #include "Misc/FileHelper.h"
 #include "Misc/SecureHash.h"
+#include "LayoutUV.h"
+#include "MantleGlbWriter.h"
+#include "MeshUtilitiesCommon.h"
+#include "OverlappingCorners.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -2691,16 +2695,17 @@ void FMantlePlaceDependencies::AddSlotVertexColors(FMantleGatheredMaterial* Entr
 	Entry->VertexColorWeight += Vertices;
 }
 
-FMantleGatheredMaterial* FMantlePlaceDependencies::AddMaterial(UMaterialInterface* Material, const FString& Label, const bool bTintMask)
+FMantleGatheredMaterial* FMantlePlaceDependencies::AddMaterial(UMaterialInterface* Material, const FString& Label, const bool bTintMask,
+	const TSharedPtr<const FMantleBakeMesh>& BakeMesh)
 {
 	if (!Material || FMantlePlaceAssets::IsLibraryAsset(Material))
 	{
 		return nullptr;
 	}
-	const FString Key = bTintMask ? FMantlePlaceAssets::TintMaskKey(FMantlePlaceAssets::MaterialKey(Material)) : FMantlePlaceAssets::MaterialKey(Material);
+	const FString Key = FMantlePlaceAssets::SurfaceMaterialKey(Material, bTintMask, BakeMesh.Get());
 	FMantleGatheredMaterial* Existing = Materials.FindByPredicate([&Key](const FMantleGatheredMaterial& Entry) { return Entry.Key == Key; });
-	// A tint-mask variant is never a variant stand-in: it is its own entry, and nothing else is flagged through it.
-	if (!Existing && !bTintMask && FMantlePlaceAssets::IsTransientMaterialInstance(Material))
+	// A tint-mask variant or a section's own bake is never a variant stand-in: it is its own entry, and nothing else is flagged through it.
+	if (!Existing && !bTintMask && !BakeMesh.IsValid() && FMantlePlaceAssets::IsTransientMaterialInstance(Material))
 	{
 		const UMaterialInterface* Varied = FMantlePlaceAssets::VariedMaterial(Material);
 		const FString VariedName = Varied ? Varied->GetName() : FString(TEXT("none"));
@@ -2728,6 +2733,7 @@ FMantleGatheredMaterial* FMantlePlaceDependencies::AddMaterial(UMaterialInterfac
 		Existing->Key = Key;
 		Existing->Name = Material->GetName();
 		Existing->bTintMask = bTintMask;
+		Existing->BakeMesh = BakeMesh;
 	}
 	else if (Existing->Material.Get() != Material && FMantlePlaceAssets::IsTransientMaterialInstance(Material))
 	{
@@ -3238,10 +3244,11 @@ void FMantlePlaceDependencies::AddVehicleSpawn(const AActor* Actor)
 
 	// The materials its body (and any tire mesh) draws with, as the upload reads them. A body that cannot be
 	// read gathers none: Check says why (FMantleVehicleConverter::CheckSource).
+	// Read at its Size, as the converter reads it: a section baked over its own triangles (FMantleBakeMesh) is keyed on them.
 	FMantleGlbMesh Body;
 	TArray<UMaterialInterface*> BodyMaterials;
 	FString Error;
-	if (!FMantleVehicleConverter::ReadBody(*Source, Body, BodyMaterials, Error))
+	if (!FMantleVehicleConverter::ReadBody(*Source, Body, BodyMaterials, Error, /*bApplyFitScale*/ true))
 	{
 		return;
 	}
@@ -3252,7 +3259,8 @@ void FMantlePlaceDependencies::AddVehicleSpawn(const AActor* Actor)
 		{
 			continue;
 		}
-		AddMaterial(BodyMaterials[Index], Label, BodySections.IsValidIndex(Index) && FMantleVehicleConverter::BodySectionIsTintMask(*Source, BodySections[Index], BodyMaterials[Index]));
+		AddMaterial(BodyMaterials[Index], Label, BodySections.IsValidIndex(Index) && FMantleVehicleConverter::BodySectionIsTintMask(*Source, BodySections[Index], BodyMaterials[Index]),
+			FMantlePlaceAssets::SectionBakeMesh(Body, Index, BodyMaterials[Index]));
 	}
 }
 
@@ -3879,6 +3887,31 @@ FString FMantlePlaceAssets::TintMaskKey(const FString& MaterialKey)
 	return MaterialKey + TEXT("#tintmask");
 }
 
+FString FMantlePlaceAssets::UvBakeKey(const FString& MaterialKey, const FMantleBakeMesh& Mesh)
+{
+	return MaterialKey + TEXT("#uvbake-") + Mesh.Hash;
+}
+
+FString FMantlePlaceAssets::SurfaceMaterialKey(const UMaterialInterface* Material, const bool bTintMask, const FMantleBakeMesh* Mesh)
+{
+	const FString Key = bTintMask ? TintMaskKey(MaterialKey(Material)) : MaterialKey(Material);
+	return Mesh ? UvBakeKey(Key, *Mesh) : Key;
+}
+
+bool FMantlePlaceAssets::SamplesSecondUv(const UMaterialInterface* Material)
+{
+	return Material && AnalyzeMaterial(Material).Has(EMantleMaterialLoss::SecondUv);
+}
+
+TSharedPtr<const FMantleBakeMesh> FMantlePlaceAssets::SectionBakeMesh(const FMantleGlbMesh& Mesh, const int32 MaterialIndex, const UMaterialInterface* Material)
+{
+	if (!Material || IsLibraryAsset(Material) || !SamplesSecondUv(Material))
+	{
+		return nullptr;
+	}
+	return FMantleBakeMesh::FromSection(Mesh, MaterialIndex);
+}
+
 FString FMantlePlaceAssets::MaterialKey(const UMaterialInterface* Material)
 {
 	if (!Material)
@@ -4049,9 +4082,222 @@ FString FMantleBakeSurface::CacheTag() const
 	// that baked UVs 0 to 1 for a material reading only texture coordinates, one landscape quad stretched over the tile, and must not stand in.
 	// "terrain": a landscape layer's bake has a card as many cm a side as the layer tiles (a bake made before saw 1 m of the world), over the
 	// finest texture's repeat; an older one must not stand in either.
-	return FString::Printf(TEXT(" bakesurface color=%s uvrange=%g%s%s%s%s"), *VertexColor.ToHex(), FMath::Max(UvRange, 1.0), CoversTerrain() ? TEXT(" meshdata") : TEXT(""),
-		bTerrainLayer ? TEXT(" terrain=2") : TEXT(""), WorldTileCm > 0.0 ? *FString::Printf(TEXT(" worldtile=%g"), WorldTileCm) : TEXT(""), bTintMask ? TEXT(" tintmask=1") : TEXT(""));
+	// "uvbake": a bake over one section's own triangles, laid out by its Layout (FMantleBakeMesh), keyed on that section.
+	return FString::Printf(TEXT(" bakesurface color=%s uvrange=%g%s%s%s%s%s"), *VertexColor.ToHex(), FMath::Max(UvRange, 1.0), CoversTerrain() ? TEXT(" meshdata") : TEXT(""),
+		bTerrainLayer ? TEXT(" terrain=2") : TEXT(""), WorldTileCm > 0.0 ? *FString::Printf(TEXT(" worldtile=%g"), WorldTileCm) : TEXT(""), bTintMask ? TEXT(" tintmask=1") : TEXT(""),
+		Mesh.IsValid() ? *FString::Printf(TEXT(" uvbake=1:%s"), *Mesh->Hash) : TEXT(""));
 	// The shift is not in the tag: the shifted bake is only compared with, never stored.
+}
+
+namespace MantlePlaceAssetsPrivate
+{
+	/** A FMantleBakeMesh's triangles as FLayoutUV reads them: one entry per corner, its UV0 the charts, the layout written per corner. */
+	struct FBakeMeshLayoutView : FLayoutUV::IMeshView
+	{
+		const FMantleBakeMesh& Mesh;
+		TArray<FVector2f> Output;
+
+		explicit FBakeMeshLayoutView(const FMantleBakeMesh& InMesh) : Mesh(InMesh) {}
+
+		virtual uint32 GetNumIndices() const override { return static_cast<uint32>(Mesh.Indices.Num()); }
+		virtual FVector3f GetPosition(uint32 Index) const override { return Mesh.Positions[Mesh.Indices[Index]]; }
+		virtual FVector3f GetNormal(uint32 Index) const override { return Mesh.Normals[Mesh.Indices[Index]]; }
+		virtual FVector2f GetInputTexcoord(uint32 Index) const override { return Mesh.UV0s[Mesh.Indices[Index]]; }
+		virtual void InitOutputTexcoords(uint32 Num) override { Output.Init(FVector2f::ZeroVector, Num); }
+		virtual void SetOutputTexcoord(uint32 Index, const FVector2f& Value) override { Output[Index] = Value; }
+	};
+
+	/** The vertices of Mesh's section MaterialIndex, in the order FMantleBakeMesh holds them: each primitive's in turn, each vertex once. */
+	TArray<int32> SectionVertices(const FMantleGlbMesh& Mesh, const int32 MaterialIndex)
+	{
+		TArray<int32> Vertices;
+		for (const FMantleGlbPrimitive& Primitive : Mesh.Primitives)
+		{
+			if (Primitive.MaterialIndex == MaterialIndex)
+			{
+				for (int32 Vertex = 0; Vertex < Primitive.NumVertices; ++Vertex)
+				{
+					Vertices.Add(Primitive.FirstVertex + Vertex);
+				}
+			}
+		}
+		return Vertices;
+	}
+}
+
+TSharedPtr<const FMantleBakeMesh> FMantleBakeMesh::FromSection(const FMantleGlbMesh& Mesh, const int32 MaterialIndex)
+{
+	using namespace MantlePlaceAssetsPrivate;
+	const TSharedRef<FMantleBakeMesh> Out = MakeShared<FMantleBakeMesh>();
+	const TArray<int32> Vertices = SectionVertices(Mesh, MaterialIndex);
+	const int32 NumVertices = Mesh.Positions.Num();
+	if (Vertices.Num() == 0 || Mesh.UVs.Num() != NumVertices || Mesh.Normals.Num() != NumVertices)
+	{
+		return nullptr;
+	}
+	const bool bTangents = Mesh.Tangents.Num() == NumVertices;
+	const bool bUV1 = Mesh.UV1s.Num() == NumVertices;
+	const bool bColors = Mesh.Colors.Num() == NumVertices;
+	for (const int32 Vertex : Vertices)
+	{
+		Out->Positions.Add(Mesh.Positions[Vertex]);
+		Out->Normals.Add(Mesh.Normals[Vertex]);
+		if (bTangents)
+		{
+			Out->Tangents.Add(Mesh.Tangents[Vertex]);
+		}
+		Out->UV0s.Add(Mesh.UVs[Vertex]);
+		Out->UV1s.Add(bUV1 ? Mesh.UV1s[Vertex] : Mesh.UVs[Vertex]);
+		if (bColors)
+		{
+			Out->Colors.Add(Mesh.Colors[Vertex]);
+		}
+	}
+	// The section's vertices are its primitives' ranges laid end to end, so each primitive's indices move by what came before it.
+	int32 Base = 0;
+	for (const FMantleGlbPrimitive& Primitive : Mesh.Primitives)
+	{
+		if (Primitive.MaterialIndex != MaterialIndex)
+		{
+			continue;
+		}
+		for (int32 Corner = 0; Corner + 2 < Primitive.Indices.Num(); Corner += 3)
+		{
+			const uint32 A = Primitive.Indices[Corner];
+			const uint32 B = Primitive.Indices[Corner + 1];
+			const uint32 C = Primitive.Indices[Corner + 2];
+			if (FMath::Max3(A, B, C) >= static_cast<uint32>(Primitive.NumVertices))
+			{
+				return nullptr;
+			}
+			Out->Indices.Append({ Base + A, Base + B, Base + C });
+		}
+		Base += Primitive.NumVertices;
+	}
+	if (Out->Indices.Num() == 0)
+	{
+		return nullptr;
+	}
+
+	// Unreal's lightmap packer: every island of the section's UV0 (triangles joined by a shared edge with matching UVs) packed apart, scaled
+	// by its size in the world, within 0 to 1. Mirrored and tiled islands are separate islands, so nothing ends up on the same texels.
+	FBakeMeshLayoutView View(*Out);
+	const FOverlappingCorners Corners(View, UE_THRESH_POINTS_ARE_SAME);
+	FLayoutUV Packer(View);
+	Packer.SetVersion(ELightmapUVVersion::Latest);
+	Packer.FindCharts(Corners);
+	if (!Packer.FindBestPacking(LayoutResolution))
+	{
+		UE_LOG(LogMantle, Warning, TEXT("MANTLE_UV_BAKE section %d of %s: the packer could not lay out its %d triangles; it bakes on a card"), MaterialIndex, *Mesh.Name,
+			Out->Indices.Num() / 3);
+		return nullptr;
+	}
+	Packer.CommitPackedUVs();
+	if (View.Output.Num() != Out->Indices.Num())
+	{
+		return nullptr;
+	}
+	// Per vertex: every corner of a vertex inside one island gets the same place. A vertex only a corner joins to two islands (a bow tie)
+	// keeps its first; counted for the log.
+	Out->Layout.Init(FVector2f(-1.0f, -1.0f), Out->Positions.Num());
+	TBitArray<> Placed(false, Out->Positions.Num());
+	int32 Split = 0;
+	for (int32 Corner = 0; Corner < Out->Indices.Num(); ++Corner)
+	{
+		const uint32 Vertex = Out->Indices[Corner];
+		if (!Placed[Vertex])
+		{
+			Placed[Vertex] = true;
+			Out->Layout[Vertex] = View.Output[Corner];
+		}
+		else if (!Out->Layout[Vertex].Equals(View.Output[Corner], 1.0e-5f))
+		{
+			++Split;
+		}
+	}
+	for (int32 Vertex = 0; Vertex < Out->Layout.Num(); ++Vertex)
+	{
+		if (!Placed[Vertex])
+		{
+			Out->Layout[Vertex] = FVector2f::ZeroVector; // drawn by no triangle
+		}
+	}
+
+	FSHA1 Sha;
+	auto Hash = [&Sha](const auto& Array) { Sha.Update(reinterpret_cast<const uint8*>(Array.GetData()), Array.Num() * Array.GetTypeSize()); };
+	Hash(Out->Positions);
+	Hash(Out->Normals);
+	Hash(Out->Tangents);
+	Hash(Out->UV0s);
+	Hash(Out->UV1s);
+	Hash(Out->Colors);
+	Hash(Out->Layout);
+	Hash(Out->Indices);
+	Sha.Final();
+	uint8 Digest[FSHA1::DigestSize];
+	Sha.GetHash(Digest);
+	Out->Hash = BytesToHex(Digest, 8).ToLower();
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_UV_BAKE section %d of %s: %d triangles laid out for its bake, %.1f%% of the layout drawn twice, %d bow-tie corner(s); hash %s"),
+		MaterialIndex, *Mesh.Name, Out->Indices.Num() / 3, 100.0 * Out->LayoutOverlap(), Split, *Out->Hash);
+	return Out;
+}
+
+void FMantleBakeMesh::ApplyLayout(FMantleGlbMesh& Mesh, const int32 MaterialIndex) const
+{
+	const TArray<int32> Vertices = MantlePlaceAssetsPrivate::SectionVertices(Mesh, MaterialIndex);
+	if (Vertices.Num() != Layout.Num() || Mesh.UVs.Num() != Mesh.Positions.Num())
+	{
+		return;
+	}
+	for (int32 Index = 0; Index < Vertices.Num(); ++Index)
+	{
+		Mesh.UVs[Vertices[Index]] = Layout[Index];
+	}
+}
+
+double FMantleBakeMesh::LayoutOverlap() const
+{
+	// Each triangle drawn on the grid by its texel centers; a texel two triangles reach is drawn twice.
+	constexpr int32 Size = LayoutResolution;
+	TArray<uint8> Hits;
+	Hits.Init(0, Size * Size);
+	for (int32 Corner = 0; Corner + 2 < Indices.Num(); Corner += 3)
+	{
+		const FVector2f A = Layout[Indices[Corner]] * Size;
+		const FVector2f B = Layout[Indices[Corner + 1]] * Size;
+		const FVector2f C = Layout[Indices[Corner + 2]] * Size;
+		const float Area = (B.X - A.X) * (C.Y - A.Y) - (C.X - A.X) * (B.Y - A.Y);
+		if (FMath::Abs(Area) < 1.0e-8f)
+		{
+			continue;
+		}
+		const int32 X0 = FMath::Clamp(FMath::FloorToInt(FMath::Min3(A.X, B.X, C.X)), 0, Size - 1);
+		const int32 X1 = FMath::Clamp(FMath::CeilToInt(FMath::Max3(A.X, B.X, C.X)), 0, Size - 1);
+		const int32 Y0 = FMath::Clamp(FMath::FloorToInt(FMath::Min3(A.Y, B.Y, C.Y)), 0, Size - 1);
+		const int32 Y1 = FMath::Clamp(FMath::CeilToInt(FMath::Max3(A.Y, B.Y, C.Y)), 0, Size - 1);
+		for (int32 Y = Y0; Y <= Y1; ++Y)
+		{
+			for (int32 X = X0; X <= X1; ++X)
+			{
+				const FVector2f P(X + 0.5f, Y + 0.5f);
+				const float W0 = ((B.X - P.X) * (C.Y - P.Y) - (C.X - P.X) * (B.Y - P.Y)) / Area;
+				const float W1 = ((C.X - P.X) * (A.Y - P.Y) - (A.X - P.X) * (C.Y - P.Y)) / Area;
+				if (W0 >= 0.0f && W1 >= 0.0f && W0 + W1 <= 1.0f)
+				{
+					uint8& Hit = Hits[Y * Size + X];
+					Hit = static_cast<uint8>(FMath::Min(Hit + 1, 2));
+				}
+			}
+		}
+	}
+	int32 Drawn = 0;
+	int32 Twice = 0;
+	for (const uint8 Hit : Hits)
+	{
+		Drawn += Hit > 0 ? 1 : 0;
+		Twice += Hit > 1 ? 1 : 0;
+	}
+	return Drawn > 0 ? static_cast<double>(Twice) / Drawn : 0.0;
 }
 
 FColor FMantleGatheredMaterial::AverageVertexColor() const
@@ -4074,6 +4320,7 @@ FMantleBakeSurface FMantleGatheredMaterial::BakeSurface() const
 	Surface.bTerrainLayer = BakeTilingCm > 0.0;
 	Surface.WorldTileCm = BakeTilingCm;
 	Surface.bTintMask = bTintMask;
+	Surface.Mesh = BakeMesh;
 	return Surface;
 }
 
@@ -5130,7 +5377,7 @@ TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::OpacityAsMaskCopy(const
 	});
 }
 
-TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::ReadsVertexColorCopy(const UMaterialInterface* Material)
+TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::ReadsVertexColorCopy(const UMaterialInterface* Material, const bool bEveryInput)
 {
 	using namespace MantlePlaceAssetsPrivate;
 	if (!Material)
@@ -5149,13 +5396,29 @@ TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::ReadsVertexColorCopy(co
 	{
 		return nullptr;
 	}
-	// The base color (or, for a material using material attributes, the attributes) must be connected: that is where the read goes.
+	// The inputs a bake reads that GLTFExporter could pass through as a texture (TryGetSourceTexture). With material attributes nothing passes
+	// through: the material's own pins are unwired (UMaterial::GetExpressionInputForProperty), so every attribute is baked.
+	auto PassThroughInputs = [](UMaterialEditorOnlyData& Data)
+	{
+		return TArray<FExpressionInput*>{ &Data.Metallic, &Data.Specular, &Data.Roughness, &Data.EmissiveColor, &Data.Opacity, &Data.OpacityMask,
+			&Data.Normal, &Data.AmbientOcclusion };
+	};
+	// The base color (or, for a material using material attributes, the attributes) must be connected: that is where the read goes; with
+	// bEveryInput, any input the bake reads will do.
 	const UMaterialEditorOnlyData* Data = Base->GetEditorOnlyData();
-	if (!(Base->bUseMaterialAttributes ? Data->MaterialAttributes.Expression : Data->BaseColor.Expression))
+	bool bConnected = Base->bUseMaterialAttributes ? Data->MaterialAttributes.Expression != nullptr : Data->BaseColor.Expression != nullptr;
+	if (bEveryInput && !Base->bUseMaterialAttributes)
+	{
+		for (const FExpressionInput* Input : PassThroughInputs(const_cast<UMaterialEditorOnlyData&>(*Data)))
+		{
+			bConnected = bConnected || Input->Expression != nullptr;
+		}
+	}
+	if (!bConnected)
 	{
 		return nullptr;
 	}
-	return CopyForBake(Chain, *Base, [](UMaterial& BaseCopy)
+	return CopyForBake(Chain, *Base, [bEveryInput, &PassThroughInputs](UMaterial& BaseCopy)
 	{
 		auto Add = [&BaseCopy](auto* Node)
 		{
@@ -5171,14 +5434,29 @@ TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::ReadsVertexColorCopy(co
 		UMaterialExpressionMax* One = Add(NewObject<UMaterialExpressionMax>(&BaseCopy));
 		One->A.Connect(1, Color);
 		One->ConstB = 1.0f;
-		UMaterialExpressionMultiply* Times = Add(NewObject<UMaterialExpressionMultiply>(&BaseCopy));
-		Times->B.Connect(0, One);
 		if (!BaseCopy.bUseMaterialAttributes)
 		{
-			static_cast<FExpressionInput&>(Times->A) = static_cast<const FExpressionInput&>(CopyData->BaseColor);
-			CopyData->BaseColor.Connect(0, Times);
+			// Each wired input multiplied by that 1 (a normal too: the same normal); an unwired one stays unwired.
+			TArray<FExpressionInput*> Inputs{ &CopyData->BaseColor };
+			if (bEveryInput)
+			{
+				Inputs.Append(PassThroughInputs(*CopyData));
+			}
+			for (FExpressionInput* Input : Inputs)
+			{
+				if (!Input->Expression)
+				{
+					continue;
+				}
+				UMaterialExpressionMultiply* Each = Add(NewObject<UMaterialExpressionMultiply>(&BaseCopy));
+				Each->B.Connect(0, One);
+				static_cast<FExpressionInput&>(Each->A) = *Input;
+				Input->Connect(0, Each);
+			}
 			return;
 		}
+		UMaterialExpressionMultiply* Times = Add(NewObject<UMaterialExpressionMultiply>(&BaseCopy));
+		Times->B.Connect(0, One);
 		// Material attributes: the same attributes with their base color (Break's first output) multiplied, set back in.
 		const FExpressionInput Attributes = CopyData->MaterialAttributes;
 		UMaterialExpressionBreakMaterialAttributes* Break = Add(NewObject<UMaterialExpressionBreakMaterialAttributes>(&BaseCopy));
@@ -5237,7 +5515,7 @@ FString FMantlePlaceAssets::DescribeLoss(EMantleMaterialLoss Loss, const FMantle
 	case EMantleMaterialLoss::NotSurface:
 		return TEXT("it is not a surface material (a light function, post-process or user interface material), so it is flattened as a plain surface.");
 	case EMantleMaterialLoss::SecondUv:
-		return TEXT("it reads a second UV set (UV1 or higher), which the bake does not have, so what that set places is drawn by the first UV set instead: masks such as wet lanes, dirt or stripes can repeat with the first set's tiling or land in the wrong place.");
+		return TEXT("it reads a second UV set (UV1 or higher), which the bake does not have, so what that set places is drawn by the first UV set instead: masks such as wet lanes, dirt or stripes can repeat with the first set's tiling or land in the wrong place. On a vehicle's body it is kept: that section is baked over its own triangles.");
 	case EMantleMaterialLoss::ParameterCollection:
 		return TEXT("it reads a Material Parameter Collection, which the bake reads at its saved values, so anything a Blueprint or script changes at runtime (time of day, wetness, a tint) is lost and the published material keeps the saved look.");
 	case EMantleMaterialLoss::CookedMaterial:
