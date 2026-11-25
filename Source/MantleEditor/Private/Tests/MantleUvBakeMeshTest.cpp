@@ -24,11 +24,15 @@
 #include "Materials/MaterialExpressionConstant3Vector.h"
 #include "Materials/MaterialExpressionLinearInterpolate.h"
 #include "Materials/MaterialExpressionMultiply.h"
+#include "Materials/MaterialExpressionScalarParameter.h"
+#include "Materials/MaterialExpressionSwitch.h"
 #include "Materials/MaterialExpressionTextureCoordinate.h"
 #include "Materials/MaterialInstanceConstant.h"
 #include "Misc/AutomationTest.h"
 #include "Modules/ModuleManager.h"
 #include "UObject/Package.h"
+
+#include <limits>
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -649,6 +653,139 @@ bool FMantleUvBakeVehicleBodyReadTest::RunTest(const FString& Parameters)
 	Broken.UV1s.SetNum(Body.Positions.Num());
 	AddExpectedError(TEXT("its second UV set has"), EAutomationExpectedErrorFlags::Contains, 1);
 	TestFalse(TEXT("a second UV set that does not cover the vertices is not baked by UV0"), FMantleBakeMesh::FromSection(Broken, 0).IsValid());
+	return true;
+}
+
+// The Goku Mustang (a FiveM car, glTF-imported materials) was refused by the cook after #269: "a normal or texture coordinate is not a finite
+// number". Its glTF materials pick their UV set with a Switch on a parameter, so they are flagged as reading UV1, though its mesh has none;
+// its prints were laid out anew, and they are mostly triangles with no UV area (97% of print_glow_head), which Unreal's packer can place
+// at non-finite UVs.
+namespace MantleUvBakeMeshTestPrivate
+{
+	/** A glTF import's way of picking a UV set: a Switch on a parameter (MF_TransformUVs, *_TexCoord), here left at UV0. */
+	UMaterial* NewGltfStyleMaterial()
+	{
+		UMaterial* Material = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+		UMaterialExpressionTextureCoordinate* Uv0 = AddNode<UMaterialExpressionTextureCoordinate>(Material);
+		UMaterialExpressionTextureCoordinate* Uv1 = AddNode<UMaterialExpressionTextureCoordinate>(Material);
+		Uv1->CoordinateIndex = 1;
+		UMaterialExpressionScalarParameter* Pick = AddNode<UMaterialExpressionScalarParameter>(Material);
+		Pick->ParameterName = TEXT("BaseColorTexture_TexCoord");
+		Pick->DefaultValue = 0.0f;
+		UMaterialExpressionSwitch* Switch = AddNode<UMaterialExpressionSwitch>(Material);
+		Switch->SwitchValue.Connect(0, Pick);
+		FSwitchCustomInput& First = Switch->Inputs.AddDefaulted_GetRef();
+		First.InputName = TEXT("0");
+		First.Input.Connect(0, Uv0);
+		FSwitchCustomInput& Second = Switch->Inputs.AddDefaulted_GetRef();
+		Second.InputName = TEXT("1");
+		Second.Input.Connect(0, Uv1);
+		UMaterialExpressionComponentMask* U = AddNode<UMaterialExpressionComponentMask>(Material);
+		U->R = true;
+		U->G = false;
+		U->B = false;
+		U->A = false;
+		U->Input.Connect(0, Switch);
+		Material->GetEditorOnlyData()->BaseColor.Connect(0, U);
+		return Material;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleUvBakeNoSecondUvTest,
+	"Mantle.Editor.UvBake.MeshWithoutSecondUvBakesOnACard",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleUvBakeNoSecondUvTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleUvBakeMeshTestPrivate;
+	FMantleGlbMesh Mesh = NewTwoSectionMesh();
+	Mesh.UV1s.Reset(); // a FiveM car's body: one UV set
+	UMaterial* Gltf = NewGltfStyleMaterial();
+	UMaterial* Uv1Mask = NewUv1MaskMaterial();
+	TestTrue(TEXT("a glTF-style material is flagged as reading UV1 (its graph can)"), FMantlePlaceAssets::SamplesSecondUv(Gltf));
+	TestFalse(TEXT("on a mesh with no second UV set it is not baked over the section"), FMantlePlaceAssets::SectionBakeMesh(Mesh, 0, Gltf, true).IsValid());
+	TestFalse(TEXT("nor is a material that does read UV1: UV0 is all there is, which a card draws"), FMantlePlaceAssets::SectionBakeMesh(Mesh, 0, Uv1Mask, true).IsValid());
+	TestFalse(TEXT("so the section is never laid out anew"), FMantleBakeMesh::FromSection(Mesh, 0, true).IsValid());
+	FMantleGlbMesh WithUv1 = NewTwoSectionMesh();
+	TestTrue(TEXT("with a second UV set it is, as before"), FMantlePlaceAssets::SectionBakeMesh(WithUv1, 0, Uv1Mask, true).IsValid());
+
+	// A position, normal or UV that is not a finite number never reaches a layout.
+	FMantleGlbMesh Bad = NewTwoSectionMesh();
+	Bad.Normals[1] = FVector3f(std::numeric_limits<float>::quiet_NaN(), 0.0f, 1.0f);
+	AddExpectedMessagePlain(TEXT("non-finite position, normal or UV"), ELogVerbosity::Warning, EAutomationExpectedMessageFlags::Contains, 1);
+	TestFalse(TEXT("a section reading a non-finite normal bakes on a card"), FMantleBakeMesh::FromSection(Bad, 0, true).IsValid());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleUvBakeFiniteLayoutTest,
+	"Mantle.Editor.UvBake.LayoutOfTrianglesWithoutUvAreaIsFinite",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleUvBakeFiniteLayoutTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleUvBakeMeshTestPrivate;
+	// A FiveM print section: a few quads that share their UV0 (so it is laid out anew), and many triangles with no UV area: all three
+	// corners on one UV (a decal's unused part) or on one line, each its own island in the world.
+	FMantleGlbMesh Mesh;
+	Mesh.Name = TEXT("NoUvAreaTest");
+	Mesh.MaterialNames = { TEXT("Print") };
+	FMantleGlbPrimitive& Primitive = Mesh.Primitives.AddDefaulted_GetRef();
+	Primitive.MaterialIndex = 0;
+	auto AddVertex = [&Mesh](const FVector3f& Position, const FVector2f& Uv)
+	{
+		Mesh.Positions.Add(Position);
+		Mesh.Normals.Add(FVector3f(0.0f, 0.0f, 1.0f));
+		Mesh.Tangents.Add(FVector4f(1.0f, 0.0f, 0.0f, 1.0f));
+		Mesh.UVs.Add(Uv);
+		Mesh.UV1s.Add(FVector2f(0.5f, 0.5f));
+		return static_cast<uint32>(Mesh.Positions.Num() - 1);
+	};
+	for (int32 Quad = 0; Quad < 4; ++Quad)
+	{
+		const float X = 150.0f * static_cast<float>(Quad);
+		const uint32 A = AddVertex(FVector3f(X, 0.0f, 0.0f), FVector2f(0.0f, 0.0f));
+		const uint32 B = AddVertex(FVector3f(X + 100.0f, 0.0f, 0.0f), FVector2f(1.0f, 0.0f));
+		const uint32 C = AddVertex(FVector3f(X, 100.0f, 0.0f), FVector2f(0.0f, 1.0f));
+		const uint32 D = AddVertex(FVector3f(X + 100.0f, 100.0f, 0.0f), FVector2f(1.0f, 1.0f));
+		Primitive.Indices.Append({ A, C, B, C, D, B });
+	}
+	for (int32 Index = 0; Index < 300; ++Index)
+	{
+		const float X = 10.0f * static_cast<float>(Index % 30);
+		const float Y = 300.0f + 10.0f * static_cast<float>(Index / 30);
+		// Two in three on one point, the rest along a line.
+		const bool bPoint = Index % 3 != 0;
+		const FVector2f At(0.25f, 0.75f);
+		const uint32 A = AddVertex(FVector3f(X, Y, 0.0f), At);
+		const uint32 B = AddVertex(FVector3f(X + 8.0f, Y, 0.0f), bPoint ? At : At + FVector2f(0.1f, 0.0f));
+		const uint32 C = AddVertex(FVector3f(X, Y + 8.0f, 0.0f), bPoint ? At : At + FVector2f(0.2f, 0.0f));
+		Primitive.Indices.Append({ A, C, B });
+	}
+	Primitive.NumVertices = Mesh.Positions.Num();
+
+	const TSharedPtr<const FMantleBakeMesh> Bake = FMantleBakeMesh::FromSection(Mesh, 0, true);
+	if (!TestTrue(TEXT("the section is set up"), Bake.IsValid()))
+	{
+		return false;
+	}
+	bool bFinite = true;
+	for (const FVector2f& Place : Bake->Layout)
+	{
+		bFinite = bFinite && !Place.ContainsNaN();
+	}
+	TestTrue(TEXT("every place in its layout is a finite number"), bFinite);
+	FMantleGlbMesh Published = Mesh;
+	Bake->ApplyLayout(Published, 0);
+	bool bPublishedFinite = true;
+	for (int32 Vertex = 0; Vertex < Published.Positions.Num(); ++Vertex)
+	{
+		bPublishedFinite = bPublishedFinite && !Published.UVs[Vertex].ContainsNaN() && !Published.Normals[Vertex].ContainsNaN()
+			&& !Published.Positions[Vertex].ContainsNaN();
+	}
+	TestTrue(TEXT("and so is every normal and UV the mesh publishes with"), bPublishedFinite);
+	AddInfo(FString::Printf(TEXT("%s, %d triangles, %d vertex copies"), Bake->bOwnLayout ? TEXT("own layout") : TEXT("laid out by UV0"), Bake->Indices.Num() / 3, Bake->SplitFrom.Num()));
 	return true;
 }
 
