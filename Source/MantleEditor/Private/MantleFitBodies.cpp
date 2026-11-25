@@ -478,8 +478,37 @@ USkeletalMesh* FMantleFitBodies::PickShapeBody(const FMantleFitBody& Body, const
 	return nullptr;
 }
 
+FMantleFitBodyPool::~FMantleFitBodyPool()
+{
+	if (Bodies.IsEmpty()) { return; }
+	// MetaHuman Creator's editing list is the game thread's, as for FMantleFitBodySet.
+	if (IsInGameThread())
+	{
+		for (FMantleFitBody& Body : Bodies) { FMantleFitBodies::Release(Body); }
+		return;
+	}
+	AsyncTask(ENamedThreads::GameThread, [Moved = MoveTemp(Bodies)]() mutable
+	{
+		for (FMantleFitBody& Body : Moved) { FMantleFitBodies::Release(Body); }
+	});
+}
+
+FMantleFitBody* FMantleFitBodyPool::Find(const FString& Id)
+{
+	return Bodies.FindByPredicate([&Id](const FMantleFitBody& Body) { return Body.Id == Id && Body.Character.IsValid(); });
+}
+
+bool FMantleFitBodyPool::Take(const FString& Id, FMantleFitBody& Out)
+{
+	const int32 Index = Bodies.IndexOfByPredicate([&Id](const FMantleFitBody& Body) { return Body.Id == Id && Body.Character.IsValid(); });
+	if (Index == INDEX_NONE) { return false; }
+	Out = MoveTemp(Bodies[Index]);
+	Bodies.RemoveAt(Index);
+	return true;
+}
+
 bool FMantleFitBodies::MakeSet(UObject* Outfit, const EMantleFitSex Requested, const FMantleAvatarContract& Contract,
-	TSharedPtr<FMantleFitBodySet>& OutSet, FString& OutError)
+	TSharedPtr<FMantleFitBodySet>& OutSet, FString& OutError, FMantleFitBodyPool* Reuse)
 {
 	using namespace MantleFitBodiesPrivate;
 	OutSet.Reset();
@@ -535,6 +564,10 @@ bool FMantleFitBodies::MakeSet(UObject* Outfit, const EMantleFitSex Requested, c
 		{
 			Body = MoveTemp(*Probe);
 			*Probe = FMantleFitBody();
+		}
+		else if (Reuse && Reuse->Take(Id, Body))
+		{
+			UE_LOG(LogMantleFitBodies, Display, TEXT("MANTLE_FIT_BODIES %s: reused the body made to match the garment"), *Id);
 		}
 		else
 		{
@@ -598,10 +631,29 @@ bool FMantleFitBodies::CompareNearest(const TArray<FVector3f>& Probe, const TArr
 {
 	OutAverageCm = 0.0f;
 	OutMaxCm = 0.0f;
+	TArray<float> Distances;
+	if (!NearestDistances(Probe, Reference, Distances))
+	{
+		return false;
+	}
+	double Sum = 0.0;
+	for (const float Distance : Distances)
+	{
+		Sum += Distance;
+		OutMaxCm = FMath::Max(OutMaxCm, Distance);
+	}
+	OutAverageCm = static_cast<float>(Sum / Distances.Num());
+	return true;
+}
+
+bool FMantleFitBodies::NearestDistances(const TArray<FVector3f>& Probe, const TArray<FVector3f>& Reference, TArray<float>& OutCm)
+{
+	OutCm.Reset();
 	if (Probe.IsEmpty() || Reference.IsEmpty())
 	{
 		return false;
 	}
+	OutCm.Reserve(Probe.Num());
 	const auto CellOf = [](const FVector3f& Point)
 	{
 		return FIntVector(FMath::FloorToInt32(Point.X), FMath::FloorToInt32(Point.Y), FMath::FloorToInt32(Point.Z));
@@ -612,7 +664,6 @@ bool FMantleFitBodies::CompareNearest(const TArray<FVector3f>& Probe, const TArr
 		Grid.FindOrAdd(CellOf(Reference[Index])).Add(Index);
 	}
 	constexpr int32 MaxRing = 12;
-	double Sum = 0.0;
 	for (const FVector3f& Point : Probe)
 	{
 		const FIntVector Cell = CellOf(Point);
@@ -648,9 +699,7 @@ bool FMantleFitBodies::CompareNearest(const TArray<FVector3f>& Probe, const TArr
 				Best = FMath::Min(Best, FVector3f::Distance(Point, Candidate));
 			}
 		}
-		Sum += Best;
-		OutMaxCm = FMath::Max(OutMaxCm, Best);
+		OutCm.Add(Best);
 	}
-	OutAverageCm = static_cast<float>(Sum / Probe.Num());
 	return true;
 }

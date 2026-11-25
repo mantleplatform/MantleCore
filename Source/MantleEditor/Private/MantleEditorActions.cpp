@@ -121,7 +121,7 @@ FMantleCosmeticOutfitRows FMantleEditorActions::ApplyCosmeticOutfitDefaults(FMan
 	return Rows;
 }
 
-void FMantleEditorActions::ApplyCosmeticFitTargetDefaults(FMantleCosmeticDraft& Draft, const FMantleAvatarContract* Contract)
+void FMantleEditorActions::ApplyCosmeticFitTargetDefaults(FMantleCosmeticDraft& Draft, const FMantleAvatarContract* Contract, FMantleFitBodyPool* Reuse)
 {
 	if (Draft.Class != EMantleCosmeticClass::Garment || !Draft.OutfitTargets.IsEmpty() || !FMantleParametricOutfit::IsSource(Draft.Source.Get()))
 	{
@@ -143,7 +143,7 @@ void FMantleEditorActions::ApplyCosmeticFitTargetDefaults(FMantleCosmeticDraft& 
 	// the bodies last for the whole check and upload, and are released when the last copy of the draft goes.
 	TSharedPtr<FMantleFitBodySet> Set;
 	FString Error;
-	if (!FMantleFitBodies::MakeSet(Draft.Source.Get(), Draft.FitSex, *Contract, Set, Error) || !Set.IsValid())
+	if (!FMantleFitBodies::MakeSet(Draft.Source.Get(), Draft.FitSex, *Contract, Set, Error, Reuse) || !Set.IsValid())
 	{
 		Draft.FitBodiesStatus = FString::Printf(TEXT("Garment variants were not made: %s."), *Error);
 		UE_LOG(LogTemp, Warning, TEXT("MANTLE_FIT_BODIES %s"), *Draft.FitBodiesStatus);

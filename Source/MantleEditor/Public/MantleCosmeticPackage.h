@@ -245,6 +245,15 @@ struct MANTLEEDITOR_API FMantleCosmeticPackage
 	/** What the export did and measured, one line each, for the panel's details and the log. */
 	TArray<FString> Notes;
 
+	/**
+	 * Clothing: how its sizes were made (the agent tools' "route"): outfit (a MetaHuman Outfit), authoring_body (wrapped on
+	 * its MetaHuman authoring body), standard_body:<id> (made on Epic's standard body <id>, such as m_tal_nrw), made_beside
+	 * (Make Outfit from garment on its character's body beside it) or one_size. Empty for anything else.
+	 */
+	FString GarmentRoute;
+	/** Clothing made from a skeletal mesh or cloth asset: the sentence for the panel's Authored on, saying how its sizes were made or why not. */
+	FString GarmentRouteNote;
+
 	/** #51, local only: bought hair was sized to the standard head, and the words the preview shows for it. */
 	bool bHairHeadFitted = false;
 	FMantleHairFitReport::FResult HairHeadFit;

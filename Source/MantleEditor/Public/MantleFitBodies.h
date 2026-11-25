@@ -44,6 +44,25 @@ struct MANTLEEDITOR_API FMantleFitBodySet
 };
 
 /**
+ * Standard bodies made in memory ahead of a fit (FMantleStandardBodyMatch), for MakeSet to take instead of making them again.
+ * The bodies still here when the pool goes are released.
+ */
+struct MANTLEEDITOR_API FMantleFitBodyPool
+{
+	TArray<FMantleFitBody> Bodies;
+
+	FMantleFitBodyPool() = default;
+	FMantleFitBodyPool(const FMantleFitBodyPool&) = delete;
+	FMantleFitBodyPool& operator=(const FMantleFitBodyPool&) = delete;
+	~FMantleFitBodyPool();
+
+	/** The body with this id, or null. */
+	FMantleFitBody* Find(const FString& Id);
+	/** Moves the body with this id out into Out (true), or leaves Out alone (false). */
+	bool Take(const FString& Id, FMantleFitBody& Out);
+};
+
+/**
  * Garment variants fitted to Epic's standard MetaHuman body types, made IN MEMORY: no converted Aera/Bo assets in the
  * project and no Epic sign-in or cloud build. Epic ships 18 fixed compatibility bodies (f|m x srt|med|tal x unw|nrw|ovw);
  * garment-fit.json bodyTypes names the ones to use (the medium-height builds by default), for the Outfit's sex.
@@ -88,10 +107,11 @@ struct MANTLEEDITOR_API FMantleFitBodies
 
 	/**
 	 * Makes the fit set for an Outfit: Sex (or, for Auto, the sex its authored size bodies are nearest to) times the
-	 * contract's garmentFit body types. False with OutError when a body could not be made.
+	 * contract's garmentFit body types. False with OutError when a body could not be made. A body Reuse already holds is
+	 * taken from it instead of made again.
 	 */
 	static bool MakeSet(UObject* Outfit, EMantleFitSex Requested, const FMantleAvatarContract& Contract,
-		TSharedPtr<FMantleFitBodySet>& OutSet, FString& OutError);
+		TSharedPtr<FMantleFitBodySet>& OutSet, FString& OutError, FMantleFitBodyPool* Reuse = nullptr);
 
 	/**
 	 * The mesh of this body to upload as the source body shape: the first of the editor's body mesh (all of Creator's LODs,
@@ -118,4 +138,7 @@ struct MANTLEEDITOR_API FMantleFitBodies
 
 	/** For each vertex of Probe, the distance to the nearest vertex of Reference: average and largest, in cm. Order-independent. */
 	static bool CompareNearest(const TArray<FVector3f>& Probe, const TArray<FVector3f>& Reference, float& OutAverageCm, float& OutMaxCm);
+
+	/** For each vertex of Probe, in order, the distance (cm) to the nearest vertex of Reference (CompareNearest's grid search). False when either is empty. */
+	static bool NearestDistances(const TArray<FVector3f>& Probe, const TArray<FVector3f>& Reference, TArray<float>& OutCm);
 };

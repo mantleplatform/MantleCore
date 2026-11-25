@@ -15,6 +15,7 @@ enum class EMantleCosmeticClass : uint8;
 enum class EMantleFitSex : uint8;
 struct FMantleCosmeticDraft;
 struct FMantleCosmeticIssue;
+struct FMantleFitBodyPool;
 
 /**
  * The rows of the Cosmetics panel's Sections list for a garment from a skeletal mesh (#483): the
@@ -92,8 +93,10 @@ struct MANTLEEDITOR_API FMantleEditorActions
 	 * for the type (f_med_nrw ...), so every upload carries a size for slim and broad wearers. Nothing is converted or saved and
 	 * no Epic sign-in is needed. The bodies are held by Draft.FitBodies (they live as long as any copy of the draft); when they
 	 * cannot be made Draft.FitBodiesStatus says why and the item uploads without variants. Contract null reads the shipped one.
+	 * Bodies Reuse already holds (made to match a garment to a standard body) are taken from it instead of made again.
 	 */
-	static void ApplyCosmeticFitTargetDefaults(FMantleCosmeticDraft& Draft, const FMantleAvatarContract* Contract = nullptr);
+	static void ApplyCosmeticFitTargetDefaults(FMantleCosmeticDraft& Draft, const FMantleAvatarContract* Contract = nullptr,
+		FMantleFitBodyPool* Reuse = nullptr);
 
 	/**
 	 * The panel's "Made for" choice changed: Draft.FitSex becomes Sex and the standard fit bodies are made again for it

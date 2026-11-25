@@ -666,6 +666,19 @@ void SMantleCosmeticPanel::Construct(const FArguments& InArgs)
 									: LOCTEXT("BodyHelp", "The MetaHuman body this was made on. Found automatically when the project has one; it uploads as the item's body shape for fitting to supported avatars.");
 							})
 						]
+						// Clothing from a skeletal mesh or cloth asset, after a check: how its sizes were made (on Epic's standard
+						// body it was made on, its authoring body, its character's body), or why it uploads in one size.
+						+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)
+						[
+							SNew(STextBlock)
+							.AutoWrapText(true)
+							.Visibility_Lambda([this]
+							{
+								return Draft.Class == EMantleCosmeticClass::Garment && Package.IsSet() && !Package->GarmentRouteNote.IsEmpty()
+									? EVisibility::Visible : EVisibility::Collapsed;
+							})
+							.Text_Lambda([this] { return Package.IsSet() ? FText::FromString(Package->GarmentRouteNote) : FText::GetEmpty(); })
+						]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)
 						[
 							SNew(SVerticalBox)
