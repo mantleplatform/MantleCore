@@ -2295,6 +2295,8 @@ USkeletalMesh* FMantleVehicleConverter::FindLights(USkeletalMesh& Mesh, UMantleV
 		Wanted.Reverse = Found.Reverse;
 		Wanted.Left = Found.Left;
 		Wanted.Right = Found.Right;
+		// The sections marked to keep their own material (<name>_glow_<kind>) come with them.
+		Wanted.OwnMaterial = Found.OwnMaterial;
 		if (Wanted.Beams.IsEmpty())
 		{
 			Wanted.Beams = Found.Beams;
