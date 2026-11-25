@@ -434,11 +434,16 @@ struct MANTLEEDITOR_API FMantleVehicleChassisSkin
 	 * Where Part's hinge goes, from the box around its vertices and where its bone is (the pure part of Skin, also used for a model that keeps its own skeleton), all in the
 	 * body's space. PartBox is the box around the part's vertices, BodyBox the box around the whole body, BonePosition the bone's place when it is known. A door turns about
 	 * its front edge (the bone's place when it is within a quarter of the door's length from the front, else the front edge at the outer side, halfway up) on an upright
-	 * axis; the hood about its rear edge and the trunk about its front edge, at the top, on a sideways one. Flipped turns the axis the other way. Doors turn at 0.75, lids
+	 * axis; the hood about its rear edge and the trunk about its front edge, at the top, on a sideways one. A trunk whose bone sits at one side edge (BoneAtEdge on Y) and
+	 * not at its top is a side-hinged tailgate: it turns on an upright axis through the bone, swinging out away from the car's middle (+Z hinged on -Y, -Z on +Y), still
+	 * opened from behind the car. Flipped turns the axis the other way. Doors turn at 0.75, lids
 	 * at 1. The character stands on the ground (Z = 0) 60 cm out from the body: at the door's side halfway along it, in front of the hood, behind the trunk, facing the car.
 	 * Every number is held to the document's +-1000 cm.
 	 */
 	static FMantleVehicleSkinnedHinge HingeFor(EMantleVehicleHingePart Part, FName Bone, const FBox& PartBox, const FBox& BodyBox, const FVector* BonePosition, bool bFlipped);
+
+	/** Whether a hinge bone at Bone (one axis) sits at a part's Edge on that axis: within a quarter of the part's Span (its size on that axis). Doors and tailgates use it. */
+	static bool BoneAtEdge(double Bone, double Edge, double Span);
 
 	/**
 	 * The hinges of a model that keeps its own skeleton, or the whole model placed (Placement): for each part in Hinges whose bone Model has (not its root), the vertices
