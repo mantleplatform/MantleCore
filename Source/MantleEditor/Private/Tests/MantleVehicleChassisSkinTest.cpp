@@ -1073,3 +1073,92 @@ bool FMantleVehicleHiddenRidersHingesTest::RunTest(const FString& Parameters)
 }
 
 #endif // WITH_DEV_AUTOMATION_TESTS
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleSkinSteeringWheelTest,
+	"Mantle.Vehicle.ChassisSkin.SkinGivesSteeringWheelItsBone",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleSkinSteeringWheelTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleChassisSkinTestPrivate;
+	using namespace MantleVehicleHingeTestPrivate;
+	FMantleChassisSpec Spec;
+	FMantleVehicleAsset Gray;
+	if (!Load(*this, TEXT("sedan"), Spec, Gray))
+	{
+		return false;
+	}
+	const TArray<FMantleVehiclePartSlot> Slots = FMantleVehicleChassisSkin::PartSlots(Spec, Gray.Body);
+
+	// The car of the door test with a steering wheel: a bone named steering_wheel on the root at the hub, and 32 small boxes in a ring of 19 cm, the column pitched -20.
+	FMantleVehicleModel Model = HingeCar();
+	const int32 WheelBone = Model.Bones.Num();
+	Model.Bones.Add({ FName(TEXT("steering_wheel")), 0 });
+	const FVector Hub(70, -40, 110);
+	Model.BonePositions.Add(Hub);
+	const FRotationMatrix Frame = FRotationMatrix::MakeFromXZ(FRotator(-20.0, 0.0, 0.0).Vector(), FVector::UpVector);
+	for (int32 Index = 0; Index < 32; ++Index)
+	{
+		const double Angle = 2.0 * PI * Index / 32;
+		const FVector3f At(Hub + 19.0 * (FMath::Cos(Angle) * Frame.GetUnitAxis(EAxis::Y) + FMath::Sin(Angle) * Frame.GetUnitAxis(EAxis::Z)));
+		AddBox(Model, At - FVector3f(0.5f), At + FVector3f(0.5f), WheelBone, 0);
+	}
+	CloseSections(Model, { (9 + 32) * 12 });
+
+	FMantleVehicleModelMap Map;
+	Map.Hinges = FMantleVehicleChassisSkin::SuggestHinges(Model);
+	const FMantleVehicleModelPlacement Placement = FMantleVehicleChassisSkin::FitPlacement(Spec, Gray.Body, Model, 0.0, Map);
+	FMantleVehicleSkinned Skinned;
+	FString Error;
+	if (!TestTrue(*FString::Printf(TEXT("the model skins (%s)"), *Error), FMantleVehicleChassisSkin::Skin(Gray.Body, Slots, Model, Placement, Map, Skinned, Error)))
+	{
+		return false;
+	}
+
+	// The wheel has a bone of its own after the chassis's and the six hinge bones, under the root, with the ring's vertices weighted to it and nothing else.
+	const FMantleSkinnedMesh& Body = Skinned.Body;
+	TestEqual(TEXT("seven bones were added to the chassis's"), Body.Bones.Num(), Gray.Body.Bones.Num() + 7);
+	TestEqual(TEXT("Skin names it"), Skinned.SteeringWheelBone.ToString(), FString(TEXT("steering_wheel")));
+	const int32 Bone = Body.Bones.IndexOfByPredicate([](const FMantleSkinnedMeshBone& Candidate) { return Candidate.Name == FName(TEXT("steering_wheel")); });
+	if (!TestTrue(TEXT("the body has the bone"), Bone >= Gray.Body.Bones.Num()))
+	{
+		return false;
+	}
+	TestEqual(TEXT("it hangs from the root"), Body.Bones[Bone].ParentIndex, 0);
+	TestEqual(TEXT("the ring's vertices ride it"), VerticesOn(Body, Bone), 32 * 24);
+	TestTrue(TEXT("it is posed at the hub"), Body.ReferencePose[Bone].GetLocation().Equals(Placement.Point(Hub), 0.01));
+	for (const TPair<EMantleVehicleHingePart, FName>& Hinge : Map.Hinges.Bones)
+	{
+		TestTrue(TEXT("and it is none of the hinge bones"), Hinge.Value != Skinned.SteeringWheelBone);
+	}
+
+	// Measured on the placed vertices: at the hub, the ring's size at the model's scale, pitched -20.
+	TestTrue(TEXT("the wheel is placed"), Skinned.Steering.bPlaced);
+	TestTrue(TEXT("at the hub"), Skinned.Steering.Location.Equals(Placement.Point(Hub), 0.01));
+	TestTrue(*FString::Printf(TEXT("its rim is the ring's, scaled (%.2f)"), Skinned.Steering.Radius), FMath::Abs(Skinned.Steering.Radius - 19.0 * Placement.Scale) < 2.0);
+	TestTrue(*FString::Printf(TEXT("pitched -20 (%.2f)"), Skinned.Steering.Rotation.Pitch), FMath::Abs(Skinned.Steering.Rotation.Pitch + 20.0) < 3.0);
+
+	// Applied to the vehicle: the bone and the place, unless the creator has set them.
+	UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
+	Source->Tuning.bSeatLocation = true;
+	TArray<FString> Notes;
+	TestTrue(TEXT("the vehicle changed"), FMantleVehicleBuilder::ApplySkinnedSteeringWheel(*Source, Skinned, Notes));
+	TestEqual(TEXT("its bone is the body's new one"), Source->Tuning.SteeringWheelBone.ToString(), FString(TEXT("steering_wheel")));
+	TestTrue(TEXT("and the wheel is on"), Source->Tuning.bSteeringWheel);
+	UMantleVehicleSource* Own = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
+	Own->Tuning.bSeatLocation = true;
+	Own->Tuning.SteeringWheelBone = FName(TEXT("MyWheel"));
+	TArray<FString> OwnNotes;
+	FMantleVehicleBuilder::ApplySkinnedSteeringWheel(*Own, Skinned, OwnNotes);
+	TestEqual(TEXT("a bone the creator set is kept"), Own->Tuning.SteeringWheelBone.ToString(), FString(TEXT("MyWheel")));
+	TestFalse(TEXT("and no wheel is placed on it"), Own->Tuning.bSteeringWheel);
+
+	// With no vertices on the bone worth a wheel (a model without a ring), nothing is added.
+	FMantleVehicleSkinned Plain;
+	TestTrue(TEXT("the plain car skins"), FMantleVehicleChassisSkin::Skin(Gray.Body, Slots, HingeCar(), FMantleVehicleChassisSkin::FitPlacement(Spec, Gray.Body, HingeCar(), 0.0, Map), Map, Plain, Error));
+	TestTrue(TEXT("a car with no steering bone gets none"), Plain.SteeringWheelBone.IsNone());
+	return true;
+}
+
+#endif

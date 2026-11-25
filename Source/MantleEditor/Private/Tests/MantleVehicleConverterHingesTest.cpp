@@ -550,4 +550,147 @@ bool FMantleVehicleSteeringWheelBoneFillTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+
+// Named, not anonymous: MantleEditor builds as a unity build.
+namespace MantleVehicleSteeringWheelTestPrivate
+{
+	/** Count vertices of a wheel's rim on Bone: a ring of Radius about Center, its column pitched PitchDegrees (negative: forward and down), a little thick along it. */
+	void AddRing(FMantleVehicleModel& Model, const FVector& Center, const double Radius, const double PitchDegrees, const int32 Bone, const int32 Count)
+	{
+		const FRotationMatrix Frame = FRotationMatrix::MakeFromXZ(FRotator(PitchDegrees, 0.0, 0.0).Vector(), FVector::UpVector);
+		const FVector Column = Frame.GetUnitAxis(EAxis::X);
+		const FVector Side = Frame.GetUnitAxis(EAxis::Y);
+		const FVector Top = Frame.GetUnitAxis(EAxis::Z);
+		for (int32 Index = 0; Index < Count; ++Index)
+		{
+			const double Angle = 2.0 * PI * Index / Count;
+			const FVector Point = Center + Radius * (FMath::Cos(Angle) * Side + FMath::Sin(Angle) * Top) + (Index % 2 ? 0.3 : -0.3) * Column;
+			Model.LOD.Positions.Add(FVector3f(Point));
+			Model.LOD.InfluenceBones.Add(static_cast<uint16>(Bone));
+			Model.LOD.InfluenceWeights.Add(255);
+		}
+	}
+
+	/** SUV04 with its steering wheel bone (the last of the skeleton's wheel-free bones is B_SUV04_SW, index 6) carrying Count vertices of a ring. */
+	FMantleVehicleModel SuvWithWheel(const int32 Count, const double PitchDegrees)
+	{
+		using namespace MantleVehicleConverterHingesTestPrivate;
+		FMantleVehicleModel Model = BonesOnly(Suv04Bones());
+		AddBox(Model, FVector(-220, -90, 20), FVector(220, 90, 130), 0);
+		AddRing(Model, FVector(70, -40, 110), 19.0, PitchDegrees, 6, Count);
+		return Model;
+	}
+
+	UMantleVehicleSource* SeatedSource()
+	{
+		UMantleVehicleSource* Source = MantleVehicleConverterHingesTestPrivate::NewSource();
+		Source->Tuning.bSeatLocation = true;
+		Source->Tuning.SeatLocation = FVector(30, -40, 100);
+		return Source;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleSteeringWheelPlaceTest,
+	"Mantle.Vehicle.Convert.SteeringWheelPlaced",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleSteeringWheelPlaceTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleConverterHingesTestPrivate;
+	using namespace MantleVehicleSteeringWheelTestPrivate;
+
+	// A ring of 32 vertices on the bone: the wheel is placed at the bone, 19 cm across, its column forward and down (pitch -20).
+	{
+		const FMantleVehicleModel Model = SuvWithWheel(32, -20.0);
+		UMantleVehicleSource* Source = SeatedSource();
+		TArray<FString> Notes;
+		TestTrue(TEXT("the source changed"), FMantleVehicleBuilder::ApplySteeringWheelBone(Model, *Source, Notes));
+		const FMantleVehicleSourceTuning& T = Source->Tuning;
+		TestEqual(TEXT("its bone is the SW bone"), T.SteeringWheelBone.ToString(), FString(TEXT("B_SUV04_SW")));
+		TestTrue(TEXT("the wheel is on"), T.bSteeringWheel);
+		TestTrue(TEXT("at the bone"), T.SteeringWheelLocation.Equals(FVector(70, -40, 110), 0.01));
+		TestTrue(*FString::Printf(TEXT("19 cm across (%.2f)"), T.SteeringWheelRadius), FMath::IsNearlyEqual(T.SteeringWheelRadius, 19.f, 2.f));
+		TestTrue(*FString::Printf(TEXT("pitched -20 (%.2f)"), T.SteeringWheelRotation.Pitch), FMath::IsNearlyEqual(T.SteeringWheelRotation.Pitch, -20.f, 2.f));
+		TestTrue(TEXT("facing forward and not rolled"), FMath::Abs(T.SteeringWheelRotation.Yaw) < 2.f && FMath::Abs(T.SteeringWheelRotation.Roll) < 2.f);
+		TestTrue(TEXT("the note says where it came from"), AnyNote(Notes, TEXT("Steering wheel: placed from the bone B_SUV04_SW (radius 19 cm, pitched -20")));
+	}
+
+	// Pitched the other way it reads +15: the sign follows the ring.
+	{
+		const FMantleVehicleModel Model = SuvWithWheel(32, 15.0);
+		UMantleVehicleSource* Source = SeatedSource();
+		TArray<FString> Notes;
+		FMantleVehicleBuilder::ApplySteeringWheelBone(Model, *Source, Notes);
+		TestTrue(*FString::Printf(TEXT("pitched +15 (%.2f)"), Source->Tuning.SteeringWheelRotation.Pitch), FMath::IsNearlyEqual(Source->Tuning.SteeringWheelRotation.Pitch, 15.f, 2.f));
+	}
+
+	// Too few vertices: the bone is set, nothing is placed, and the note says why.
+	{
+		const FMantleVehicleModel Model = SuvWithWheel(10, -20.0);
+		UMantleVehicleSource* Source = SeatedSource();
+		TArray<FString> Notes;
+		FMantleVehicleBuilder::ApplySteeringWheelBone(Model, *Source, Notes);
+		TestEqual(TEXT("the bone is still found"), Source->Tuning.SteeringWheelBone.ToString(), FString(TEXT("B_SUV04_SW")));
+		TestFalse(TEXT("but no wheel is placed"), Source->Tuning.bSteeringWheel);
+		TestTrue(TEXT("the note says why"), AnyNote(Notes, TEXT("Steering wheel: not placed, because only 10 of the model's vertices are weighted to it")));
+	}
+
+	// Not a ring: a blob of vertices (not flat) is not a wheel.
+	{
+		FMantleVehicleModel Model = BonesOnly(Suv04Bones());
+		AddBox(Model, FVector(-220, -90, 20), FVector(220, 90, 130), 0);
+		FRandomStream Random(7);
+		for (int32 Index = 0; Index < 60; ++Index)
+		{
+			const FVector Point = FVector(70, -40, 110) + Random.GetUnitVector() * Random.FRandRange(5.0f, 19.0f);
+			Model.LOD.Positions.Add(FVector3f(Point));
+			Model.LOD.InfluenceBones.Add(6);
+			Model.LOD.InfluenceWeights.Add(255);
+		}
+		UMantleVehicleSource* Source = SeatedSource();
+		TArray<FString> Notes;
+		FMantleVehicleBuilder::ApplySteeringWheelBone(Model, *Source, Notes);
+		TestFalse(TEXT("a blob is not placed as a wheel"), Source->Tuning.bSteeringWheel);
+		TestTrue(TEXT("and it is said"), AnyNote(Notes, TEXT("Steering wheel: not placed, because")));
+	}
+
+	// A ring too big for a wheel (60 cm across) is not placed.
+	{
+		FMantleVehicleModel Model = BonesOnly(Suv04Bones());
+		AddBox(Model, FVector(-220, -90, 20), FVector(220, 90, 130), 0);
+		AddRing(Model, FVector(70, -40, 110), 60.0, -20.0, 6, 32);
+		UMantleVehicleSource* Source = SeatedSource();
+		TArray<FString> Notes;
+		FMantleVehicleBuilder::ApplySteeringWheelBone(Model, *Source, Notes);
+		TestFalse(TEXT("a rim outside 10 to 30 cm is not placed"), Source->Tuning.bSteeringWheel);
+	}
+
+	// No driver seat yet: nothing is placed, and the note asks for the seat.
+	{
+		const FMantleVehicleModel Model = SuvWithWheel(32, -20.0);
+		UMantleVehicleSource* Source = NewSource();
+		TArray<FString> Notes;
+		FMantleVehicleBuilder::ApplySteeringWheelBone(Model, *Source, Notes);
+		TestFalse(TEXT("the wheel is part of the seat, so it waits for one"), Source->Tuning.bSteeringWheel);
+		TestTrue(TEXT("the note says so"), AnyNote(Notes, TEXT("Set Seat Location and convert again")));
+	}
+
+	// The creator's own placement is kept, every number.
+	{
+		const FMantleVehicleModel Model = SuvWithWheel(32, -20.0);
+		UMantleVehicleSource* Source = SeatedSource();
+		Source->Tuning.bSteeringWheel = true;
+		Source->Tuning.SteeringWheelLocation = FVector(1, 2, 3);
+		Source->Tuning.SteeringWheelRadius = 12.f;
+		Source->Tuning.SteeringWheelRotation = FRotator(-5, 0, 0);
+		TArray<FString> Notes;
+		FMantleVehicleBuilder::ApplySteeringWheelBone(Model, *Source, Notes);
+		const FMantleVehicleSourceTuning& T = Source->Tuning;
+		TestTrue(TEXT("their placement stays"), T.SteeringWheelLocation.Equals(FVector(1, 2, 3)) && T.SteeringWheelRadius == 12.f && T.SteeringWheelRotation.Equals(FRotator(-5, 0, 0)));
+		TestFalse(TEXT("with no note about placing"), AnyNote(Notes, TEXT("placed from the bone")) || AnyNote(Notes, TEXT("not placed")));
+	}
+	return true;
+}
+
 #endif

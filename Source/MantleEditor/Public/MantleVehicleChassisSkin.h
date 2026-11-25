@@ -232,6 +232,23 @@ struct FMantleVehicleSkinnedHub
 	FName Wheel;
 };
 
+/**
+ * A steering wheel measured from the vertices weighted to its bone (FMantleVehicleChassisSkin::MeasureSteeringWheel): where its hub is, how it is turned and how big its rim
+ * is, in the same space and units as the points (the body's: nose on +X, cm). bPlaced is false, with Why in plain words, when the measure is not sure.
+ */
+struct FMantleVehicleSteeringFit
+{
+	bool bPlaced = false;
+	/** The hub: the bone's place. */
+	FVector Location = FVector::ZeroVector;
+	/** As Tuning.SteeringWheelRotation: X along the column away from the driver, Z towards the top of the rim. */
+	FRotator Rotation = FRotator::ZeroRotator;
+	/** The rim, where the hands grip it. */
+	double Radius = 0.0;
+	/** Why nothing was placed, in plain words, for the notes. */
+	FString Why;
+};
+
 /** The result of putting a model on a chassis as its skin. */
 struct FMantleVehicleSkinned
 {
@@ -247,6 +264,12 @@ struct FMantleVehicleSkinned
 	TArray<FMantleVehicleSkinnedHinge> Hinges;
 	/** The model's hub and brake bones that sit at a wheel Skin moved onto the chassis's: each on a bone of its own under the root, with the vertices of the model bone and its children. */
 	TArray<FMantleVehicleSkinnedHub> Hubs;
+	/**
+	 * The steering wheel, when the model has a bone named like one (SuggestSteeringWheelBone) with vertices weighted mostly to it: the bone Skin gave it in Body (None when it
+	 * has none; separate from the hinge bones), and what its vertices measure (Steering; bPlaced false says why not).
+	 */
+	FName SteeringWheelBone;
+	FMantleVehicleSteeringFit Steering;
 };
 
 /** Where a proposed collision came from. */
@@ -395,6 +418,17 @@ struct MANTLEEDITOR_API FMantleVehicleChassisSkin
 	 * what they hang from, a door's) are never taken. A static model gives none.
 	 */
 	static FName SuggestSteeringWheelBone(const FMantleVehicleModel& Model, const FVector* Seat, TConstArrayView<FName> Avoid);
+
+	/** The model's vertices (in its own space) whose heaviest weight is on Bone: what that bone carries, with none of its children's. */
+	static TArray<FVector> VerticesOnBone(const FMantleVehicleModel& Model, int32 Bone);
+
+	/**
+	 * Fits a steering wheel to Points, the vertices weighted to its bone, with Hub the bone's place. Nose on +X, Z up. The wheel's plane is the one the points are flattest
+	 * about (the smallest spread of the three axes is the column), the column pointing forward; the rim is the 90th percentile of the points' distance from the column through
+	 * Hub. Sure only when there are enough points, they are clearly flat and round, a good share of them lie on the rim, the hub is near their middle, the face looks along the
+	 * car and the rim is 10 to 30 cm (the vehicle asset's own range); otherwise bPlaced is false and Why says which.
+	 */
+	static FMantleVehicleSteeringFit MeasureSteeringWheel(TConstArrayView<FVector> Points, const FVector& Hub);
 
 	/**
 	 * Where Part's hinge goes, from the box around its vertices and where its bone is (the pure part of Skin, also used for a model that keeps its own skeleton), all in the

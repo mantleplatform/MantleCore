@@ -311,11 +311,22 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	static void ApplyOwnHinges(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options);
 
 	/**
-	 * The steering wheel's bone, found from the model's bone names (FMantleVehicleChassisSkin::SuggestSteeringWheelBone) when Source's is empty. A bone the creator set is kept,
-	 * and the wheels' bones, what they hang from and the doors', hood's and trunk's are never taken (the cook turns each bone for one part only). True, with a note in OutNotes,
-	 * when it filled one; nothing is said when no bone is named like one. It does not tick Steering Wheel: the bone is used once the wheel is placed.
+	 * The steering wheel of a model that keeps its own skeleton: its bone, found from the model's bone names (FMantleVehicleChassisSkin::SuggestSteeringWheelBone) when Source's is
+	 * empty (a bone the creator set is kept; the wheels' bones, what they hang from and the doors', hood's and trunk's are never taken, as the cook turns each bone for one part
+	 * only), and then, when Steering Wheel is off, its place measured from the vertices weighted to the bone (PlaceSteeringWheel). True when it changed Source, with notes in
+	 * OutNotes; nothing is said when no bone is named like one.
 	 */
 	static bool ApplySteeringWheelBone(const FMantleVehicleModel& Model, UMantleVehicleSource& Source, TArray<FString>& OutNotes);
+
+	/**
+	 * Puts Source's steering wheel where Fit says, for the bone Bone, when Steering Wheel is off (the creator's own placement is always kept): ticks it and sets its location,
+	 * rotation and radius, with a note. Nothing is placed, and a note says why, when Fit is not sure or the driver has no seat (the wheel is part of the seat; convert again
+	 * once it is set). True when it placed one.
+	 */
+	static bool PlaceSteeringWheel(UMantleVehicleSource& Source, FName Bone, const FMantleVehicleSteeringFit& Fit, TArray<FString>& OutNotes);
+
+	/** A model skinned onto a chassis (Skin): its steering wheel's own bone in the body becomes Source's Steering Wheel Bone when that is empty, and the wheel is placed. True when it changed Source. */
+	static bool ApplySkinnedSteeringWheel(UMantleVehicleSource& Source, const FMantleVehicleSkinned& Skinned, TArray<FString>& OutNotes);
 
 	/**
 	 * Where the driver sits when Source has no seat placed. A vehicle of a type gets its chassis's seat fitted to the model's wheels,

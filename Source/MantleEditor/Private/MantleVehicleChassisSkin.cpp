@@ -1700,6 +1700,186 @@ FName FMantleVehicleChassisSkin::SuggestSteeringWheelBone(const FMantleVehicleMo
 	return Best;
 }
 
+TArray<FVector> FMantleVehicleChassisSkin::VerticesOnBone(const FMantleVehicleModel& Model, const int32 Bone)
+{
+	using namespace MantleVehicleChassisSkinPrivate;
+	TArray<FVector> Out;
+	const TArray<int32> Heaviest = HeaviestBones(Model);
+	for (int32 Vertex = 0; Vertex < Heaviest.Num(); ++Vertex)
+	{
+		if (Heaviest[Vertex] == Bone)
+		{
+			Out.Add(FVector(Model.LOD.Positions[Vertex]));
+		}
+	}
+	return Out;
+}
+
+namespace MantleVehicleChassisSkinPrivate
+{
+	/** Fewest vertices a wheel is measured from: fewer say too little about its plane and rim. */
+	constexpr int32 SteeringMinVertices = 24;
+	/** The wheel's thickness (smallest spread) may be at most this much of its next spread: a wheel is flat. */
+	constexpr double SteeringMaxFlatness = 0.4;
+	/** Its two wide spreads may differ by at most this ratio: a wheel is round, not long. */
+	constexpr double SteeringMaxRoundness = 1.5;
+	/** The column's direction along the car (the X of its unit vector) is at least this: the wheel faces the driver and not the side or the sky. */
+	constexpr double SteeringMinFacing = 0.7;
+	/** At least this share of the vertices lie at 80% of the rim's radius or more: a ring, not a blob around the hub. */
+	constexpr double SteeringMinRimShare = 0.4;
+	/** The hub (the bone) is within this much of the radius from the middle of the vertices, in the wheel's plane. */
+	constexpr double SteeringMaxHubOffset = 0.25;
+	/** The rim, cm: the vehicle asset's own range for Steering Wheel Radius. */
+	constexpr double SteeringMinRadius = 10.0;
+	constexpr double SteeringMaxRadius = 30.0;
+
+	/** The eigenvalues (Values) and unit eigenvectors (Vectors) of the symmetric 3x3 matrix A, by Jacobi's rotations; A is spoiled. */
+	void SymmetricEigen(double A[3][3], double Values[3], FVector Vectors[3])
+	{
+		double V[3][3] = { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } };
+		for (int32 Sweep = 0; Sweep < 32; ++Sweep)
+		{
+			int32 P = 0;
+			int32 Q = 1;
+			double Largest = FMath::Abs(A[0][1]);
+			if (FMath::Abs(A[0][2]) > Largest)
+			{
+				P = 0;
+				Q = 2;
+				Largest = FMath::Abs(A[0][2]);
+			}
+			if (FMath::Abs(A[1][2]) > Largest)
+			{
+				P = 1;
+				Q = 2;
+				Largest = FMath::Abs(A[1][2]);
+			}
+			if (Largest < 1e-12)
+			{
+				break;
+			}
+			const double Theta = (A[Q][Q] - A[P][P]) / (2.0 * A[P][Q]);
+			const double T = (Theta >= 0.0 ? 1.0 : -1.0) / (FMath::Abs(Theta) + FMath::Sqrt(Theta * Theta + 1.0));
+			const double C = 1.0 / FMath::Sqrt(T * T + 1.0);
+			const double S = T * C;
+			for (int32 K = 0; K < 3; ++K)
+			{
+				const double Kp = A[K][P];
+				const double Kq = A[K][Q];
+				A[K][P] = C * Kp - S * Kq;
+				A[K][Q] = S * Kp + C * Kq;
+			}
+			for (int32 K = 0; K < 3; ++K)
+			{
+				const double Pk = A[P][K];
+				const double Qk = A[Q][K];
+				A[P][K] = C * Pk - S * Qk;
+				A[Q][K] = S * Pk + C * Qk;
+			}
+			for (int32 K = 0; K < 3; ++K)
+			{
+				const double Kp = V[K][P];
+				const double Kq = V[K][Q];
+				V[K][P] = C * Kp - S * Kq;
+				V[K][Q] = S * Kp + C * Kq;
+			}
+		}
+		for (int32 Index = 0; Index < 3; ++Index)
+		{
+			Values[Index] = A[Index][Index];
+			Vectors[Index] = FVector(V[0][Index], V[1][Index], V[2][Index]);
+		}
+	}
+}
+
+FMantleVehicleSteeringFit FMantleVehicleChassisSkin::MeasureSteeringWheel(const TConstArrayView<FVector> Points, const FVector& Hub)
+{
+	using namespace MantleVehicleChassisSkinPrivate;
+	FMantleVehicleSteeringFit Out;
+	Out.Location = Hub;
+	if (Points.Num() < SteeringMinVertices)
+	{
+		Out.Why = FString::Printf(TEXT("only %d of the model's vertices are weighted to it, and at least %d are needed to measure a wheel"), Points.Num(), SteeringMinVertices);
+		return Out;
+	}
+	FVector Middle = FVector::ZeroVector;
+	for (const FVector& Point : Points)
+	{
+		Middle += Point;
+	}
+	Middle /= static_cast<double>(Points.Num());
+	double Covariance[3][3] = {};
+	for (const FVector& Point : Points)
+	{
+		const FVector Off = Point - Middle;
+		for (int32 Row = 0; Row < 3; ++Row)
+		{
+			for (int32 Column = 0; Column < 3; ++Column)
+			{
+				Covariance[Row][Column] += Off[Row] * Off[Column] / static_cast<double>(Points.Num());
+			}
+		}
+	}
+	double Values[3];
+	FVector Vectors[3];
+	SymmetricEigen(Covariance, Values, Vectors);
+	// The three by size, smallest first.
+	TArray<int32> Sorted = { 0, 1, 2 };
+	Sorted.Sort([&Values](const int32 A, const int32 B) { return Values[A] < Values[B]; });
+	const double Thin = FMath::Sqrt(FMath::Max(0.0, Values[Sorted[0]]));
+	const double Wide = FMath::Sqrt(FMath::Max(0.0, Values[Sorted[1]]));
+	const double Widest = FMath::Sqrt(FMath::Max(0.0, Values[Sorted[2]]));
+	if (Wide < UE_KINDA_SMALL_NUMBER || Thin > SteeringMaxFlatness * Wide)
+	{
+		Out.Why = TEXT("its vertices are not flat enough to be a wheel");
+		return Out;
+	}
+	if (Widest > SteeringMaxRoundness * Wide)
+	{
+		Out.Why = TEXT("its vertices are long, not round");
+		return Out;
+	}
+	FVector Column = Vectors[Sorted[0]].GetSafeNormal();
+	if (Column.X < 0.0)
+	{
+		Column = -Column;
+	}
+	if (Column.X < SteeringMinFacing)
+	{
+		Out.Why = TEXT("its face does not look along the car");
+		return Out;
+	}
+	TArray<double> Distances;
+	for (const FVector& Point : Points)
+	{
+		const FVector Off = Point - Hub;
+		Distances.Add((Off - Column * FVector::DotProduct(Off, Column)).Size());
+	}
+	Distances.Sort();
+	const double Radius = Distances[FMath::FloorToInt(0.9 * (Distances.Num() - 1))];
+	if (Radius < SteeringMinRadius || Radius > SteeringMaxRadius)
+	{
+		Out.Why = FString::Printf(TEXT("its rim measures %.0f cm across from the bone, outside the %.0f to %.0f cm a wheel may be"), Radius, SteeringMinRadius, SteeringMaxRadius);
+		return Out;
+	}
+	int32 OnRim = 0;
+	for (const double Distance : Distances)
+	{
+		OnRim += Distance >= 0.8 * Radius ? 1 : 0;
+	}
+	const FVector MiddleOff = Middle - Hub;
+	const double HubOffset = (MiddleOff - Column * FVector::DotProduct(MiddleOff, Column)).Size();
+	if (OnRim < SteeringMinRimShare * Points.Num() || HubOffset > SteeringMaxHubOffset * Radius)
+	{
+		Out.Why = TEXT("its vertices are not a ring around the bone");
+		return Out;
+	}
+	Out.bPlaced = true;
+	Out.Radius = Radius;
+	Out.Rotation = FRotationMatrix::MakeFromXZ(Column, FVector::UpVector).Rotator();
+	return Out;
+}
+
 FMantleVehicleSkinnedHinge FMantleVehicleChassisSkin::HingeFor(const EMantleVehicleHingePart Part, const FName Bone, const FBox& PartBox, const FBox& BodyBox, const FVector* BonePosition,
 	const bool bFlipped)
 {
@@ -1923,6 +2103,30 @@ bool FMantleVehicleChassisSkin::Skin(const FMantleSkinnedMesh& Chassis, const TC
 	const TArray<FResolvedHinge> HingeList = ResolveHingeBones(Model, Map.Hinges, &Out.Notes);
 	const TArray<int32> HingeOwner = HingeList.Num() > 0 ? HingeOfBones(Model, HingeList) : TArray<int32>();
 
+	// The steering wheel: the model's bone named like one, with the vertices weighted mostly to it, rides a bone of its own (below), apart from the hinge bones and from any bone
+	// a part is assigned to (or hangs from). Until then its vertices are marked SteeringMarker. Found by name and weights only.
+	constexpr int32 SteeringMarker = MIN_int32;
+	int32 SteeringModelBone = INDEX_NONE;
+	if (Model.bSkeletal)
+	{
+		TArray<FName> Avoid;
+		for (const FResolvedHinge& Hinge : HingeList)
+		{
+			Avoid.Add(Model.Bones[Hinge.ModelBone].Name);
+		}
+		for (const TPair<FName, FMantleVehicleModelPiece>& Part : Map.Parts)
+		{
+			if (Part.Value.Kind == FMantleVehicleModelPiece::EKind::Bone)
+			{
+				for (int32 Up = Model.FindBone(Part.Value.Bone), Guard = 0; Up != INDEX_NONE && Guard < 1024; Up = Model.Bones[Up].ParentIndex, ++Guard)
+				{
+					Avoid.AddUnique(Model.Bones[Up].Name);
+				}
+			}
+		}
+		SteeringModelBone = Model.FindBone(SuggestSteeringWheelBone(Model, nullptr, Avoid));
+	}
+
 	// A model bone's part: the nearest assigned bone at or above it (a wheel assigned inside an assigned fork stays the wheel's).
 	if (Model.bSkeletal)
 	{
@@ -1946,6 +2150,10 @@ bool FMantleVehicleChassisSkin::Skin(const FMantleSkinnedMesh& Chassis, const TC
 			if (Heaviest[Vertex] != INDEX_NONE && Target.IsValidIndex(Heaviest[Vertex]) && Target[Heaviest[Vertex]] != INDEX_NONE)
 			{
 				BoneOf[Vertex] = Target[Heaviest[Vertex]];
+			}
+			else if (SteeringModelBone != INDEX_NONE && Heaviest[Vertex] == SteeringModelBone)
+			{
+				BoneOf[Vertex] = SteeringMarker;
 			}
 			else if (HingeOwner.IsValidIndex(Heaviest[Vertex]) && HingeOwner[Heaviest[Vertex]] != INDEX_NONE)
 			{
@@ -2245,6 +2453,40 @@ bool FMantleVehicleChassisSkin::Skin(const FMantleSkinnedMesh& Chassis, const TC
 				}
 			}
 			Out.Hinges.Add(Hinge);
+		}
+	}
+
+	// The steering wheel gets a bone of its own under the root too, at the model's bone, with its vertices weighted to it; the vertices say how it is turned and how big it is.
+	if (SteeringModelBone != INDEX_NONE)
+	{
+		TArray<FVector> Rim;
+		for (int32 Vertex = 0; Vertex < BoneOf.Num(); ++Vertex)
+		{
+			if (BoneOf[Vertex] == SteeringMarker)
+			{
+				Rim.Add(FVector(LOD.Positions[Vertex]));
+			}
+		}
+		if (Rim.Num() > 0)
+		{
+			const FName BoneName = UniqueBoneName(Body.Bones, Model.Bones[SteeringModelBone].Name);
+			const bool bKnown = Model.BonePositions.IsValidIndex(SteeringModelBone);
+			FBox RimBox(Rim);
+			const FVector Hub = bKnown ? Turn.Point(Model.BonePositions[SteeringModelBone]) : RimBox.GetCenter();
+			const int32 NewBone = Body.Bones.Num();
+			FMantleSkinnedMeshBone& Added = Body.Bones.AddDefaulted_GetRef();
+			Added.Name = BoneName;
+			Added.ParentIndex = 0;
+			Body.ReferencePose.Add(FTransform(FRotator::ZeroRotator, Hub));
+			for (int32 Vertex = 0; Vertex < BoneOf.Num(); ++Vertex)
+			{
+				if (BoneOf[Vertex] == SteeringMarker)
+				{
+					BoneOf[Vertex] = NewBone;
+				}
+			}
+			Out.SteeringWheelBone = BoneName;
+			Out.Steering = MeasureSteeringWheel(Rim, Hub);
 		}
 	}
 
