@@ -327,6 +327,42 @@ bool FMantleVehicleBuilderRimLayerTest::RunTest(const FString&)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleVehicleBuildModelWholeWordsTest, "Mantle.Vehicle.BuildModel.PaintOptionsMatchWholeWords",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleBuildModelWholeWordsTest::RunTest(const FString&)
+{
+	// The BuildModel command's paint=, notpaint=, secondary=, wheels=, interior= and dashboard= pick sections by whole words. As a substring, wheels=rim also caught
+	// PRIMARY (p-RIM-ary) and put the body paint on the Wheels layer: the FiveM BMW, Jeep and Camaro (sections PRIMARY, SECONDARY, rim, interior_001) show it.
+	const TArray<FString> Sections = { TEXT("PRIMARY"), TEXT("SECONDARY"), TEXT("rim"), TEXT("interior_001"), TEXT("plastic_black") };
+	const auto Picks = [&Sections](const TCHAR* Words)
+	{
+		TArray<FString> Out;
+		for (const FString& Section : Sections)
+		{
+			if (FMantleVehicleConverter::NameHasWords(Section, Words))
+			{
+				Out.Add(Section);
+			}
+		}
+		return Out;
+	};
+	TestEqual(TEXT("wheels=rim is the rim, not PRIMARY"), Picks(TEXT("rim")), TArray<FString>({ TEXT("rim") }));
+	TestEqual(TEXT("paint=PRIMARY is PRIMARY"), Picks(TEXT("PRIMARY")), TArray<FString>({ TEXT("PRIMARY") }));
+	TestEqual(TEXT("secondary=SECONDARY is SECONDARY"), Picks(TEXT("SECONDARY")), TArray<FString>({ TEXT("SECONDARY") }));
+	TestEqual(TEXT("interior=interior is interior_001"), Picks(TEXT("interior")), TArray<FString>({ TEXT("interior_001") }));
+
+	// Whole words in any case, at underscores, case steps and digits; several words must come in order.
+	TestTrue(TEXT("rim is in Rim_FL"), FMantleVehicleConverter::NameHasWords(TEXT("Rim_FL"), TEXT("rim")));
+	TestTrue(TEXT("wheel is in WheelSet_07"), FMantleVehicleConverter::NameHasWords(TEXT("WheelSet_07"), TEXT("wheel")));
+	TestTrue(TEXT("WHEEL is in a GTA tint layer"), FMantleVehicleConverter::NameHasWords(TEXT("vehicle_generic_smallspecmap__WHEEL_"), TEXT("WHEEL")));
+	TestFalse(TEXT("rim is not in trim"), FMantleVehicleConverter::NameHasWords(TEXT("chrome_trim"), TEXT("rim")));
+	TestTrue(TEXT("two words in order"), FMantleVehicleConverter::NameHasWords(TEXT("MI_taillight_lens_rear"), TEXT("taillight_lens")));
+	TestFalse(TEXT("two words out of order"), FMantleVehicleConverter::NameHasWords(TEXT("MI_taillight_lens_rear"), TEXT("lens_taillight")));
+	TestFalse(TEXT("an empty option matches nothing"), FMantleVehicleConverter::NameHasWords(TEXT("PRIMARY"), TEXT("")));
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleVehicleRimLookTest, "Mantle.Vehicle.PaintLayers.RimsStartingLook",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 

@@ -3263,6 +3263,29 @@ const TCHAR* FMantleVehicleConverter::PaintLayerDocumentName(const EMantleVehicl
 	return MantleVehicleConverterPrivate::PaintLayerName(Layer);
 }
 
+bool FMantleVehicleConverter::NameHasWords(const FString& Name, const FString& Words)
+{
+	const TArray<FString> Have = MantleVehicleConverterPrivate::NameWords(Name);
+	const TArray<FString> Want = MantleVehicleConverterPrivate::NameWords(Words);
+	if (Want.IsEmpty())
+	{
+		return false;
+	}
+	for (int32 Start = 0; Start + Want.Num() <= Have.Num(); ++Start)
+	{
+		bool bAll = true;
+		for (int32 Index = 0; Index < Want.Num() && bAll; ++Index)
+		{
+			bAll = Have[Start + Index] == Want[Index];
+		}
+		if (bAll)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 bool FMantleVehicleConverter::IsGtaTintLayer(const FString& Name, const UMaterialInterface* Material)
 {
 	using namespace MantleVehicleConverterPrivate;

@@ -638,9 +638,9 @@ namespace MantleVehicleBuilderPrivate
 	// Mantle.Vehicle.BuildModel: what the Build a vehicle window's Build button does for a model that is worn as a skin, from the console or a script.
 	FAutoConsoleCommand BuildModelCommand(
 		TEXT("Mantle.Vehicle.BuildModel"),
-		TEXT("Mantle.Vehicle.BuildModel <model object path> <vehicle type id> [yaw=<deg>] [name=<Name>] [folder=</Game/...>] [bone.<chassis bone>=<model bone>] [section.<chassis bone>=<n>] [overwrite=1] [hideriders=1] [paint=<text>] [notpaint=<text>] [secondary=<text>] [wheels=<text>] [interior=<text>] [dashboard=<text>] [secondaryfinish=<finish>] [wheelsfinish=<finish>] [interiorfinish=<finish>] [dashboardfinish=<finish>] "
+		TEXT("Mantle.Vehicle.BuildModel <model object path> <vehicle type id> [yaw=<deg>] [name=<Name>] [folder=</Game/...>] [bone.<chassis bone>=<model bone>] [section.<chassis bone>=<n>] [overwrite=1] [hideriders=1] [paint=<words>] [notpaint=<words>] [secondary=<words>] [wheels=<words>] [interior=<words>] [dashboard=<words>] [secondaryfinish=<finish>] [wheelsfinish=<finish>] [interiorfinish=<finish>] [dashboardfinish=<finish>] "
 			 "-- puts a static or skeletal mesh on the type's chassis (BuildFromModel), saves it under the folder (default /Game/MantleVehicles) and logs MANTLE_VEHICLE_BUILD_MODEL "
-			 "ok=<0|1> with the vehicle's path, its Size and every note. With no yaw or parts given Mantle chooses them. A name= that a vehicle already has is refused unless overwrite=1."),
+			 "ok=<0|1> with the vehicle's path, its Size and every note. The paint options pick the sections that have those whole words (wheels=rim is not PRIMARY). With no yaw or parts given Mantle chooses them. A name= that a vehicle already has is refused unless overwrite=1."),
 		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
 		{
 			if (Args.Num() < 2)
@@ -688,7 +688,8 @@ namespace MantleVehicleBuilderPrivate
 				}
 				else if (Key.Equals(TEXT("paint"), ESearchCase::IgnoreCase))
 				{
-					// What a creator does in the paint step, for a script: tick every section of the model whose name has this text (and not notpaint's).
+					// What a creator does in the paint step, for a script: tick every section of the model whose name has these whole words (and not notpaint's), so wheels=rim
+					// is not PRIMARY (FMantleVehicleConverter::NameHasWords).
 					PaintContains = Value;
 				}
 				else if (Key.Equals(TEXT("notpaint"), ESearchCase::IgnoreCase))
@@ -754,7 +755,7 @@ namespace MantleVehicleBuilderPrivate
 				{
 					for (const FString& Section : FMantleVehicleLights::SectionNames(Skeletal->GetMaterials()))
 					{
-						if (Section.Contains(PaintContains, ESearchCase::IgnoreCase) && (PaintNot.IsEmpty() || !Section.Contains(PaintNot, ESearchCase::IgnoreCase)))
+						if (FMantleVehicleConverter::NameHasWords(Section, PaintContains) && (PaintNot.IsEmpty() || !FMantleVehicleConverter::NameHasWords(Section, PaintNot)))
 						{
 							Ticked.Add(Section);
 						}
@@ -764,7 +765,7 @@ namespace MantleVehicleBuilderPrivate
 			}
 			if (LayerContains.Num() > 0)
 			{
-				// secondary=, wheels=, interior= and dashboard=: the sections whose name has the text are ticked as that layer (and not notpaint's). Without paint=, the sections
+				// secondary=, wheels=, interior= and dashboard=: the sections whose name has those whole words are ticked as that layer (and not notpaint's). Without paint=, the sections
 				// they do not name keep Mantle's own guess (the body color or a layer by the names), as the builder's window starts them.
 				TArray<FString> Ticked = Options.PaintedSections.IsSet() ? Options.PaintedSections.GetValue() : TArray<FString>();
 				if (const USkeletalMesh* Skeletal = Cast<USkeletalMesh>(Asset))
@@ -776,7 +777,7 @@ namespace MantleVehicleBuilderPrivate
 						for (int32 Index = 0; Index < Names.Num(); ++Index)
 						{
 							const FMantleVehicleConverter::FPaintLayerGuess Guess = FMantleVehicleConverter::GuessStartingPaint(Names[Index], Materials[Index].MaterialInterface);
-							if (Guess.bPainted && (PaintNot.IsEmpty() || !Names[Index].Contains(PaintNot, ESearchCase::IgnoreCase)))
+							if (Guess.bPainted && (PaintNot.IsEmpty() || !FMantleVehicleConverter::NameHasWords(Names[Index], PaintNot)))
 							{
 								Ticked.AddUnique(Names[Index]);
 								if (!Guess.bPrimary)
@@ -790,7 +791,7 @@ namespace MantleVehicleBuilderPrivate
 					{
 						for (const TPair<EMantleVehicleSourcePaintLayer, FString>& Pair : LayerContains)
 						{
-							if (Section.Contains(Pair.Value, ESearchCase::IgnoreCase) && (PaintNot.IsEmpty() || !Section.Contains(PaintNot, ESearchCase::IgnoreCase)))
+							if (FMantleVehicleConverter::NameHasWords(Section, Pair.Value) && (PaintNot.IsEmpty() || !FMantleVehicleConverter::NameHasWords(Section, PaintNot)))
 							{
 								Ticked.AddUnique(Section);
 								Options.PaintLayers.Add(Section, Pair.Key);
