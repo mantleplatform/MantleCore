@@ -17,7 +17,9 @@
 #include "Rendering/StaticMeshVertexBuffer.h"
 #include "Rendering/SkeletalMeshRenderData.h"
 #include "SkeletalMeshAttributes.h"
+#include "Misc/ScopeExit.h"
 #include "UObject/Package.h"
+#include "UObject/UObjectHash.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogMantleFitBodies, Log, All);
 
@@ -238,6 +240,23 @@ bool FMantleFitBodies::Make(const FString& Id, const EMetaHumanBodyType Type, FM
 		OutError = TEXT("MetaHuman Creator's editor subsystem is unavailable");
 		return false;
 	}
+	// What Creator generates for this character goes under its subsystem (TryAddObjectToEdit's OuterForGeneratedAssets): note what
+	// was there before, so Release knows which objects are this character's, whichever way Make ends.
+	TSet<UObject*> Before;
+	{
+		TArray<UObject*> Inner;
+		GetObjectsWithOuter(Subsystem, Inner, /*bIncludeNestedObjects*/ false);
+		Before.Append(Inner);
+	}
+	ON_SCOPE_EXIT
+	{
+		TArray<UObject*> After;
+		GetObjectsWithOuter(Subsystem, After, /*bIncludeNestedObjects*/ false);
+		for (UObject* Object : After)
+		{
+			if (!Before.Contains(Object) && Object->GetOutermost() == GetTransientPackage()) { Out.Generated.Add(Object); }
+		}
+	};
 	// The transient package: nothing is ever saved into the project.
 	UObject* CharacterOuter = GetTransientPackage();
 	const FName CharacterName = MakeUniqueObjectName(CharacterOuter, UMetaHumanCharacter::StaticClass(), FName(*FString::Printf(TEXT("MantleFitBody_%s"), *Id)));
@@ -303,6 +322,26 @@ void FMantleFitBodies::Release(FMantleFitBody& Body)
 		}
 	}
 	Body.bEditing = false;
+	// Creator leaves the meshes and DNA it generated for this character RF_Standalone, so closing it frees nothing (about 0.4 GB
+	// per body, measured 2026-11-25). Clear that flag on this character's own generated objects (transient package only, never an
+	// asset) so the next garbage collection frees what nothing else holds. Objects still referenced (a cache, a later user) stay.
+	int32 Cleared = 0;
+	const auto ClearStandalone = [&Cleared](UObject* Object)
+	{
+		if (Object->HasAnyFlags(RF_Standalone)) { Object->ClearFlags(RF_Standalone); ++Cleared; }
+	};
+	for (const TWeakObjectPtr<UObject>& Weak : Body.Generated)
+	{
+		UObject* Object = Weak.Get();
+		if (!Object || Object->GetOutermost() != GetTransientPackage()) { continue; }
+		ClearStandalone(Object);
+		ForEachObjectWithOuter(Object, ClearStandalone, /*bIncludeNestedObjects*/ true);
+	}
+	if (Cleared > 0)
+	{
+		UE_LOG(LogMantleFitBodies, Display, TEXT("MANTLE_FIT_BODIES %s released: %d of its %d generated objects no longer kept standalone"), *Body.Id, Cleared, Body.Generated.Num());
+	}
+	Body.Generated.Reset();
 	if (Body.BodyMesh.IsValid())
 	{
 		FScopeLock Lock(&MantleFitBodiesPrivate::CreatorPreviewLock);

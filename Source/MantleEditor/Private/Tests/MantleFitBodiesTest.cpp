@@ -5,7 +5,11 @@
 #include "MantleFaceLayout.h"
 #include "MantleFitBodies.h"
 
+#include "Editor.h"
+#include "Engine/SkeletalMesh.h"
+#include "MetaHumanCharacterEditorSubsystem.h"
 #include "Misc/AutomationTest.h"
+#include "UObject/UObjectHash.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -217,6 +221,46 @@ bool FMantleFaceLayoutTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("the triangles are the layout's"), Mesh.Primitives.Num() == 2 && Mesh.Primitives[0].Indices == TArray<uint32>({ 0, 1, 4,  0, 4, 3,  1, 2, 5,  1, 5, 4 }));
 		TestTrue(TEXT("the note says a diagonal was flipped"), Note.Contains(TEXT("1 flipped")));
 	}
+	return true;
+}
+
+// A released fit body leaves nothing behind (2026-11-25: Creator kept each body's generated meshes RF_Standalone, about 0.4 GB a
+// body, so every Outfit check grew the editor). Makes and releases one body, collects garbage, and counts the skeletal meshes
+// under MetaHuman Creator's editor subsystem. A first body is made and released before counting: Creator may cache its
+// archetype meshes on first use, and those are meant to stay.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleFitBodyReleaseTest,
+	"Mantle.Editor.FitBodies.ReleaseFreesGenerated",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleFitBodyReleaseTest::RunTest(const FString& Parameters)
+{
+	UMetaHumanCharacterEditorSubsystem* Subsystem = GEditor ? GEditor->GetEditorSubsystem<UMetaHumanCharacterEditorSubsystem>() : nullptr;
+	if (!TestNotNull(TEXT("MetaHuman Creator's editor subsystem"), Subsystem)) { return false; }
+	const auto CountMeshes = [Subsystem]()
+	{
+		TArray<UObject*> Inner;
+		GetObjectsWithOuter(Subsystem, Inner, /*bIncludeNestedObjects*/ false);
+		return Inner.FilterByPredicate([](const UObject* Object) { return Object->IsA<USkeletalMesh>(); }).Num();
+	};
+	const auto MakeAndRelease = [this](FMantleFitBody& Body)
+	{
+		FString Error;
+		const bool bMade = FMantleFitBodies::Make(TEXT("m_med_nrw"), EMetaHumanBodyType::m_med_nrw, Body, Error);
+		TestTrue(FString::Printf(TEXT("the body is made (%s)"), *Error), bMade);
+		TestTrue(TEXT("what Creator generated for it is recorded"), Body.Generated.Num() > 0);
+		FMantleFitBodies::Release(Body);
+		TestEqual(TEXT("released: nothing recorded any more"), Body.Generated.Num(), 0);
+		CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+	};
+	FMantleFitBody Warm;
+	MakeAndRelease(Warm);
+	const int32 Start = CountMeshes();
+	FMantleFitBody Body;
+	MakeAndRelease(Body);
+	const int32 End = CountMeshes();
+	AddInfo(FString::Printf(TEXT("skeletal meshes under the subsystem: %d before, %d after a body was made, released and collected"), Start, End));
+	TestTrue(TEXT("no meshes left behind"), End <= Start);
 	return true;
 }
 
