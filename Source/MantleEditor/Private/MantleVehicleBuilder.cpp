@@ -2075,10 +2075,11 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 	ApplyHinges(*Out.Source, Skinned.Hinges, Out.Notes);
 	// Its hubs and brakes (a caliper skinned to hub_lf or B_FLBrake) follow their wheel's steering and travel, each on a bone of its own (Skin gave it one).
 	ApplyHubs(*Out.Source, Skinned.Hubs, Out.Notes);
-	// A model that was split into a body and parts: the paint the creator ticked (else what looks like paint) goes onto whichever holds each painted material.
-	if (SplitParts.Num() > 0 || Options.PaintedSections.IsSet())
+	// The paint the creator ticked, else Mantle's guess (what reads as car paint, a GTA model's PRIMARY, a layer by the names): on a model that was split into a body and
+	// parts it goes onto whichever holds each painted material. Every build sets it, so a car built with nothing ticked still has its paint for liveries and the color picker.
 	{
-		const TArray<FString> ModelSections = FMantleVehicleLights::SectionNames(SplitParts.Num() > 0 ? PictureMaterials : Skinned.Materials);
+		const TArray<FSkeletalMaterial>& PaintMaterials = SplitParts.Num() > 0 ? PictureMaterials : Skinned.Materials;
+		const TArray<FString> ModelSections = FMantleVehicleLights::SectionNames(PaintMaterials);
 		const FMantleVehicleSourceLights& LightsForPaint = Options.Lights.IsSet() ? Options.Lights.GetValue() : Prepared.Lights;
 		TArray<bool> Painted;
 		TArray<uint8> Layers;
@@ -2103,8 +2104,7 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 				bLight = bLight || FMantleVehicleLights::Sections(LightsForPaint, static_cast<EMantleLightKind>(Kind)).Contains(ModelSections[Index]);
 			}
 			// Mantle's guess from the names and how the material reads: the body paint, or a layer. Never a light, and never what becomes glass, a tire, chrome or a lens.
-			const TArray<FSkeletalMaterial>& SectionMaterials = SplitParts.Num() > 0 ? PictureMaterials : Skinned.Materials;
-			const UMaterialInterface* SectionMaterial = SectionMaterials.IsValidIndex(Index) ? SectionMaterials[Index].MaterialInterface.Get() : nullptr;
+			const UMaterialInterface* SectionMaterial = PaintMaterials.IsValidIndex(Index) ? PaintMaterials[Index].MaterialInterface.Get() : nullptr;
 			const FMantleVehicleConverter::FPaintLayerGuess Guess = FMantleVehicleConverter::GuessPaintLayer(ModelSections[Index], SectionMaterial);
 			const bool bBuiltIn = !Guess.bPrimary && SectionMaterial && !FMantleVehicleBuiltInMaterials::Detect(SectionMaterial, ModelSections[Index], false).IsEmpty();
 			Painted.Add(!bLight && Guess.bPainted && !bBuiltIn);

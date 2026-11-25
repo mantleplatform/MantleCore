@@ -4,6 +4,7 @@
 #include "MantleSkinnedMesh.h"
 #include "MantleVehicleAsset.h"
 #include "MantleVehicleBodyReduce.h"
+#include "MantleVehicleBodySplit.h"
 #include "MantleVehicleBuilder.h"
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleLightFinder.h"
@@ -486,6 +487,41 @@ bool FMantleVehicleFiveMRebuildTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("and has the first one's name"), Second.AssetName, First.AssetName);
 	TestTrue(TEXT("and is the first one's vehicle asset"), Second.Source == First.Source);
 	TestTrue(TEXT("and says it updated the earlier vehicle"), Second.Notes.ContainsByPredicate([](const FString& Note) { return Note.Contains(TEXT("updated that vehicle")); }));
+	MantleVehicleScratchBody::Discard(Model);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleFiveMGuessedPaintTest,
+	"Mantle.Vehicle.FiveM.BuildWithNothingTickedGuessesPaint",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleFiveMGuessedPaintTest::RunTest(const FString& Parameters)
+{
+	FString Error;
+	USkeletalMesh* Model = MantleVehicleScratchBody::Make(TEXT("/Temp/MantleFiveMGuessedPaintModel"), TEXT("FiveMGuessedPaintBody"), Error);
+	if (!TestNotNull(*FString::Printf(TEXT("the scratch model is made (%s)"), *Error), Model) || !TestTrue(TEXT("the model has a material slot"), Model->GetMaterials().Num() > 0))
+	{
+		return false;
+	}
+	// A GTA model's body: the word PRIMARY in its slot's name, a model that is not split (under the material cap), and nothing ticked, as BuildModel with no paint=
+	// and a builder window whose ticks were left as Mantle guessed them build it.
+	const FName Primary(TEXT("carbody_PRIMARY_"));
+	Model->GetMaterials()[0].MaterialSlotName = Primary;
+	Model->GetMaterials()[0].ImportedMaterialSlotName = Primary;
+	FMantleVehicleModelOptions Options;
+	Options.Folder = TEXT("/Temp/MantleFiveMGuessedPaintOut");
+	const FMantleVehicleBuildResult Built = FMantleVehicleBuilder::BuildFromModel(Model, TEXT("sedan"), Options);
+	for (const FString& Problem : Built.Problems)
+	{
+		AddError(Problem);
+	}
+	if (TestTrue(TEXT("the build works"), Built.bOk && Built.Source != nullptr))
+	{
+		TestTrue(TEXT("it was not split, so this is the unsplit path"), !Built.Source->Parts.ContainsByPredicate([](const FMantleVehicleSourcePart& Part) { return Part.FoundOn == FMantleVehicleBodySplit::FoundOn(); }));
+		TestTrue(*FString::Printf(TEXT("the PRIMARY section is the body paint, with nothing ticked (Paint Sections: %s)"), *FString::Join(Built.Source->Paint.Sections, TEXT(", "))),
+			Built.Source->Paint.Sections.Contains(Primary.ToString()));
+	}
 	MantleVehicleScratchBody::Discard(Model);
 	return true;
 }
