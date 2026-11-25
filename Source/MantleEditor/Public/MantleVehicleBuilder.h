@@ -72,6 +72,8 @@ struct FMantleVehicleModelOptions
 	 * (FMantleVehicleChassisSkin::SuggestHinges). An empty map, set, means nothing opens. Wins over Map's own Hinges.
 	 */
 	TOptional<FMantleVehicleHingeMap> Hinges;
+	/** "This model has no inside" is ticked: the riders are hidden and no door gets a hinge (the hood and trunk still open), as in the converter. Unset or false, the doors open. */
+	TOptional<bool> HideRiders;
 	/**
 	 * A propeller plane with two engines (a P-38): the chassis gets a propeller bone each (FMantleVehicleChassisSkin::AsTwin). Unset, it is when the model has two
 	 * propeller bones. Ignored when Spec is given: that chassis is the one used.
@@ -243,7 +245,8 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	/**
 	 * The "This model has no inside" choice: hides or shows the driver and the passenger together, as one undo step. Hiding them on a
 	 * vehicle whose driver seat is not placed places it where the cook would (DefaultDriverSeat), so the document carries the seat
-	 * the exits and camera hang from. Nothing happens when the choice is already so.
+	 * the exits and camera hang from. Nothing happens when the choice is already so. Hiding also shuts the doors (their hinges are cleared; the hood and trunk keep theirs),
+	 * and showing them again gives back the doors the vehicle's body suggests (FMantleVehicleChassisSkin::SuggestHinges), as ApplyOwnHinges finds them.
 	 */
 	static void SetHiddenRiders(UMantleVehicleSource& Source, const USkeletalMesh* Model, bool bHide);
 

@@ -491,6 +491,34 @@ void FMantleVehicleBuilder::SetHiddenRiders(UMantleVehicleSource& Source, const 
 	}
 	Source.Tuning.bHideDriver = bHide;
 	Source.Tuning.bHidePassenger = bHide;
+	FMantleVehicleSourceTuning& T = Source.Tuning;
+	if (bHide)
+	{
+		// No inside, no swinging doors (the converter's rule): every door is shut, the hood and trunk keep theirs.
+		T.bHasDriverDoor = T.bHasPassengerDoor = T.bRearLeftDoor = T.bRearRightDoor = false;
+	}
+	else if (USkeletalMesh* Body = Source.Body.LoadSynchronous())
+	{
+		// Shown again: the doors the body's bones suggest, the way ApplyOwnHinges finds them. Only the doors; the hood and trunk are as they are.
+		FMantleVehicleModel Read;
+		FString Error;
+		if (FMantleVehicleModel::Read(Body, Read, Error))
+		{
+			FMantleVehicleHingeMap Doors = FMantleVehicleChassisSkin::SuggestHinges(Read);
+			for (const EMantleVehicleHingePart Part : FMantleVehicleChassisSkin::HingeParts())
+			{
+				if (!FMantleVehicleChassisSkin::IsDoorPart(Part))
+				{
+					Doors.Bones.Remove(Part);
+				}
+			}
+			if (!Doors.IsEmpty())
+			{
+				TArray<FString> Notes;
+				ApplyHinges(Source, FMantleVehicleChassisSkin::FindHingesOnModel(Read, FMantleVehicleModelPlacement(), Doors, &Notes), Notes);
+			}
+		}
+	}
 	Source.MarkPackageDirty();
 }
 
@@ -1498,9 +1526,17 @@ void FMantleVehicleBuilder::ApplyHinges(UMantleVehicleSource& Source, const TCon
 	}
 	Source.Modify();
 	FMantleVehicleSourceTuning& T = Source.Tuning;
+	// A vehicle that hides its riders (no inside) has no swinging doors: the same rule as the converter's (AddHinges). Its hood and trunk still open.
+	const bool bNoInside = T.bHideDriver || T.bHidePassenger;
+	bool bDoorsShut = false;
 	TArray<FString> Opens;
 	for (const FMantleVehicleSkinnedHinge& Found : Hinges)
 	{
+		if (bNoInside && FMantleVehicleChassisSkin::IsDoorPart(Found.Part))
+		{
+			bDoorsShut = true;
+			continue;
+		}
 		FMantleVehicleSourceHinge Hinge;
 		Hinge.Bone = Found.Bone;
 		Hinge.Pivot = Found.Pivot;
@@ -1554,6 +1590,10 @@ void FMantleVehicleBuilder::ApplyHinges(UMantleVehicleSource& Source, const TCon
 		}
 		Opens.Add(Label);
 	}
+	if (bDoorsShut)
+	{
+		OutNotes.AddUnique(TEXT("Doors stay shut: this vehicle hides its riders (no interior). The hood and trunk still open."));
+	}
 	if (Opens.Num() == 0)
 	{
 		return;
@@ -1583,6 +1623,12 @@ void FMantleVehicleBuilder::ApplyOwnHinges(FMantleVehicleBuildResult& Built, con
 	// The conversion that made this vehicle already found its doors, hood and trunk from the bones' names (FMantleVehicleConverter::AddHinges). The Doors step is the
 	// creator's own word on what opens, an empty one included (nothing does), so what it sets replaces that guess.
 	FMantleVehicleSourceTuning& T = Source->Tuning;
+	// Hidden riders ticked in the window: the doors stay shut from the start (ApplyHinges leaves them out), and the conversion's own doors are cleared.
+	const bool bHide = Options.HideRiders.Get(false) || T.bHideDriver || T.bHidePassenger;
+	if (bHide)
+	{
+		SetHiddenRiders(*Source, Model, true);
+	}
 	const bool bCleared = Options.Hinges.IsSet() && (T.bHasDriverDoor || T.bHasPassengerDoor || T.bRearLeftDoor || T.bRearRightDoor || T.bHood || T.bTrunk);
 	if (bCleared)
 	{
@@ -1604,7 +1650,7 @@ void FMantleVehicleBuilder::ApplyOwnHinges(FMantleVehicleBuildResult& Built, con
 		}
 		Built.Notes = MoveTemp(Once);
 	}
-	if ((Found.Num() > 0 || bCleared) && Built.bSaved)
+	if ((Found.Num() > 0 || bCleared || bHide) && Built.bSaved)
 	{
 		Built.bSaved = SaveVehicle(*Source, Built.SaveProblem);
 	}
@@ -1954,6 +2000,11 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 	// Remembered with the vehicle, so a build again of this model finds it.
 	Out.Source->GetOutermost()->GetMetaData().SetValue(Out.Source, MantleVehicleBuilderPrivate::BuiltFromModelKey, *ModelPath);
 	// The model's doors, hood and trunk open: each is on a bone of its own in the body (Skin gave it one), and its hinge goes into the vehicle's settings.
+	// With no inside ticked, the riders are hidden first, and ApplyHinges then leaves every door shut.
+	if (Options.HideRiders.Get(false))
+	{
+		SetHiddenRiders(*Out.Source, nullptr, true);
+	}
 	ApplyHinges(*Out.Source, Skinned.Hinges, Out.Notes);
 	// A model that was split into a body and parts: the paint the creator ticked (else what looks like paint) goes onto whichever holds each painted material.
 	if (SplitParts.Num() > 0)

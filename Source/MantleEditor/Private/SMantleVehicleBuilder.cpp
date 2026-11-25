@@ -1941,6 +1941,7 @@ FMantleVehicleModelOptions SMantleVehicleBuilder::MakeBuildOptions() const
 		// The doors, hood and trunk as the Doors step has them (Mantle's suggestion unless the creator changed it).
 		Options.Hinges = HingeChoice;
 	}
+	Options.HideRiders = bHideRiders;
 	if (bUseSkin)
 	{
 		Options.Spec = Shape.GetShaped();
