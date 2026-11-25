@@ -2261,6 +2261,9 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 		if (FMantleVehicleConverter::ReadBody(*Out.Source, RimBody, RimMaterials, RimError, /*bApplyFitScale*/ true))
 		{
 			FMantleVehicleConverter::ApplyRims(RimBody, *Out.Source, Out.Notes);
+			// The paint above was set afresh (ticked or guessed), which drops the converter's rim layer: the rims found just now start paintable again, unless the
+			// build named a Wheels layer of its own.
+			FMantleVehicleConverter::ApplyRimLayer(*Out.Source, FMantleVehicleConverter::UniqueSectionNames(RimBody.MaterialNames), RimMaterials, Out.Notes);
 		}
 	}
 	// The lights: the creator's rows and beams, else what the finder found; each light section gets its glowing copy of its material.
