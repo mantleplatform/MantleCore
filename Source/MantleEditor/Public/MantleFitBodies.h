@@ -24,6 +24,12 @@ struct MANTLEEDITOR_API FMantleFitBody
 	TStrongObjectPtr<USkeletalMesh> MergedHeadAndBodyMesh;
 	/** FMantleFitBodies::FaceNumberingHash of FaceMesh; 0 when it could not be read. */
 	uint32 FaceNumberingHash = 0;
+	/**
+	 * What MetaHuman Creator generated for this character while Make opened it: the objects that appeared directly under its
+	 * editor subsystem (meshes, DNA), all in the transient package. Creator leaves some RF_Standalone, which keeps them from
+	 * garbage collection after the character is closed; Release clears that flag on these, and only these.
+	 */
+	TArray<TWeakObjectPtr<UObject>> Generated;
 };
 
 /**
