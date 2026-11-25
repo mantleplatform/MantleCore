@@ -388,6 +388,13 @@ public:
 	static bool IsGtaTintLayer(const FString& Name, const UMaterialInterface* Material);
 
 	/**
+	 * Whether Name has Words as whole words, in order (case ignored): both are cut into words the way the paint guess reads names (at anything that is not a letter or
+	 * digit, at a lower-to-upper step, and between letters and digits). "rim" is in "rim" and "Rim_FL", not in "PRIMARY" or "trim"; "taillight lens" is in
+	 * "MI_taillight_lens_rear". Used by the BuildModel command's paint=, notpaint=, secondary=, wheels=, interior= and dashboard=.
+	 */
+	static bool NameHasWords(const FString& Name, const FString& Words);
+
+	/**
 	 * The rim sections to put on a Wheels paint layer (rims start paintable): the rims found on the wheels (Wheels > Rim Sections, all wheels, each once) that are among BodySections
 	 * and in no other place the paint already has (Paint > Sections or another layer's sections), and not a GTA tint layer (IsGtaTintLayer: GTA's own path owns those). Materials go with BodySections by index. Empty when the source already has a Wheels layer: that one is the creator's, or the
 	 * first convert's, and is left as it is. Exposed for tests.
