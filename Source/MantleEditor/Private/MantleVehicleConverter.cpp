@@ -1752,22 +1752,23 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 		for (int32 Index = 0; Index < Sections.Num(); ++Index)
 		{
 			const UMaterialInterface* SectionMaterial = Materials.IsValidIndex(Index) ? Materials[Index] : nullptr;
-			const FPaintLayerGuess Guess = GuessPaintLayer(Sections[Index], SectionMaterial);
+			// The converter's rule (the window shows the same for a model fitted to its own wheels): a layer only for what the model marks as a tint layer.
+			const FPaintLayerGuess Guess = GuessStartingPaint(Sections[Index], SectionMaterial, EPaintGuessRule::TintLayersOnly);
+			const bool bBuiltIn = SectionMaterial && !FMantleVehicleBuiltInMaterials::Detect(SectionMaterial, Sections[Index], false).IsEmpty();
 			if (Guess.bPainted && Guess.bPrimary)
 			{
 				Source.Paint.Sections.Add(Sections[Index]);
 			}
-			else if (Guess.bPainted)
+			else if (Guess.bPainted || Guess.bKeepsOwnMaterial)
 			{
-				if (SectionMaterial && !FMantleVehicleBuiltInMaterials::Detect(SectionMaterial, Sections[Index], false).IsEmpty())
+				// What becomes glass, a tire, chrome or a lens is never a layer, and is not listed as left out either.
+				if (bBuiltIn)
 				{
 					continue;
 				}
-				// A layer replaces the section's look with Mantle's paint (white until a script recolors it), so the converter gives one only to what the model marks as a tint layer
-				// (a GTA model's PRIMARY, SECONDARY and WHEEL): a seat, a dashboard or a rim that is merely named like one keeps its own material, as the model draws it.
-				if (!IsGtaTintLayer(Sections[Index], SectionMaterial))
+				if (Guess.bKeepsOwnMaterial)
 				{
-					LeftOut.Add(FString::Printf(TEXT("%s (it keeps the model's own material, so the car looks as the model does; to recolor it, add it under Paint > Layers)"), *Sections[Index]));
+					LeftOut.Add(FString::Printf(TEXT("%s (%s)"), *Sections[Index], *Guess.LeftOut));
 					continue;
 				}
 				MantleVehicleConverterPrivate::EnsurePaintLayer(Source.Paint, Guess.Layer).Sections.Add(Sections[Index]);
@@ -3224,6 +3225,20 @@ FMantleVehicleConverter::FPaintLayerGuess FMantleVehicleConverter::GuessPaintLay
 	return Guess;
 }
 
+FMantleVehicleConverter::FPaintLayerGuess FMantleVehicleConverter::GuessStartingPaint(const FString& Name, const UMaterialInterface* Material, const EPaintGuessRule Rule)
+{
+	FPaintLayerGuess Guess = GuessPaintLayer(Name, Material);
+	// A layer replaces the section's look with Mantle's paint (white until a script recolors it), so this rule gives one only to what the model marks as a tint layer
+	// (a GTA model's PRIMARY, SECONDARY and WHEEL): a seat, a dashboard or a rim that is merely named like one keeps its own material, as the model draws it.
+	if (Rule == EPaintGuessRule::TintLayersOnly && Guess.bPainted && !Guess.bPrimary && !IsGtaTintLayer(Name, Material))
+	{
+		Guess.bPainted = false;
+		Guess.bKeepsOwnMaterial = true;
+		Guess.LeftOut = TEXT("it keeps the model's own material, so the car looks as the model does; to recolor it, add it under Paint > Layers");
+	}
+	return Guess;
+}
+
 const TCHAR* FMantleVehicleConverter::PaintFinishDocumentName(const EMantleVehicleSourcePaintFinish Finish)
 {
 	return MantleVehicleConverterPrivate::PaintFinishName(Finish);
@@ -3538,9 +3553,9 @@ TArray<FMantleVehicleSourcePartLayerSlots> FMantleVehicleConverter::SuggestPartL
 		{
 			continue;
 		}
-		const FPaintLayerGuess Guess = GuessPaintLayer(PartMesh->GetStaticMaterials()[Slot].MaterialSlotName.ToString(), Material);
-		// Only what the model marks as a tint layer (see the section layers in Convert): a slot named like an interior keeps its own material.
-		if (!Guess.bPainted || Guess.bPrimary || !IsGtaTintLayer(PartMesh->GetStaticMaterials()[Slot].MaterialSlotName.ToString(), Material))
+		// The converter's rule, as for the body's sections: only what the model marks as a tint layer; a slot named like an interior keeps its own material.
+		const FPaintLayerGuess Guess = GuessStartingPaint(PartMesh->GetStaticMaterials()[Slot].MaterialSlotName.ToString(), Material, EPaintGuessRule::TintLayersOnly);
+		if (!Guess.bPainted || Guess.bPrimary)
 		{
 			continue;
 		}

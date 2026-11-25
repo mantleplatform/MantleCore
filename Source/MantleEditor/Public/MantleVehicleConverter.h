@@ -353,9 +353,27 @@ public:
 		/** The body paint (the primary layer); else Layer. */
 		bool bPrimary = true;
 		EMantleVehicleSourcePaintLayer Layer = EMantleVehicleSourcePaintLayer::Secondary;
-		/** Why a part that looks like it belongs to a layer is left out (a dark picture); empty otherwise. */
+		/** Why a part that looks like it belongs to a layer is left out (a dark picture, or the rule keeps its own material); empty otherwise. */
 		FString LeftOut;
+		/** Left out only because the rule (EPaintGuessRule::TintLayersOnly) gives layers to a model's tint layers alone: it keeps its own material. */
+		bool bKeepsOwnMaterial = false;
 	};
+
+	/**
+	 * Which rule picks a section's starting paint when the creator ticks nothing. A route uses one, and the builder window shows the one its Build button's route
+	 * uses (FMantleVehicleBuilder::BuildAny), so what it shows is what the vehicle gets.
+	 */
+	enum class EPaintGuessRule : uint8
+	{
+		/** Convert and a model fitted to its own wheels (Build): the body paint as GuessPaintLayer reads it, and a layer only for what the model marks as a tint
+		 * layer (IsGtaTintLayer): a seat, an interior or a rim merely named like one keeps its own material (a layer wears Mantle's paint). */
+		TintLayersOnly,
+		/** A model worn as a skin on a chassis (BuildFromModel, the BuildModel command): GuessPaintLayer as it reads, layers by the names too. */
+		ByNames,
+	};
+
+	/** GuessPaintLayer under Rule: the one guess each route and the window use for a section nobody ticked. */
+	static FPaintLayerGuess GuessStartingPaint(const FString& Name, const UMaterialInterface* Material, EPaintGuessRule Rule);
 
 	/**
 	 * Which paint layer the section or slot named Name, drawn with Material, is for, in this order (Joshua's rule: the converter detects, the creator

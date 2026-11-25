@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "MantleChassisSpec.h"
 #include "MantleVehicleChassisSkin.h"
+#include "MantleVehicleConverter.h"
 #include "MantleVehicleFit.h"
 #include "MantleVehicleAsset.h"
 #include "MantleVehicleSource.h"
@@ -210,6 +211,12 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 * limits (more triangles or materials than a vehicle may have): that one is worn as a skin, reduced and with its extra materials carried as parts.
 	 */
 	static bool FitsOwnWheels(UObject* Model, const FString& PresetId);
+
+	/**
+	 * The rule that picks the starting paint of a section nobody ticked on the route the window's Build button takes for Model and PresetId (BuildAny): the converter's
+	 * (layers only for a model's tint layers) for a model fitted to its own wheels, the names' for one worn as a skin. The window's paint step shows this rule's guess.
+	 */
+	static FMantleVehicleConverter::EPaintGuessRule PaintGuessRuleFor(UObject* Model, const FString& PresetId);
 
 	/**
 	 * What the window's Build button does (#821): Build when the model's own wheels fit the type (FitsOwnWheels), else BuildFromModel with Options, so every model

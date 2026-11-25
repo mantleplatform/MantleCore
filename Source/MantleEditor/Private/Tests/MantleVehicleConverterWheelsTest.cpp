@@ -12,6 +12,7 @@
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/Material.h"
+#include "MantleVehicleBuilder.h"
 #include "Algo/AllOf.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
 #include "Misc/AutomationTest.h"
@@ -1021,6 +1022,39 @@ bool FMantleVehicleConverterLayersOnlyWhatTheModelMarksTest::RunTest(const FStri
 		TestFalse(TEXT("and the vehicle has no interior layer"), Source->Paint.Layers.ContainsByPredicate([](const FMantleVehicleSourcePaintLayer& Has) { return Has.Layer == EMantleVehicleSourcePaintLayer::Interior; }));
 		MantleVehicleScratchBody::Discard(Car);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleStartingPaintRulesTest,
+	"Mantle.Vehicle.Convert.StartingPaintRules",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleStartingPaintRulesTest::RunTest(const FString& Parameters)
+{
+	using FConverter = FMantleVehicleConverter;
+	using ERule = FMantleVehicleConverter::EPaintGuessRule;
+	// One guess per rule, which the routes and the builder window share: the window showed the names' layers on a car Build sends through the converter, where an
+	// interior merely named so keeps its own material.
+	UMaterialInterface* Plain = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+	const FConverter::FPaintLayerGuess NamedNarrow = FConverter::GuessStartingPaint(TEXT("SUV_Interior"), Plain, ERule::TintLayersOnly);
+	const FConverter::FPaintLayerGuess NamedWide = FConverter::GuessStartingPaint(TEXT("SUV_Interior"), Plain, ERule::ByNames);
+	TestTrue(TEXT("by the names, an interior is on the interior layer"), NamedWide.bPainted && !NamedWide.bPrimary && NamedWide.Layer == EMantleVehicleSourcePaintLayer::Interior);
+	TestTrue(TEXT("under the tint-layers rule it keeps its own material, and says so"), !NamedNarrow.bPainted && NamedNarrow.bKeepsOwnMaterial && NamedNarrow.LeftOut.Contains(TEXT("own material")));
+	const FConverter::FPaintLayerGuess Gta = FConverter::GuessStartingPaint(TEXT("leather_1__SECONDARY_"), Plain, ERule::TintLayersOnly);
+	TestTrue(TEXT("a GTA SECONDARY is the second paint under the tint-layers rule"), Gta.bPainted && !Gta.bPrimary && Gta.Layer == EMantleVehicleSourcePaintLayer::Secondary && !Gta.bKeepsOwnMaterial);
+	for (const ERule Rule : { ERule::TintLayersOnly, ERule::ByNames })
+	{
+		const FConverter::FPaintLayerGuess Body = FConverter::GuessStartingPaint(TEXT("vehicle_generic__PRIMARY_"), Plain, Rule);
+		TestTrue(TEXT("a GTA PRIMARY is the body paint under either rule"), Body.bPainted && Body.bPrimary);
+		const FConverter::FPaintLayerGuess Glass = FConverter::GuessStartingPaint(TEXT("SUV_Glass"), Plain, Rule);
+		TestTrue(TEXT("glass is never painted, under either rule"), !Glass.bPainted && !Glass.bKeepsOwnMaterial);
+	}
+	// The narrow rule is GuessPaintLayer with only that one change; the wide one is GuessPaintLayer as it reads.
+	const FConverter::FPaintLayerGuess Plainly = FConverter::GuessPaintLayer(TEXT("SUV_Interior"), Plain);
+	TestTrue(TEXT("by the names is GuessPaintLayer itself"), Plainly.bPainted == NamedWide.bPainted && Plainly.bPrimary == NamedWide.bPrimary && Plainly.Layer == NamedWide.Layer);
+	// No model chosen in the window yet: the skin route's rule (nothing is fitted to its own wheels).
+	TestTrue(TEXT("with no model, the window uses the names' rule"), FMantleVehicleBuilder::PaintGuessRuleFor(nullptr, TEXT("sedan")) == ERule::ByNames);
 	return true;
 }
 
