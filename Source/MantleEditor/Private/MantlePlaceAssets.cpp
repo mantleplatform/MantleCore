@@ -4605,6 +4605,96 @@ bool FMantlePlaceAssets::UnpublishableMaterialWhy(const UMaterialInterface* Mate
 	return !OutWhy.IsEmpty();
 }
 
+void FMantlePlaceAssets::BaseColorParts(const UMaterialInterface* Material, FLinearColor& OutFactor, bool& bOutHasFactor, UTexture*& OutPicture)
+{
+	OutFactor = FLinearColor::White;
+	bOutHasFactor = false;
+	OutPicture = nullptr;
+	if (!Material)
+	{
+		return;
+	}
+	for (const TCHAR* Name : { TEXT("BaseColorFactor"), TEXT("Base Color"), TEXT("BaseColor"), TEXT("Color"), TEXT("Diffuse Color"), TEXT("Albedo Tint") })
+	{
+		FLinearColor Found;
+		if (Material->GetVectorParameterValue(FHashedMaterialParameterInfo(FName(Name)), Found))
+		{
+			OutFactor = Found;
+			bOutHasFactor = true;
+			break;
+		}
+	}
+	for (const TCHAR* Name : { TEXT("BaseColorTexture"), TEXT("BaseColor"), TEXT("Base Color"), TEXT("BaseColorMap"), TEXT("Albedo"), TEXT("Diffuse"), TEXT("Color") })
+	{
+		UTexture* Found = nullptr;
+		if (Material->GetTextureParameterValue(FHashedMaterialParameterInfo(FName(Name)), Found) && Found)
+		{
+			OutPicture = Found;
+			break;
+		}
+	}
+}
+
+bool FMantlePlaceAssets::BaseColorValue(const UMaterialInterface* Material, FLinearColor& OutColor)
+{
+	using namespace MantlePlaceAssetsPrivate;
+	bool bFactor = false;
+	UTexture* Picture = nullptr;
+	BaseColorParts(Material, OutColor, bFactor, Picture);
+	if (bFactor)
+	{
+		return true;
+	}
+	// No parameter: a single color the base material's Base Color input carries.
+	const UMaterial* Base = Material ? Material->GetMaterial() : nullptr;
+	const UMaterialEditorOnlyData* Graph = Base ? Base->GetEditorOnlyData() : nullptr;
+	if (!Graph || Base->bUseMaterialAttributes)
+	{
+		return false;
+	}
+	if (const UMaterialExpressionConstant3Vector* Constant = Cast<UMaterialExpressionConstant3Vector>(Graph->BaseColor.Expression))
+	{
+		OutColor = Constant->Constant;
+		return true;
+	}
+	if (const UMaterialExpressionVectorParameter* Parameter = Cast<UMaterialExpressionVectorParameter>(Graph->BaseColor.Expression))
+	{
+		OutColor = Parameter->DefaultValue;
+		FLinearColor Set;
+		if (Material->GetVectorParameterValue(FHashedMaterialParameterInfo(FMaterialParameterInfo(Parameter->ParameterName)), Set))
+		{
+			OutColor = Set;
+		}
+		return true;
+	}
+	if (!Graph->BaseColor.Expression && Graph->BaseColor.UseConstant)
+	{
+		OutColor = FLinearColor(Graph->BaseColor.Constant);
+		return true;
+	}
+	return false;
+}
+
+bool FMantlePlaceAssets::SurfaceMetallicRoughness(const UMaterialInterface* Material, float& OutMetallic, float& OutRoughness)
+{
+	using namespace MantlePlaceAssetsPrivate;
+	if (!Material)
+	{
+		return false;
+	}
+	const UMaterial* Base = Material->GetMaterial();
+	const UMaterialEditorOnlyData* Graph = Base ? Base->GetEditorOnlyData() : nullptr;
+	const bool bInputs = Graph && !Base->bUseMaterialAttributes;
+	double Metallic = 0.0;
+	double Roughness = 0.0;
+	// What the inputs render with when a single value feeds them, else a parameter by its usual name; a picture-driven value is not known.
+	const bool bMetallic = (bInputs && CarPaintInputScalar(Material, Graph->Metallic, Metallic)) || CarPaintNamedScalar(Material, { TEXT("Metallic"), TEXT("MetallicFactor") }, Metallic);
+	const bool bRoughness = (bInputs && CarPaintInputScalar(Material, Graph->Roughness, Roughness)) || CarPaintNamedScalar(Material, { TEXT("Roughness"), TEXT("RoughnessFactor") }, Roughness);
+	OutMetallic = static_cast<float>(Metallic);
+	OutRoughness = static_cast<float>(Roughness);
+	return bMetallic && bRoughness;
+}
+
 bool FMantlePlaceAssets::BaseColorAverage(const UMaterialInterface* Material, FColor& OutColor, bool& bOutPicture)
 {
 	bOutPicture = false;
@@ -4614,25 +4704,9 @@ bool FMantlePlaceAssets::BaseColorAverage(const UMaterialInterface* Material, FC
 		return false;
 	}
 	FLinearColor Factor = FLinearColor::White;
-	for (const TCHAR* Name : { TEXT("BaseColorFactor"), TEXT("Base Color"), TEXT("BaseColor"), TEXT("Color"), TEXT("Diffuse Color"), TEXT("Albedo Tint") })
-	{
-		FLinearColor Found;
-		if (Material->GetVectorParameterValue(FHashedMaterialParameterInfo(FName(Name)), Found))
-		{
-			Factor = Found;
-			break;
-		}
-	}
+	bool bHasFactor = false;
 	UTexture* Picture = nullptr;
-	for (const TCHAR* Name : { TEXT("BaseColorTexture"), TEXT("BaseColor"), TEXT("Base Color"), TEXT("BaseColorMap"), TEXT("Albedo"), TEXT("Diffuse"), TEXT("Color") })
-	{
-		UTexture* Found = nullptr;
-		if (Material->GetTextureParameterValue(FHashedMaterialParameterInfo(FName(Name)), Found) && Found)
-		{
-			Picture = Found;
-			break;
-		}
-	}
+	BaseColorParts(Material, Factor, bHasFactor, Picture);
 	FLinearColor Average = FLinearColor::White;
 	if (Picture)
 	{

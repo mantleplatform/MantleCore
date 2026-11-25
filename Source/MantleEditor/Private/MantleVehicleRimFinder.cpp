@@ -67,6 +67,12 @@ bool FMantleVehicleRims::NameIsRim(const FString& Section)
 	return HasAny(Words, MakeArrayView(RimWords)) && !HasAny(Words, MakeArrayView(NotRimWords));
 }
 
+bool FMantleVehicleRims::NameIsNotRim(const FString& Section)
+{
+	using namespace MantleVehicleRimsPrivate;
+	return HasAny(NameWords(Section), MakeArrayView(NotRimWords));
+}
+
 TArray<TArray<FString>> FMantleVehicleRims::Find(const FMantleGlbMesh& Body, const TConstArrayView<FName> Bones, const TConstArrayView<double> Radii,
 	const TArray<FString>& SectionNames, TArray<FString>& OutNotes, TArray<double>* OutRimRadii)
 {
@@ -112,7 +118,8 @@ TArray<TArray<FString>> FMantleVehicleRims::Find(const FMantleGlbMesh& Body, con
 	TMap<int32, FSectionCount> Counts;
 	for (const FMantleGlbPrimitive& Primitive : Body.Primitives)
 	{
-		if (!SectionNames.IsValidIndex(Primitive.MaterialIndex) || Primitive.NumVertices <= 0 || !FMantleVehicleRims::NameIsRim(SectionNames[Primitive.MaterialIndex]))
+		// Geometry decides, not the name: a section called anything may be a rim. Only a name that says tire, brake, disc, caliper or steering is a guard that keeps it out.
+		if (!SectionNames.IsValidIndex(Primitive.MaterialIndex) || Primitive.NumVertices <= 0 || FMantleVehicleRims::NameIsNotRim(SectionNames[Primitive.MaterialIndex]))
 		{
 			continue;
 		}
@@ -153,14 +160,35 @@ TArray<TArray<FString>> FMantleVehicleRims::Find(const FMantleGlbMesh& Body, con
 	{
 		const FString& Section = SectionNames[Pair.Key];
 		const FSectionCount& Count = Pair.Value;
+		const bool bNamed = FMantleVehicleRims::NameIsRim(Section);
 		if (Count.Owned < Count.Vertices * RimShare)
 		{
+			// Only a section that says it is a rim is worth a note: most sections of a car are not the wheels', and that is no news.
+			if (!bNamed)
+			{
+				continue;
+			}
 			OutNotes.Add(FString::Printf(TEXT("Section \"%s\" is named like a rim, but only %d%% of it belongs to the wheels, so it stays on the car: it is mixed with the body, and a wheel swap cannot hide it."),
 				*Section, FMath::RoundToInt(100.f * Count.Owned / Count.Vertices)));
 			continue;
 		}
 		// A wheel has the section when a real share of the wheels' part of it is its own, not one stray vertex.
 		const int32 Least = FMath::Max(MinWheelVertices, FMath::CeilToInt(Count.Owned * MinWheelShare));
+		// A section with a neutral name is a rim only when it stays inside the tire: one that reaches the wheel's outer edge is the tire (or the tire and rim in one material), and a
+		// wheel whose radius is not known cannot tell. A section named as a rim keeps being one, as it always was.
+		bool bReachesTire = false;
+		for (int32 Wheel = 0; Wheel < Bones.Num(); ++Wheel)
+		{
+			const double Radius = Radii.IsValidIndex(Wheel) ? Radii[Wheel] : 0.0;
+			if (Count.OwnedBy[Wheel] >= Least && (Radius <= 0.0 || Count.Reach[Wheel] >= Radius * TireReach))
+			{
+				bReachesTire = true;
+			}
+		}
+		if (!bNamed && bReachesTire)
+		{
+			continue;
+		}
 		for (int32 Wheel = 0; Wheel < Bones.Num(); ++Wheel)
 		{
 			if (Count.OwnedBy[Wheel] >= Least)

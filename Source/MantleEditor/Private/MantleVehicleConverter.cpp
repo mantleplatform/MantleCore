@@ -1690,6 +1690,43 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 			Result.Notes.Add(FString::Printf(TEXT("Not given a paint layer: %s."), *FString::Join(LeftOut, TEXT("; "))));
 		}
 	}
+	// The rims start paintable (they are found above, by their geometry): a Wheels layer holding them, wearing the rims' own look, unless the source already has a Wheels layer.
+	{
+		const TArray<FString> RimLayer = RimLayerSections(Source, Sections);
+		if (RimLayer.Num() > 0)
+		{
+			const UMaterialInterface* RimMaterial = nullptr;
+			for (const FString& Rim : RimLayer)
+			{
+				const int32 Index = Sections.IndexOfByKey(Rim);
+				if (Materials.IsValidIndex(Index) && Materials[Index])
+				{
+					RimMaterial = Materials[Index];
+					break;
+				}
+			}
+			FLinearColor Factor = FLinearColor::White;
+			bool bHasColor = false;
+			UTexture* Picture = nullptr;
+			if (RimMaterial)
+			{
+				FMantlePlaceAssets::BaseColorParts(RimMaterial, Factor, bHasColor, Picture);
+				if (!Picture)
+				{
+					bHasColor = FMantlePlaceAssets::BaseColorValue(RimMaterial, Factor);
+				}
+			}
+			float Metallic = 0.f;
+			float Roughness = 1.f;
+			const bool bKnownSurface = RimMaterial && FMantlePlaceAssets::SurfaceMetallicRoughness(RimMaterial, Metallic, Roughness);
+			FMantleVehicleSourcePaintLayer& Layer = MantleVehicleConverterPrivate::EnsurePaintLayer(Source.Paint, EMantleVehicleSourcePaintLayer::Wheels);
+			Layer.Sections = RimLayer;
+			Layer.Color = RimStartColor(Picture != nullptr, bHasColor, Factor);
+			Layer.Finish = bKnownSurface ? RimStartFinish(Metallic, Roughness) : EMantleVehicleSourcePaintFinish::Gloss;
+			Result.Notes.Add(FString::Printf(TEXT("Paint layer wheels: %s, starting as the rims' own look (%s finish). A color a script picks tints the rims' own picture. Change it under Paint > Layers in the vehicle asset."),
+				*FString::Join(RimLayer, TEXT(", ")), PaintFinishDocumentName(Layer.Finish)));
+		}
+	}
 	TArray<const UMaterialInterface*> BodyPaintMaterials;
 	for (int32 Index = 0; Index < Sections.Num(); ++Index)
 	{
@@ -2804,6 +2841,55 @@ bool FMantleVehicleConverter::IsGtaTintLayer(const FString& Name, const UMateria
 		return Part.Equals(TEXT("PRIMARY"), ESearchCase::CaseSensitive) || Part.Equals(TEXT("SECONDARY"), ESearchCase::CaseSensitive)
 			|| Part.Equals(TEXT("WHEEL"), ESearchCase::CaseSensitive);
 	});
+}
+
+TArray<FString> FMantleVehicleConverter::RimLayerSections(const UMantleVehicleSource& Source, const TArray<FString>& BodySections)
+{
+	TArray<FString> Out;
+	if (Source.Paint.Layers.ContainsByPredicate([](const FMantleVehicleSourcePaintLayer& Layer) { return Layer.Layer == EMantleVehicleSourcePaintLayer::Wheels; }))
+	{
+		return Out;
+	}
+	for (const FMantleVehicleSourceWheel& Wheel : Source.Wheels)
+	{
+		for (const FString& Rim : Wheel.RimSections)
+		{
+			const bool bTaken = Source.Paint.Sections.Contains(Rim)
+				|| Source.Paint.Layers.ContainsByPredicate([&Rim](const FMantleVehicleSourcePaintLayer& Layer) { return Layer.Sections.Contains(Rim); });
+			if (!bTaken && BodySections.Contains(Rim))
+			{
+				Out.AddUnique(Rim);
+			}
+		}
+	}
+	return Out;
+}
+
+FLinearColor FMantleVehicleConverter::RimStartColor(const bool bPicture, const bool bHasColor, const FLinearColor& Color)
+{
+	if (!bHasColor)
+	{
+		return FLinearColor::White;
+	}
+	if (bPicture)
+	{
+		const bool bWhite = Color.R > 0.98f && Color.G > 0.98f && Color.B > 0.98f;
+		return bWhite ? FLinearColor::White : FLinearColor(Color.R, Color.G, Color.B, 1.f);
+	}
+	return FLinearColor(Color.R, Color.G, Color.B, 1.f);
+}
+
+EMantleVehicleSourcePaintFinish FMantleVehicleConverter::RimStartFinish(const float Metallic, const float Roughness)
+{
+	if (Metallic >= 0.8f)
+	{
+		return Roughness <= 0.25f ? EMantleVehicleSourcePaintFinish::Chrome : EMantleVehicleSourcePaintFinish::Metallic;
+	}
+	if (Metallic >= 0.5f)
+	{
+		return EMantleVehicleSourcePaintFinish::Metallic;
+	}
+	return Roughness <= 0.35f ? EMantleVehicleSourcePaintFinish::Gloss : EMantleVehicleSourcePaintFinish::Matte;
 }
 
 bool FMantleVehicleConverter::BodySectionIsTintMask(const UMantleVehicleSource& Source, const FString& Section, const UMaterialInterface* Material)

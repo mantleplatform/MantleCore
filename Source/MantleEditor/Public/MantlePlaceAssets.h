@@ -1065,6 +1065,18 @@ public:
 	static bool BaseColorAverage(const UMaterialInterface* Material, FColor& OutColor, bool& bOutPicture);
 
 	/**
+	 * The two parts BaseColorAverage multiplies: the base color factor a material sets (a vector parameter, bOutHasFactor; white without) and its base color picture
+	 * (nullptr without), found under the usual parameter names.
+	 */
+	static void BaseColorParts(const UMaterialInterface* Material, FLinearColor& OutFactor, bool& bOutHasFactor, UTexture*& OutPicture);
+
+	/** The single base color a material shows without a picture: its factor, else the color its base material's Base Color input carries. False when neither is a single color. */
+	static bool BaseColorValue(const UMaterialInterface* Material, FLinearColor& OutColor);
+
+	/** The metallic and roughness a material renders with when single values give them (a constant or a scalar parameter). False when a picture or a graph drives either. */
+	static bool SurfaceMetallicRoughness(const UMaterialInterface* Material, float& OutMetallic, float& OutRoughness);
+
+	/**
 	 * Material's car-paint finish. Clear coat and its roughness come from what feeds the material's
 	 * Clear Coat inputs (a Constant, or a scalar parameter as the instance sets it), else from a
 	 * parameter named ClearCoat / ClearCoatRoughness; the flakes from parameters named

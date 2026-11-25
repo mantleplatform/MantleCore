@@ -221,4 +221,75 @@ bool FMantleVehiclePaintLayersDocumentTest::RunTest(const FString&)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleVehicleRimLayerTest, "Mantle.Vehicle.PaintLayers.RimsStartPaintable",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleRimLayerTest::RunTest(const FString&)
+{
+	const TArray<FString> Body = { TEXT("body"), TEXT("M_Part_07"), TEXT("M_Part_08"), TEXT("glass") };
+	const auto MakeSource = []()
+	{
+		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
+		for (const TCHAR* Bone : { TEXT("wheel_l"), TEXT("wheel_r") })
+		{
+			FMantleVehicleSourceWheel& Wheel = Source->Wheels.AddDefaulted_GetRef();
+			Wheel.Bone = FName(Bone);
+			Wheel.RimSections = { TEXT("M_Part_07") };
+		}
+		return Source;
+	};
+
+	// No Wheels layer: the rims go on one, each once (both wheels list the same section).
+	UMantleVehicleSource* Source = MakeSource();
+	TestEqual(TEXT("the rims, once each"), FMantleVehicleConverter::RimLayerSections(*Source, Body), TArray<FString>{ TEXT("M_Part_07") });
+	Source->Wheels[1].RimSections.Add(TEXT("M_Part_08"));
+	TestEqual(TEXT("across all wheels"), FMantleVehicleConverter::RimLayerSections(*Source, Body), (TArray<FString>{ TEXT("M_Part_07"), TEXT("M_Part_08") }));
+
+	// A rim section the model no longer has is not put on a layer.
+	Source->Wheels[1].RimSections.Add(TEXT("gone"));
+	TestFalse(TEXT("a section the model lacks is left out"), FMantleVehicleConverter::RimLayerSections(*Source, Body).Contains(TEXT("gone")));
+
+	// Sections the paint already uses are skipped: the body's, and another layer's.
+	Source->Paint.Sections = { TEXT("M_Part_07") };
+	FMantleVehicleSourcePaintLayer Second;
+	Second.Layer = EMantleVehicleSourcePaintLayer::Secondary;
+	Second.Sections = { TEXT("M_Part_08") };
+	Source->Paint.Layers.Add(Second);
+	TestTrue(TEXT("sections in Paint Sections or another layer are skipped"), FMantleVehicleConverter::RimLayerSections(*Source, Body).IsEmpty());
+
+	// A Wheels layer that exists is the creator's (or the last convert's): nothing is added, even to an empty one. A re-convert therefore changes nothing.
+	UMantleVehicleSource* Own = MakeSource();
+	FMantleVehicleSourcePaintLayer Wheels;
+	Wheels.Layer = EMantleVehicleSourcePaintLayer::Wheels;
+	Wheels.Sections = { TEXT("M_Part_08") };
+	Own->Paint.Layers.Add(Wheels);
+	TestTrue(TEXT("a creator's Wheels layer is left as it is"), FMantleVehicleConverter::RimLayerSections(*Own, Body).IsEmpty());
+	Own->Paint.Layers[0].Sections.Reset();
+	TestTrue(TEXT("even an empty one"), FMantleVehicleConverter::RimLayerSections(*Own, Body).IsEmpty());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleVehicleRimLookTest, "Mantle.Vehicle.PaintLayers.RimsStartingLook",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleRimLookTest::RunTest(const FString&)
+{
+	const FLinearColor Red(0.8f, 0.1f, 0.1f);
+	// With a base color picture: a factor that is not white is the color; no factor (or a white one) is white, so the picture shows as it was.
+	TestTrue(TEXT("a picture and a red factor: the factor"), FMantleVehicleConverter::RimStartColor(true, true, Red).Equals(Red));
+	TestTrue(TEXT("a picture and no factor: white"), FMantleVehicleConverter::RimStartColor(true, false, FLinearColor::White).Equals(FLinearColor::White));
+	TestTrue(TEXT("a picture and a white factor: white"), FMantleVehicleConverter::RimStartColor(true, true, FLinearColor::White).Equals(FLinearColor::White));
+	// With none: the material's own base color value.
+	TestTrue(TEXT("no picture: the base color value"), FMantleVehicleConverter::RimStartColor(false, true, Red).Equals(Red));
+	TestTrue(TEXT("no picture and no color: white"), FMantleVehicleConverter::RimStartColor(false, false, FLinearColor::White).Equals(FLinearColor::White));
+
+	using EFinish = EMantleVehicleSourcePaintFinish;
+	TestTrue(TEXT("shiny metal is chrome"), FMantleVehicleConverter::RimStartFinish(1.f, 0.1f) == EFinish::Chrome);
+	TestTrue(TEXT("rough metal is metallic"), FMantleVehicleConverter::RimStartFinish(1.f, 0.6f) == EFinish::Metallic);
+	TestTrue(TEXT("half metal is metallic"), FMantleVehicleConverter::RimStartFinish(0.6f, 0.2f) == EFinish::Metallic);
+	TestTrue(TEXT("shiny paint is gloss"), FMantleVehicleConverter::RimStartFinish(0.f, 0.2f) == EFinish::Gloss);
+	TestTrue(TEXT("rough paint is matte"), FMantleVehicleConverter::RimStartFinish(0.f, 0.7f) == EFinish::Matte);
+	return true;
+}
+
 #endif

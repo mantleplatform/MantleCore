@@ -327,6 +327,23 @@ public:
 	 */
 	static bool IsGtaTintLayer(const FString& Name, const UMaterialInterface* Material);
 
+	/**
+	 * The rim sections to put on a Wheels paint layer (rims start paintable): the rims found on the wheels (Wheels > Rim Sections, all wheels, each once) that are among BodySections
+	 * and in no other place the paint already has (Paint > Sections or another layer's sections). Empty when the source already has a Wheels layer: that one is the creator's, or the
+	 * first convert's, and is left as it is. Exposed for tests.
+	 */
+	static TArray<FString> RimLayerSections(const UMantleVehicleSource& Source, const TArray<FString>& BodySections);
+
+	/**
+	 * The color a Wheels layer starts with so the rims look as they did: the client keeps the original picture and tints it by this, so white shows the picture as it is.
+	 * bPicture: the material has a base color picture. bHasColor: it has a base color (a factor, else a single color). With a picture the color is the factor unless that is white;
+	 * with none it is the material's own base color. Exposed for tests.
+	 */
+	static FLinearColor RimStartColor(bool bPicture, bool bHasColor, const FLinearColor& Color);
+
+	/** The finish nearest to a rim's own metallic and roughness: shiny metal is Chrome, other metal Metallic, shiny non-metal Gloss, the rest Matte. Exposed for tests. */
+	static EMantleVehicleSourcePaintFinish RimStartFinish(float Metallic, float Roughness);
+
 	/** The name the vehicle document writes for a paint finish ("gloss", ..., "plastic_smooth", "soft_rubber"). Exposed for tests. */
 	static const TCHAR* PaintFinishDocumentName(EMantleVehicleSourcePaintFinish Finish);
 
