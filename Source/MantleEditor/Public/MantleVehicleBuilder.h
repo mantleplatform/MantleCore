@@ -213,12 +213,6 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	static bool FitsOwnWheels(UObject* Model, const FString& PresetId);
 
 	/**
-	 * The rule that picks the starting paint of a section nobody ticked on the route the window's Build button takes for Model and PresetId (BuildAny): the converter's
-	 * (layers only for a model's tint layers) for a model fitted to its own wheels, the names' for one worn as a skin. The window's paint step shows this rule's guess.
-	 */
-	static FMantleVehicleConverter::EPaintGuessRule PaintGuessRuleFor(UObject* Model, const FString& PresetId);
-
-	/**
 	 * What the window's Build button does (#821): Build when the model's own wheels fit the type (FitsOwnWheels), else BuildFromModel with Options, so every model
 	 * of every type becomes a vehicle: a car pack with corner-named wheels is fitted to its wheels, anything else is worn as a skin on the chassis.
 	 *

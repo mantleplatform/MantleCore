@@ -775,7 +775,7 @@ namespace MantleVehicleBuilderPrivate
 						const TArray<FString> Names = FMantleVehicleLights::SectionNames(Materials);
 						for (int32 Index = 0; Index < Names.Num(); ++Index)
 						{
-							const FMantleVehicleConverter::FPaintLayerGuess Guess = FMantleVehicleConverter::GuessStartingPaint(Names[Index], Materials[Index].MaterialInterface, FMantleVehicleConverter::EPaintGuessRule::ByNames);
+							const FMantleVehicleConverter::FPaintLayerGuess Guess = FMantleVehicleConverter::GuessStartingPaint(Names[Index], Materials[Index].MaterialInterface);
 							if (Guess.bPainted && (PaintNot.IsEmpty() || !Names[Index].Contains(PaintNot, ESearchCase::IgnoreCase)))
 							{
 								Ticked.AddUnique(Names[Index]);
@@ -1474,17 +1474,6 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildAny(UObject* Model, const 
 		return Out;
 	}
 	return BuildFromModel(Model, PresetId, Options);
-}
-
-FMantleVehicleConverter::EPaintGuessRule FMantleVehicleBuilder::PaintGuessRuleFor(UObject* Model, const FString& PresetId)
-{
-	// As BuildAny decides: a model fitted to its own wheels goes through Build, the converter's rule; anything worn as a skin through BuildFromModel, the names'.
-	UObject* Decides = Model;
-	if (UBlueprint* Blueprint = Cast<UBlueprint>(Model))
-	{
-		Decides = FMantleVehicleBlueprint::Resolve(Blueprint).Model;
-	}
-	return Decides && FitsOwnWheels(Decides, PresetId) ? FMantleVehicleConverter::EPaintGuessRule::TintLayersOnly : FMantleVehicleConverter::EPaintGuessRule::ByNames;
 }
 
 void FMantleVehicleBuilder::LightOwnBody(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options)
@@ -2253,9 +2242,10 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 			{
 				bLight = bLight || FMantleVehicleLights::Sections(LightsForPaint, static_cast<EMantleLightKind>(Kind)).Contains(ModelSections[Index]);
 			}
-			// Mantle's guess from the names and how the material reads: the body paint, or a layer. Never a light, and never what becomes glass, a tire, chrome or a lens.
+			// Mantle's starting paint, the rule every route uses: the body paint, or a layer only for a tint layer the model marks. Never a light, and never what becomes
+			// glass, a tire, chrome or a lens.
 			const UMaterialInterface* SectionMaterial = PaintMaterials.IsValidIndex(Index) ? PaintMaterials[Index].MaterialInterface.Get() : nullptr;
-			const FMantleVehicleConverter::FPaintLayerGuess Guess = FMantleVehicleConverter::GuessStartingPaint(ModelSections[Index], SectionMaterial, FMantleVehicleConverter::EPaintGuessRule::ByNames);
+			const FMantleVehicleConverter::FPaintLayerGuess Guess = FMantleVehicleConverter::GuessStartingPaint(ModelSections[Index], SectionMaterial);
 			const bool bBuiltIn = !Guess.bPrimary && SectionMaterial && !FMantleVehicleBuiltInMaterials::Detect(SectionMaterial, ModelSections[Index], false).IsEmpty();
 			Painted.Add(!bLight && Guess.bPainted && !bBuiltIn);
 			Layers[Index] = Guess.bPrimary ? 0 : PaintPick(Guess.Layer);
