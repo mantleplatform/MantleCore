@@ -658,6 +658,23 @@ bool FMantleVehicleLightsGlowMaskTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("its switch is listed off"), Glow.OffScalars.Num(), 1);
 	Materials[0].MaterialInterface = Lens;
 	TestEqual(TEXT("a switched-off lens is on, as before"), FMantleVehicleLights::Find(Body, Materials, false).Triangles[Head], TArray<int32>({ 0, 1, 2, 3 }));
+
+	// A plain lens whose emissive is its own color picture times a strength (common on Fab packs), glowing over most of its slot: no separate mask, so the
+	// share check leaves it alone and it stays a light.
+	UMaterial* Plain = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+	UTexture2D* PlainPicture = MakeGlowTexture(Plain, TEXT("T_Lens_BaseColor"), FColor::White, { FIntPoint(0, 0), FIntPoint(2, 0), FIntPoint(2, 2) });
+	UMaterialExpressionMultiply* Strong = AddNode<UMaterialExpressionMultiply>(Plain);
+	Strong->A.Connect(0, AddSample(Plain, TEXT("BaseColor"), PlainPicture));
+	Strong->ConstB = 5.f;
+	Plain->GetEditorOnlyData()->EmissiveColor.Connect(0, Strong);
+	Plain->GetEditorOnlyData()->BaseColor.Connect(0, AddSample(Plain, TEXT("BaseColorToo"), PlainPicture));
+	Plain->UpdateCachedExpressionData();
+	TestTrue(TEXT("the plain lens glows"), FMantleMaterialGlow::Read(Plain, Glow));
+	TestTrue(TEXT("with no mask"), Glow.MaskTexture == nullptr);
+	Materials[0].MaterialInterface = Plain;
+	const FMantleVehicleLightGuess PlainGuess = FMantleVehicleLights::Find(Body, Materials, false);
+	TestEqual(TEXT("a plain full-glow lens keeps its headlights"), PlainGuess.Triangles[Head], TArray<int32>({ 0, 1, 2, 3 }));
+	TestTrue(TEXT("and its back lights"), PlainGuess.FoundAny() && PlainGuess.Triangles[static_cast<int32>(EMantleLightKind::Reverse)].Num() > 0);
 	return true;
 }
 

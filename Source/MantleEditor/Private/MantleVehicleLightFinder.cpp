@@ -723,8 +723,9 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 			{
 				bool bMaskUnreadable = false;
 				const FGlowImage* Mask = MaskImageOf(Glow, Images, bMaskUnreadable);
-				// The glow is the car's own color picture (or a mask over a flat color): no glow-specific texture says where the lights are.
-				bCheckShare = Glow.MaskTexture != nullptr || (Glow.Texture && Glow.Texture == Glow.BaseTexture);
+				// Only a glow that passes through a separate mask is checked: a plain lens whose emissive is its own color picture lights its whole slot (a share near
+				// all of it) and is a light, as it always was.
+				bCheckShare = Glow.MaskTexture != nullptr;
 				FGlowImage Whole;
 				Whole.Pixels = { FColor::White };
 				Whole.Width = 1;
