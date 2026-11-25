@@ -2005,8 +2005,11 @@ namespace MantlePlaceAssetConverterPrivate
 			static_cast<double>(Memory.UsedPhysical) / GiB, static_cast<double>(Memory.UsedVirtual) / GiB);
 	}
 
-	/** The UV channel of a section's bake card (FMantleBakeSurface::Mesh) that holds its layout: after UV0 and UV1, which the graph reads. */
-	constexpr int32 BakeMeshLayoutChannel = 2;
+	/**
+	 * The UV channel of a section's bake card (FMantleBakeSurface::Mesh) that holds its layout: the last a static mesh has, past any the graph
+	 * reads. SUV04's body reads Texture Coordinate 2 (a dirt grunge); on channel 2 it would have read the layout.
+	 */
+	constexpr int32 BakeMeshLayoutChannel = 7; // MAX_STATIC_TEXCOORDS - 1 (Components.h)
 
 	/**
 	 * A section bake's document: GLTFExporter wrote every baked texture on the layout's channel (BakeMeshLayoutChannel). The section is published
@@ -2106,7 +2109,12 @@ namespace MantlePlaceAssetConverterPrivate
 				Attributes.GetVertexInstanceBinormalSigns()[Instance] = bTangents && Mesh->Tangents[Index].W < 0.0f ? -1.0f : 1.0f;
 				Attributes.GetVertexInstanceColors()[Instance] = bOwnColors ? FVector4f(FLinearColor(Mesh->Colors[Index])) : Color;
 				Attributes.GetVertexInstanceUVs().Set(Instance, 0, Mesh->UV0s[Index]);
-				Attributes.GetVertexInstanceUVs().Set(Instance, 1, Mesh->UV1s[Index]);
+				// The sets between, which the section does not carry (a body reads two), hold its last one, as the engine's own bake fills a
+				// missing set (MaterialRenderItem.cpp).
+				for (int32 Channel = 1; Channel < BakeMeshLayoutChannel; ++Channel)
+				{
+					Attributes.GetVertexInstanceUVs().Set(Instance, Channel, Mesh->UV1s[Index]);
+				}
 				Attributes.GetVertexInstanceUVs().Set(Instance, BakeMeshLayoutChannel, Mesh->Layout[Index]);
 				Instances.Add(Instance);
 			}

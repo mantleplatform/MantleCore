@@ -4093,7 +4093,7 @@ FString FMantleBakeSurface::CacheTag() const
 	// "uvbake": a bake over one section's own triangles, laid out by its Layout (FMantleBakeMesh), keyed on that section.
 	return FString::Printf(TEXT(" bakesurface color=%s uvrange=%g%s%s%s%s%s"), *VertexColor.ToHex(), FMath::Max(UvRange, 1.0), CoversTerrain() ? TEXT(" meshdata") : TEXT(""),
 		bTerrainLayer ? TEXT(" terrain=2") : TEXT(""), WorldTileCm > 0.0 ? *FString::Printf(TEXT(" worldtile=%g"), WorldTileCm) : TEXT(""), bTintMask ? TEXT(" tintmask=1") : TEXT(""),
-		Mesh.IsValid() ? *FString::Printf(TEXT(" uvbake=2:%s"), *Mesh->Hash) : TEXT(""));
+		Mesh.IsValid() ? *FString::Printf(TEXT(" uvbake=3:%s"), *Mesh->Hash) : TEXT(""));
 	// The shift is not in the tag: the shifted bake is only compared with, never stored.
 }
 

@@ -384,7 +384,7 @@ bool FMantleUvBakeKeyTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the plain surface's cache tag is empty, as before"), Surface.CacheTag().IsEmpty());
 	Surface.Mesh = Bake;
 	TestFalse(TEXT("a section's surface is not plain"), Surface.IsPlain());
-	TestTrue(TEXT("and its cache tag holds the section"), Surface.CacheTag().Contains(FString::Printf(TEXT("uvbake=2:%s"), *Bake->Hash)));
+	TestTrue(TEXT("and its cache tag holds the section"), Surface.CacheTag().Contains(FString::Printf(TEXT("uvbake=3:%s"), *Bake->Hash)));
 
 	// Gather keeps it as its own entry, apart from the same material on a card.
 	FMantlePlaceDependencies Dependencies;
