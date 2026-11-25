@@ -390,6 +390,11 @@ struct MANTLEEDITOR_API FMantleBakeMesh
 	TArray<FVector2f> Layout;
 	/** Triangles, three per triangle, into the arrays above. */
 	TArray<uint32> Indices;
+	/**
+	 * The vertices after the section's own: copies of these (section vertex index), for a corner the packer placed in another island than
+	 * the rest of its vertex (a bow tie). ApplyLayout adds the same copies to the mesh.
+	 */
+	TArray<int32> SplitFrom;
 	/** A hash of all of the above (hex): part of the material's key and of its cache key. */
 	FString Hash;
 
@@ -402,7 +407,10 @@ struct MANTLEEDITOR_API FMantleBakeMesh
 	 */
 	static TSharedPtr<const FMantleBakeMesh> FromSection(const FMantleGlbMesh& Mesh, int32 MaterialIndex);
 
-	/** Writes Layout into the UVs of Mesh's section MaterialIndex (the vertices FromSection read): what the bake was laid out by. */
+	/**
+	 * Writes Layout into the UVs of Mesh's section MaterialIndex (the vertices FromSection read), adding the vertex copies SplitFrom names at the
+	 * end of the section and its triangles on them: what the bake was laid out by.
+	 */
 	void ApplyLayout(FMantleGlbMesh& Mesh, int32 MaterialIndex) const;
 
 	/** How much of the layout's area more than one triangle covers, 0 to 1, on a LayoutResolution grid (a measure for the log and tests). */

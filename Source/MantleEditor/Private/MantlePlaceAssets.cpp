@@ -4085,7 +4085,7 @@ FString FMantleBakeSurface::CacheTag() const
 	// "uvbake": a bake over one section's own triangles, laid out by its Layout (FMantleBakeMesh), keyed on that section.
 	return FString::Printf(TEXT(" bakesurface color=%s uvrange=%g%s%s%s%s%s"), *VertexColor.ToHex(), FMath::Max(UvRange, 1.0), CoversTerrain() ? TEXT(" meshdata") : TEXT(""),
 		bTerrainLayer ? TEXT(" terrain=2") : TEXT(""), WorldTileCm > 0.0 ? *FString::Printf(TEXT(" worldtile=%g"), WorldTileCm) : TEXT(""), bTintMask ? TEXT(" tintmask=1") : TEXT(""),
-		Mesh.IsValid() ? *FString::Printf(TEXT(" uvbake=1:%s"), *Mesh->Hash) : TEXT(""));
+		Mesh.IsValid() ? *FString::Printf(TEXT(" uvbake=2:%s"), *Mesh->Hash) : TEXT(""));
 	// The shift is not in the tag: the shifted bake is only compared with, never stored.
 }
 
@@ -4106,6 +4106,22 @@ namespace MantlePlaceAssetsPrivate
 		virtual void InitOutputTexcoords(uint32 Num) override { Output.Init(FVector2f::ZeroVector, Num); }
 		virtual void SetOutputTexcoord(uint32 Index, const FVector2f& Value) override { Output[Index] = Value; }
 	};
+
+	/**
+	 * Whether a vertex of Mesh's section MaterialIndex can be copied (FMantleBakeMesh::SplitFrom): the section is one primitive, and the mesh has
+	 * no per-vertex data ApplyLayout does not copy (hair cards, body-shape weights and offsets; a vehicle body has none of them).
+	 */
+	bool CanSplitSection(const FMantleGlbMesh& Mesh, const int32 MaterialIndex)
+	{
+		int32 Primitives = 0;
+		for (const FMantleGlbPrimitive& Primitive : Mesh.Primitives)
+		{
+			Primitives += Primitive.MaterialIndex == MaterialIndex ? 1 : 0;
+		}
+		return Primitives == 1 && Mesh.HairRootUV.IsEmpty() && Mesh.HairCoordU.IsEmpty() && Mesh.WarpSampleIndices.IsEmpty() && Mesh.BodyOffsets.IsEmpty()
+			&& !Mesh.HasNeck() && (Mesh.NumInfluences == 0 || (Mesh.InfluenceJoints.Num() == Mesh.Positions.Num() * Mesh.NumInfluences
+				&& Mesh.InfluenceWeights.Num() == Mesh.Positions.Num() * Mesh.NumInfluences));
+	}
 
 	/** The vertices of Mesh's section MaterialIndex, in the order FMantleBakeMesh holds them: each primitive's in turn, each vertex once. */
 	TArray<int32> SectionVertices(const FMantleGlbMesh& Mesh, const int32 MaterialIndex)
@@ -4198,30 +4214,66 @@ TSharedPtr<const FMantleBakeMesh> FMantleBakeMesh::FromSection(const FMantleGlbM
 		return nullptr;
 	}
 	// Per vertex: every corner of a vertex inside one island gets the same place. A vertex only a corner joins to two islands (a bow tie)
-	// keeps its first; counted for the log.
-	Out->Layout.Init(FVector2f(-1.0f, -1.0f), Out->Positions.Num());
-	TBitArray<> Placed(false, Out->Positions.Num());
-	int32 Split = 0;
+	// is placed in each: the corners of the second island get a copy of it (SplitFrom), so no triangle is stretched across the layout.
+	// The copy goes at the end of the section's vertices, which ApplyLayout can do on a section of one primitive; on more, the vertex
+	// keeps its first place (counted for the log).
+	const int32 Original = Out->Positions.Num();
+	const bool bCanSplit = CanSplitSection(Mesh, MaterialIndex);
+	Out->Layout.Init(FVector2f::ZeroVector, Original); // a vertex no triangle draws stays at 0
+	TBitArray<> Placed(false, Original);
+	TMap<TPair<uint32, int32>, uint32> Copies; // (vertex, the first corner placed where this one is) -> its copy
+	int32 Unsplit = 0;
 	for (int32 Corner = 0; Corner < Out->Indices.Num(); ++Corner)
 	{
 		const uint32 Vertex = Out->Indices[Corner];
+		const FVector2f Place = View.Output[Corner];
 		if (!Placed[Vertex])
 		{
 			Placed[Vertex] = true;
-			Out->Layout[Vertex] = View.Output[Corner];
+			Out->Layout[Vertex] = Place;
+			continue;
 		}
-		else if (!Out->Layout[Vertex].Equals(View.Output[Corner], 1.0e-5f))
+		if (Out->Layout[Vertex].Equals(Place, 1.0e-5f))
 		{
-			++Split;
+			continue;
 		}
-	}
-	for (int32 Vertex = 0; Vertex < Out->Layout.Num(); ++Vertex)
-	{
-		if (!Placed[Vertex])
+		if (!bCanSplit)
 		{
-			Out->Layout[Vertex] = FVector2f::ZeroVector; // drawn by no triangle
+			++Unsplit;
+			continue;
 		}
+		// One copy per (vertex, place): every corner of the vertex in the same other island shares it.
+		uint32* Existing = nullptr;
+		for (TPair<TPair<uint32, int32>, uint32>& Pair : Copies)
+		{
+			if (Pair.Key.Key == Vertex && Out->Layout[Pair.Value].Equals(Place, 1.0e-5f))
+			{
+				Existing = &Pair.Value;
+				break;
+			}
+		}
+		if (!Existing)
+		{
+			const uint32 Copy = static_cast<uint32>(Out->Positions.Num());
+			Out->SplitFrom.Add(static_cast<int32>(Vertex));
+			Out->Positions.Add(Out->Positions[Vertex]);
+			Out->Normals.Add(Out->Normals[Vertex]);
+			if (Out->Tangents.Num() > 0)
+			{
+				Out->Tangents.Add(Out->Tangents[Vertex]);
+			}
+			Out->UV0s.Add(Out->UV0s[Vertex]);
+			Out->UV1s.Add(Out->UV1s[Vertex]);
+			if (Out->Colors.Num() > 0)
+			{
+				Out->Colors.Add(Out->Colors[Vertex]);
+			}
+			Out->Layout.Add(Place);
+			Existing = &Copies.Add(TPair<uint32, int32>(Vertex, Corner), Copy);
+		}
+		Out->Indices[Corner] = *Existing;
 	}
+	const int32 Split = Out->SplitFrom.Num();
 
 	FSHA1 Sha;
 	auto Hash = [&Sha](const auto& Array) { Sha.Update(reinterpret_cast<const uint8*>(Array.GetData()), Array.Num() * Array.GetTypeSize()); };
@@ -4233,19 +4285,79 @@ TSharedPtr<const FMantleBakeMesh> FMantleBakeMesh::FromSection(const FMantleGlbM
 	Hash(Out->Colors);
 	Hash(Out->Layout);
 	Hash(Out->Indices);
+	Hash(Out->SplitFrom);
 	Sha.Final();
 	uint8 Digest[FSHA1::DigestSize];
 	Sha.GetHash(Digest);
 	Out->Hash = BytesToHex(Digest, 8).ToLower();
-	UE_LOG(LogMantle, Log, TEXT("MANTLE_UV_BAKE section %d of %s: %d triangles laid out for its bake, %.1f%% of the layout drawn twice, %d bow-tie corner(s); hash %s"),
-		MaterialIndex, *Mesh.Name, Out->Indices.Num() / 3, 100.0 * Out->LayoutOverlap(), Split, *Out->Hash);
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_UV_BAKE section %d of %s: %d triangles laid out for its bake, %.1f%% of the layout drawn twice, %d vertex copies for bow-tie corners%s; hash %s"),
+		MaterialIndex, *Mesh.Name, Out->Indices.Num() / 3, 100.0 * Out->LayoutOverlap(), Split,
+		Unsplit > 0 ? *FString::Printf(TEXT(", %d corner(s) left unsplit (a section of several primitives)"), Unsplit) : TEXT(""), *Out->Hash);
 	return Out;
 }
 
 void FMantleBakeMesh::ApplyLayout(FMantleGlbMesh& Mesh, const int32 MaterialIndex) const
 {
-	const TArray<int32> Vertices = MantlePlaceAssetsPrivate::SectionVertices(Mesh, MaterialIndex);
-	if (Vertices.Num() != Layout.Num() || Mesh.UVs.Num() != Mesh.Positions.Num())
+	using namespace MantlePlaceAssetsPrivate;
+	const int32 Original = Layout.Num() - SplitFrom.Num();
+	TArray<int32> Vertices = SectionVertices(Mesh, MaterialIndex);
+	if (Vertices.Num() != Original || Mesh.UVs.Num() != Mesh.Positions.Num())
+	{
+		return;
+	}
+	if (SplitFrom.Num() > 0)
+	{
+		if (!CanSplitSection(Mesh, MaterialIndex))
+		{
+			return;
+		}
+		// The copies go at the end of the section's one primitive, every per-vertex stream with them; the primitives after it move along.
+		const int32 PrimitiveIndex = Mesh.Primitives.IndexOfByPredicate([MaterialIndex](const FMantleGlbPrimitive& Entry) { return Entry.MaterialIndex == MaterialIndex; });
+		FMantleGlbPrimitive& Primitive = Mesh.Primitives[PrimitiveIndex];
+		const int32 At = Primitive.FirstVertex + Primitive.NumVertices;
+		const int32 Count = SplitFrom.Num();
+		auto Grow = [&](auto& Stream, const int32 Stride)
+		{
+			if (Stream.Num() != Mesh.Positions.Num() * Stride)
+			{
+				return; // not a per-vertex stream of this mesh (empty)
+			}
+			using FElement = typename TRemoveReference<decltype(Stream)>::Type::ElementType;
+			TArray<FElement> Added;
+			Added.Reserve(Count * Stride);
+			for (const int32 From : SplitFrom)
+			{
+				for (int32 Part = 0; Part < Stride; ++Part)
+				{
+					Added.Add(Stream[Vertices[From] * Stride + Part]);
+				}
+			}
+			Stream.Insert(Added, At * Stride);
+		};
+		// Positions last: Grow reads each stream's size against it.
+		Grow(Mesh.Normals, 1);
+		Grow(Mesh.Tangents, 1);
+		Grow(Mesh.UVs, 1);
+		Grow(Mesh.UV1s, 1);
+		Grow(Mesh.Colors, 1);
+		if (Mesh.NumInfluences > 0)
+		{
+			Grow(Mesh.InfluenceJoints, Mesh.NumInfluences);
+			Grow(Mesh.InfluenceWeights, Mesh.NumInfluences);
+		}
+		Grow(Mesh.Positions, 1);
+		for (FMantleGlbPrimitive& Later : Mesh.Primitives)
+		{
+			if (Later.FirstVertex >= At && &Later != &Primitive)
+			{
+				Later.FirstVertex += Count;
+			}
+		}
+		Primitive.NumVertices += Count;
+		Primitive.Indices = Indices; // the section's own triangles, its corners on the copies (one primitive: its indices are the section's)
+		Vertices = SectionVertices(Mesh, MaterialIndex);
+	}
+	if (Vertices.Num() != Layout.Num())
 	{
 		return;
 	}
@@ -4257,7 +4369,8 @@ void FMantleBakeMesh::ApplyLayout(FMantleGlbMesh& Mesh, const int32 MaterialInde
 
 double FMantleBakeMesh::LayoutOverlap() const
 {
-	// Each triangle drawn on the grid by its texel centers; a texel two triangles reach is drawn twice.
+	// Each triangle drawn on the grid by the texel centers strictly inside it (a center on the edge two triangles share is neither's, so a
+	// quad's own diagonal does not count); a texel two triangles reach is drawn twice.
 	constexpr int32 Size = LayoutResolution;
 	TArray<uint8> Hits;
 	Hits.Init(0, Size * Size);
@@ -4282,7 +4395,8 @@ double FMantleBakeMesh::LayoutOverlap() const
 				const FVector2f P(X + 0.5f, Y + 0.5f);
 				const float W0 = ((B.X - P.X) * (C.Y - P.Y) - (C.X - P.X) * (B.Y - P.Y)) / Area;
 				const float W1 = ((C.X - P.X) * (A.Y - P.Y) - (A.X - P.X) * (C.Y - P.Y)) / Area;
-				if (W0 >= 0.0f && W1 >= 0.0f && W0 + W1 <= 1.0f)
+				constexpr float Inside = 1.0e-4f;
+				if (W0 > Inside && W1 > Inside && W0 + W1 < 1.0f - Inside)
 				{
 					uint8& Hit = Hits[Y * Size + X];
 					Hit = static_cast<uint8>(FMath::Min(Hit + 1, 2));

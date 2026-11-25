@@ -229,6 +229,75 @@ bool FMantleUvBakeLayoutTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleUvBakeBowTieTest,
+	"Mantle.Editor.UvBake.BowTieVertexIsCopiedIntoEachIsland",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleUvBakeBowTieTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleUvBakeMeshTestPrivate;
+	// Two triangles that share only their middle vertex (no edge): two islands, which the packer places apart. Kept once, that vertex
+	// would stretch one triangle across the layout (SUV04's lenses had 77 such corners): it is copied into the second island instead.
+	FMantleGlbMesh Mesh;
+	Mesh.Name = TEXT("BowTie");
+	Mesh.MaterialNames = { TEXT("Lens"), TEXT("Body") };
+	const FVector3f Points[] = { { 0, 0, 0 }, { 100, 0, 0 }, { 50, 50, 0 }, { 0, 100, 0 }, { 100, 100, 0 } };
+	const FVector2f Uvs[] = { { 0, 0 }, { 1, 0 }, { 0.5f, 0.5f }, { 0, 1 }, { 1, 1 } };
+	FMantleGlbPrimitive& Lens = Mesh.Primitives.AddDefaulted_GetRef();
+	Lens.MaterialIndex = 0;
+	Lens.FirstVertex = 0;
+	Lens.NumVertices = 5;
+	Lens.Indices = { 0, 1, 2, 2, 4, 3 };
+	for (int32 Vertex = 0; Vertex < 5; ++Vertex)
+	{
+		Mesh.Positions.Add(Points[Vertex]);
+		Mesh.Normals.Add(FVector3f(0.0f, 0.0f, 1.0f));
+		Mesh.UVs.Add(Uvs[Vertex]);
+		Mesh.UV1s.Add(Uvs[Vertex]);
+	}
+	FMantleGlbPrimitive& Body = Mesh.Primitives.AddDefaulted_GetRef();
+	Body.MaterialIndex = 1;
+	Body.FirstVertex = 5;
+	Body.NumVertices = 3;
+	Body.Indices = { 0, 1, 2 };
+	for (int32 Vertex = 0; Vertex < 3; ++Vertex)
+	{
+		Mesh.Positions.Add(FVector3f(300.0f + 100.0f * (Vertex & 1), 100.0f * (Vertex >> 1), 0.0f));
+		Mesh.Normals.Add(FVector3f(0.0f, 0.0f, 1.0f));
+		Mesh.UVs.Add(FVector2f(0.25f, 0.75f));
+		Mesh.UV1s.Add(FVector2f::ZeroVector);
+	}
+
+	const TSharedPtr<const FMantleBakeMesh> Bake = FMantleBakeMesh::FromSection(Mesh, 0);
+	if (!TestTrue(TEXT("the section is laid out"), Bake.IsValid()))
+	{
+		return false;
+	}
+	TestEqual(TEXT("the shared vertex is copied once"), Bake->SplitFrom.Num(), 1);
+	TestEqual(TEXT("it is the middle one"), Bake->SplitFrom.Num() == 1 ? Bake->SplitFrom[0] : -1, 2);
+	TestTrue(TEXT("no texel of the layout is drawn twice"), Bake->LayoutOverlap() < 0.001);
+
+	FMantleGlbMesh Published = Mesh;
+	Bake->ApplyLayout(Published, 0);
+	TestEqual(TEXT("the mesh gains the copy"), Published.Positions.Num(), 9);
+	TestTrue(TEXT("every per-vertex stream with it"), Published.Normals.Num() == 9 && Published.UVs.Num() == 9 && Published.UV1s.Num() == 9);
+	TestEqual(TEXT("at the end of the lens"), Published.Primitives[0].NumVertices, 6);
+	TestEqual(TEXT("the body moves along"), Published.Primitives[1].FirstVertex, 6);
+	TestTrue(TEXT("and keeps its own UVs"), Published.UVs[6].Equals(FVector2f(0.25f, 0.75f)));
+	TestTrue(TEXT("the copy is the middle vertex"), Published.Positions[5].Equals(Points[2]) && Published.UV1s[5].Equals(Uvs[2]));
+	TestTrue(TEXT("the lens draws the bake's triangles"), Published.Primitives[0].Indices == Bake->Indices);
+	TestTrue(TEXT("one triangle on the original middle vertex, the other on its copy"),
+		Published.Primitives[0].Indices.Contains(2u) && Published.Primitives[0].Indices.Contains(5u));
+	bool bLaidOut = true;
+	for (int32 Vertex = 0; Vertex < 6; ++Vertex)
+	{
+		bLaidOut = bLaidOut && Published.UVs[Vertex].Equals(Bake->Layout[Vertex]);
+	}
+	TestTrue(TEXT("every lens vertex, the copy too, is at its place in the layout"), bLaidOut);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleUvBakeKeyTest,
 	"Mantle.Editor.UvBake.OnlySecondUvSectionsBakeOverTheirOwnTriangles",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -260,7 +329,7 @@ bool FMantleUvBakeKeyTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the plain surface's cache tag is empty, as before"), Surface.CacheTag().IsEmpty());
 	Surface.Mesh = Bake;
 	TestFalse(TEXT("a section's surface is not plain"), Surface.IsPlain());
-	TestTrue(TEXT("and its cache tag holds the section"), Surface.CacheTag().Contains(FString::Printf(TEXT("uvbake=1:%s"), *Bake->Hash)));
+	TestTrue(TEXT("and its cache tag holds the section"), Surface.CacheTag().Contains(FString::Printf(TEXT("uvbake=2:%s"), *Bake->Hash)));
 
 	// Gather keeps it as its own entry, apart from the same material on a card.
 	FMantlePlaceDependencies Dependencies;

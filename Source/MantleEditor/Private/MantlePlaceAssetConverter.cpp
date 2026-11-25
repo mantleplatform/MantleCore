@@ -2248,7 +2248,10 @@ bool FMantleGltfMaterialFlattener::Flatten(UMaterialInterface* Material, const F
 		int32 Fallback = 0;
 		bool bOverride = ChooseFixedBakeSize(TextureSizes, Settings, Fallback);
 		// A bake over many landscape quads holds that many repeats of its textures: give it the most pixels a bake may have.
-		if (Settings.Surface.CoversTerrain())
+		// A section's own bake holds the whole section, every repeat of its tiled UV0 laid out apart, packed square (FMantleBakeMesh::Layout):
+		// the same, and square, whatever its textures' shape. Auto-detect baked SUV04's lenses at their mask's 512x2048, which halved the
+		// layout across and let neighbouring islands bleed into each other.
+		if (Settings.Surface.CoversTerrain() || Settings.Surface.Mesh.IsValid())
 		{
 			bOverride = true;
 			Fallback = static_cast<int32>(FMath::RoundUpToPowerOfTwo(static_cast<uint32>(MaxBake) + 1) / 2);
