@@ -5,6 +5,7 @@
 
 #include "MantleVehicleBuilder.h"
 #include "MantleVehicleConverter.h"
+#include "MantleVehicleLightFinder.h"
 #include "MantleVehicleLiveryTools.h"
 #include "MantleVehicleAsset.h"
 #include "MantleVehicleSource.h"
@@ -27,6 +28,8 @@
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
+#include "Widgets/Input/SComboButton.h"
+#include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
@@ -41,6 +44,13 @@ namespace MantleVehicleBuilderLiveriesPrivate
 {
 	const FLinearColor Bad(0.95f, 0.35f, 0.30f);
 	const FLinearColor Warn(0.95f, 0.65f, 0.25f);
+
+	/** The light a livery can glow with, as the lights step names it; "Nothing" for none. */
+	FText GlowLabel(const EMantleVehicleSourceLight Glow)
+	{
+		return Glow == EMantleVehicleSourceLight::None ? LOCTEXT("GlowsWithNothing", "Nothing (it never glows)")
+			: FMantleVehicleLights::Label(static_cast<EMantleLightKind>(static_cast<uint8>(Glow) - 1));
+	}
 }
 
 TSharedRef<SWidget> SMantleVehicleBuilder::MakeLiveriesStep()
@@ -214,6 +224,36 @@ void SMantleVehicleBuilder::RebuildLiveryRows()
 							]
 							+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
 							[
+								SNew(SHorizontalBox)
+								+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 6, 0)
+								[
+									SNew(STextBlock).Text(LOCTEXT("LightsUpWith", "Lights up with:"))
+								]
+								+ SHorizontalBox::Slot().AutoWidth()
+								[
+									SNew(SComboButton)
+										.ToolTipText(LOCTEXT("LightsUpWithTip", "While this light is on, the livery's own colors glow (GTA's lights-emissive liveries): dark with the light off, lit with it on."))
+										.ButtonContent()
+										[
+											SNew(STextBlock).Text_Lambda([this, Index] { return GlowLabel(LiveryChoices.IsValidIndex(Index) ? LiveryChoices[Index].Glow : EMantleVehicleSourceLight::None); })
+										]
+										.OnGetMenuContent_Lambda([this, Index]
+										{
+											FMenuBuilder Menu(/*bInShouldCloseWindowAfterMenuSelection*/ true, nullptr);
+											for (const EMantleVehicleSourceLight Glow : { EMantleVehicleSourceLight::None, EMantleVehicleSourceLight::Head, EMantleVehicleSourceLight::Rear,
+												EMantleVehicleSourceLight::Reverse, EMantleVehicleSourceLight::Left, EMantleVehicleSourceLight::Right })
+											{
+												Menu.AddMenuEntry(GlowLabel(Glow), FText::GetEmpty(), FSlateIcon(),
+													FUIAction(FExecuteAction::CreateLambda([this, Index, Glow] { SetLiveryGlow(Index, Glow); }), FCanExecuteAction(),
+														FIsActionChecked::CreateLambda([this, Index, Glow] { return LiveryChoices.IsValidIndex(Index) && LiveryChoices[Index].Glow == Glow; })),
+													NAME_None, EUserInterfaceActionType::RadioButton);
+											}
+											return Menu.MakeWidget();
+										})
+								]
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
+							[
 								SNew(SCheckBox)
 									.Style(&FAppStyle::Get().GetWidgetStyle<FCheckBoxStyle>("RadioButton"))
 									.IsChecked_Lambda([this, Index] { return StartLivery == Index ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
@@ -281,6 +321,10 @@ bool SMantleVehicleBuilder::TryAddLivery(UTexture2D* Texture, FText& OutProblem)
 	FLiveryChoice& Choice = LiveryChoices.AddDefaulted_GetRef();
 	Choice.Texture = Soft;
 	Choice.Name = FMantleVehicleLiveryTools::NameFromImage(Texture->GetName());
+	if (const TOptional<EMantleLightKind> Marked = FMantleVehicleLights::FromGlowMarker(Texture->GetName()))
+	{
+		Choice.Glow = static_cast<EMantleVehicleSourceLight>(static_cast<uint8>(*Marked) + 1);
+	}
 	bLiveriesEdited = true;
 	// The image just added is the one shown on the model; the first one added is the one the car starts in.
 	ShownLivery = LiveryChoices.Num() - 1;
@@ -395,6 +439,17 @@ void SMantleVehicleBuilder::RemoveLivery(const int32 Index)
 	LiveriesChanged();
 }
 
+void SMantleVehicleBuilder::SetLiveryGlow(const int32 Index, const EMantleVehicleSourceLight Glow)
+{
+	if (!LiveryChoices.IsValidIndex(Index) || LiveryChoices[Index].Glow == Glow)
+	{
+		return;
+	}
+	LiveryChoices[Index].Glow = Glow;
+	bLiveriesEdited = true;
+	LiveriesChanged();
+}
+
 void SMantleVehicleBuilder::SetLiveryName(const int32 Index, const FString& Name)
 {
 	if (!LiveryChoices.IsValidIndex(Index))
@@ -444,10 +499,17 @@ void SMantleVehicleBuilder::ApplyLiveries(UMantleVehicleSource& Source) const
 	FMantleVehicleSourcePaint& Paint = Source.Paint;
 	Paint.Liveries.Reset();
 	Paint.LiveryNames.Reset();
+	Paint.LiveryGlows.Reset();
+	const bool bAnyGlows = LiveryChoices.ContainsByPredicate([](const FLiveryChoice& Choice) { return Choice.Glow != EMantleVehicleSourceLight::None; });
 	for (const FLiveryChoice& Choice : LiveryChoices)
 	{
 		Paint.Liveries.Add(Choice.Texture);
 		Paint.LiveryNames.Add(Choice.Name);
+		if (bAnyGlows)
+		{
+			FMantleVehicleSourceLiveryGlow& Glow = Paint.LiveryGlows.AddDefaulted_GetRef();
+			Glow.Light = Choice.Glow;
+		}
 	}
 	Paint.DefaultLivery = LiveryChoices.IsValidIndex(StartLivery) ? StartLivery : INDEX_NONE;
 	Source.MarkPackageDirty();

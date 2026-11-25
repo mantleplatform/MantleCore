@@ -113,6 +113,20 @@ namespace MantleVehicleConverterPrivate
 		return Text == TEXT("-0") ? FString(TEXT("0")) : Text;
 	}
 
+	/** The document's name of the light a livery glows with; null for none. */
+	const TCHAR* LiveryGlowLightName(const EMantleVehicleSourceLight Light)
+	{
+		switch (Light)
+		{
+		case EMantleVehicleSourceLight::Head: return TEXT("head");
+		case EMantleVehicleSourceLight::Rear: return TEXT("rear");
+		case EMantleVehicleSourceLight::Reverse: return TEXT("reverse");
+		case EMantleVehicleSourceLight::Left: return TEXT("left");
+		case EMantleVehicleSourceLight::Right: return TEXT("right");
+		default: return nullptr;
+		}
+	}
+
 	TSharedRef<FJsonValue> VehicleNumber(double Value)
 	{
 		return MakeShared<FJsonValueNumberString>(VehicleNumberText(Value));
@@ -4158,6 +4172,28 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 		{
 			Doc->SetArrayField(TEXT("liveryNames"), Names);
 		}
+		// Which liveries light up with a light, beside the ids (absent when none glows): null for one that does not.
+		bool bGlows = false;
+		TArray<TSharedPtr<FJsonValue>> Glows;
+		for (int32 Index = 0; Index < P.Liveries.Num(); ++Index)
+		{
+			const FMantleVehicleSourceLiveryGlow* Glow = P.LiveryGlows.IsValidIndex(Index) ? &P.LiveryGlows[Index] : nullptr;
+			const TCHAR* Light = Glow ? LiveryGlowLightName(Glow->Light) : nullptr;
+			if (!Light)
+			{
+				Glows.Add(MakeShared<FJsonValueNull>());
+				continue;
+			}
+			bGlows = true;
+			TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+			Entry->SetStringField(TEXT("light"), Light);
+			Entry->SetField(TEXT("strength"), VehicleNumber(FMath::Clamp(Glow->Strength, 0.f, 100.f)));
+			Glows.Add(MakeShared<FJsonValueObject>(Entry));
+		}
+		if (bGlows)
+		{
+			Doc->SetArrayField(TEXT("liveryGlow"), Glows);
+		}
 		Doc->SetField(TEXT("liveryUV"), VehicleInteger(0));
 		if (P.Liveries.IsValidIndex(P.DefaultLivery))
 		{
@@ -4915,6 +4951,15 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 	{
 		AddError(FString::Printf(TEXT("names %d liveries but has %d."), Paint.LiveryNames.Num(), NumLiveries), TEXT("Give each livery at most one name, in the order of Liveries."));
 	}
+	for (int32 Index = NumLiveries; Index < Paint.LiveryGlows.Num(); ++Index)
+	{
+		if (Paint.LiveryGlows[Index].Light != EMantleVehicleSourceLight::None)
+		{
+			AddError(FString::Printf(TEXT("lights up livery %d with a light, but has %d liveries."), Index, NumLiveries),
+				TEXT("Give each livery at most one entry under Livery Glows, in the order of Liveries."));
+			break;
+		}
+	}
 	for (int32 Index = 0; Index < Paint.LiveryNames.Num(); ++Index)
 	{
 		if (FMantleVehicleConverter::CountCodePoints(Paint.LiveryNames[Index].TrimStartAndEnd()) > FMantleVehicleConverter::MaxLiveryNameLength)
@@ -5459,6 +5504,7 @@ namespace MantleVehicleConverterPrivate
 		// Its livery choices name textures this file does not carry.
 		const TSharedRef<FJsonObject> Document = FMantleVehicleConverter::MakeDocument(*Source, TMap<FString, FString>());
 		Document->RemoveField(TEXT("liveryNames"));
+		Document->RemoveField(TEXT("liveryGlow"));
 		Document->RemoveField(TEXT("liveryUV"));
 		Document->RemoveField(TEXT("defaultLivery"));
 		// Paint only on parts' slots (#435 item 2) paints nothing without the parts, which this file leaves out.

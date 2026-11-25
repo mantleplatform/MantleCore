@@ -449,6 +449,15 @@ struct FMantleVehicleRiderDesc
 	FMantleVehicleRotationControlDesc RotationControl;
 };
 
+/** A livery that lights up with one of the car's lights (the document's liveryGlow entry). */
+struct FMantleVehicleLiveryGlowDesc
+{
+	/** The lights block's kind it glows with (head, rear, reverse, left, right); empty: it does not glow. */
+	FString Light;
+	/** How bright it glows with the light fully on: 1 is the livery's own color. */
+	double Strength = 1.0;
+};
+
 /**
  * A cooked vehicle's resolved document (MVH1's JSON, schema/vehicle.schema.json with every default
  * filled by the cook). Unreal units: cm, kg, Nm, degrees, cm/s. Nothing in it names an asset path.
@@ -617,6 +626,11 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	TArray<FString> Liveries;
 	/** What a menu calls each livery, by the same index as Liveries: empty (no names) or one per livery, each at most 40 characters; an entry may be empty. */
 	TArray<FString> LiveryNames;
+	/**
+	 * Which liveries light up with a light, by the same index as Liveries: empty (none glows) or one per livery. An entry with an empty Light
+	 * does not glow; else Light is the lights block's kind (head, rear, reverse, left, right) and Strength the cook's resolved 0..100.
+	 */
+	TArray<FMantleVehicleLiveryGlowDesc> LiveryGlows;
 	/** The body's UV set the liveries are laid out on: always 0, the one UV set a vehicle body carries. */
 	int32 LiveryUV = 0;
 	/** The livery a spawned car wears, an index into Liveries; INDEX_NONE for none. */

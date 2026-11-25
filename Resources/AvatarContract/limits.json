@@ -1317,6 +1317,7 @@
         "lights/beams/*/position/*": [-1000, 1000],
         "lights/beams/*/direction/*": [-1, 1],
         "liveryUV": [0, 0],
+        "liveryGlow/*/strength": [0, 100],
         "defaultLivery": [0, 7],
         "linkage/*/weight": [0, 1],
         "parts/*/location/*": [-1000, 1000],

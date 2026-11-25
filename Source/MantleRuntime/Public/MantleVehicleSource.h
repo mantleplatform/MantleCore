@@ -105,6 +105,18 @@ enum class EMantleVehicleSourcePaintFinish : uint8
 	SoftRubber,
 };
 
+/** A light a livery can glow with (the document's light kinds), or none. */
+UENUM(BlueprintType)
+enum class EMantleVehicleSourceLight : uint8
+{
+	None,
+	Head,
+	Rear,
+	Reverse,
+	Left,
+	Right,
+};
+
 /** The slots of a part (by index, as the mesh editor lists them) that wear one of the paint's other layers. */
 USTRUCT(BlueprintType)
 struct MANTLERUNTIME_API FMantleVehicleSourcePartLayerSlots
@@ -678,6 +690,24 @@ struct MANTLERUNTIME_API FMantleVehicleSourcePaintLayer
 };
 
 /**
+ * Whether a livery lights up with one of the car's lights (the document's liveryGlow): while that light is on, the livery's own color
+ * (where its alpha shows it) glows, times Strength and the light's level (the rear lights dim with the headlights, and so on), as GTA's
+ * lights-emissive livery does. None: the livery never glows.
+ */
+USTRUCT(BlueprintType)
+struct MANTLERUNTIME_API FMantleVehicleSourceLiveryGlow
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Liveries")
+	EMantleVehicleSourceLight Light = EMantleVehicleSourceLight::None;
+
+	/** How bright it glows with the light fully on: 1 is the livery's own color. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Liveries", meta = (ClampMin = "0", ClampMax = "100"))
+	float Strength = 1.f;
+};
+
+/**
  * A creator vehicle's paint and liveries: schema/vehicle.schema.json paint, liveries, liveryUV and
  * defaultLivery, every default the schema's. Mantle holds each number to limits.json placeAssets.vehicle.ranges and the
  * liveries to placeAssets.livery when the place is checked and again when it is cooked.
@@ -755,6 +785,13 @@ struct MANTLERUNTIME_API FMantleVehicleSourcePaint
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Liveries")
 	TArray<FString> LiveryNames;
+
+	/**
+	 * Which liveries light up with a light, by their index in Liveries (the document's liveryGlow): a livery past the end, or with Light None,
+	 * never glows. A livery image named <name>_glow_<kind> (head, rear, reverse, left or right) starts with that light in the vehicle builder.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Liveries")
+	TArray<FMantleVehicleSourceLiveryGlow> LiveryGlows;
 
 	/** The livery a car wears when it spawns, by its index in Liveries; -1 for none. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Liveries", meta = (ClampMin = "-1", ClampMax = "7"))

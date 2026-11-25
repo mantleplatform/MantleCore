@@ -916,6 +916,40 @@ namespace MantleVehicleAssetPrivate
 				D.LiveryNames.Add(Name);
 			}
 		}
+		// Which liveries glow with a light, one per livery in the same order (null for one that does not).
+		if (P.Ok() && Root->HasField(TEXT("liveryGlow")))
+		{
+			const TArray<TSharedPtr<FJsonValue>>* Glows = nullptr;
+			if (!P.Array(Root->TryGetField(TEXT("liveryGlow")), TEXT("/liveryGlow"), D.Liveries.Num(), D.Liveries.Num(), Glows))
+			{
+				return;
+			}
+			for (int32 Index = 0; Index < Glows->Num() && P.Ok(); ++Index)
+			{
+				const FString Pointer = FString::Printf(TEXT("/liveryGlow/%d"), Index);
+				FMantleVehicleLiveryGlowDesc& Glow = D.LiveryGlows.AddDefaulted_GetRef();
+				const TSharedPtr<FJsonValue>& Value = (*Glows)[Index];
+				if (!Value.IsValid() || Value->IsNull())
+				{
+					continue;
+				}
+				const TSharedPtr<FJsonObject>* Entry = nullptr;
+				if (!Value->TryGetObject(Entry) || !Entry || !P.Keys(*Entry, Pointer, { TEXT("light"), TEXT("strength") }, { TEXT("light"), TEXT("strength") }))
+				{
+					P.Fail(Pointer, TEXT("must be null or a light and its strength"));
+					break;
+				}
+				FString Light;
+				if (!(*Entry)->TryGetStringField(TEXT("light"), Light)
+					|| !(Light == TEXT("head") || Light == TEXT("rear") || Light == TEXT("reverse") || Light == TEXT("left") || Light == TEXT("right")))
+				{
+					P.Fail(Pointer + TEXT("/light"), TEXT("must be head, rear, reverse, left or right"));
+					break;
+				}
+				Glow.Light = Light;
+				P.Number(*Entry, Pointer, TEXT("strength"), TEXT("liveryGlow/*/strength"), Glow.Strength);
+			}
+		}
 	}
 
 	/** A linkage rule's bone name: 1 to MaxBoneNameLength characters. */
@@ -2205,7 +2239,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	P.Keys(Root, TEXT(""),
 		{ TEXT("schemaVersion"), TEXT("mass"), TEXT("maxSpeed"), TEXT("centerOfMass"), TEXT("dragCoefficient"), TEXT("frontalArea"),
 		  TEXT("engine"), TEXT("transmission"), TEXT("suspension"), TEXT("steering"), TEXT("brakes"), TEXT("tires"), TEXT("wheels"),
-		  TEXT("seat"), TEXT("camera"), TEXT("collision"), TEXT("materials"), TEXT("paint"), TEXT("lights"), TEXT("liveries"), TEXT("liveryNames"), TEXT("liveryUV"),
+		  TEXT("seat"), TEXT("camera"), TEXT("collision"), TEXT("materials"), TEXT("paint"), TEXT("lights"), TEXT("liveries"), TEXT("liveryNames"), TEXT("liveryGlow"), TEXT("liveryUV"),
 		  TEXT("defaultLivery"), TEXT("linkage"), TEXT("parts"), TEXT("passengerSeat"), TEXT("trunk"), TEXT("hood"), TEXT("rearLeftDoor"), TEXT("rearRightDoor"), TEXT("horn"), TEXT("preset"), TEXT("movementType"),
 		  TEXT("flight"), TEXT("helicopter"), TEXT("hover") },
 		{ TEXT("schemaVersion"), TEXT("mass"), TEXT("maxSpeed"), TEXT("dragCoefficient"), TEXT("frontalArea"), TEXT("engine"),
@@ -2560,6 +2594,10 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	else if (P.Ok() && Root->HasField(TEXT("liveryNames")))
 	{
 		P.Fail(TEXT("/liveryNames"), TEXT("has no liveries to name"));
+	}
+	else if (P.Ok() && Root->HasField(TEXT("liveryGlow")))
+	{
+		P.Fail(TEXT("/liveryGlow"), TEXT("has no liveries to light up"));
 	}
 	if (P.Ok() && Root->HasField(TEXT("liveryUV")))
 	{

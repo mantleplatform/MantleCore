@@ -3,6 +3,7 @@
 
 #include "MantleSkinnedMesh.h"
 #include "MantleVehicleConverter.h"
+#include "MantleVehicleLightFinder.h"
 
 #include "Engine/Texture2D.h"
 #include "HAL/FileManager.h"
@@ -248,6 +249,12 @@ FString FMantleVehicleLiveryTools::DisplayName(const FString& Name, const int32 
 FString FMantleVehicleLiveryTools::NameFromImage(const FString& ImageName)
 {
 	FString Name = ImageName;
+	// A glow marker (goku_glow_head: the livery lights up with the headlights) is no part of the name.
+	if (FMantleVehicleLights::FromGlowMarker(Name))
+	{
+		const int32 At = Name.Find(TEXT("glow"), ESearchCase::IgnoreCase, ESearchDir::FromEnd);
+		Name = At > 0 ? Name.Left(At) : Name;
+	}
 	Name.ReplaceInline(TEXT("_"), TEXT(" "));
 	Name.ReplaceInline(TEXT("-"), TEXT(" "));
 	return FMantleVehicleConverter::CutToCodePoints(Name.TrimStartAndEnd(), FMantleVehicleConverter::MaxLiveryNameLength);
