@@ -1639,6 +1639,67 @@ FMantleVehicleHingeMap FMantleVehicleChassisSkin::SuggestHinges(const FMantleVeh
 	return Out;
 }
 
+bool FMantleVehicleChassisSkin::IsSteeringWheelBoneName(const FString& BoneName)
+{
+	using namespace MantleVehicleChassisSkinPrivate;
+	const TArray<FString> Words = BoneNameWords(FName(*BoneName));
+	for (int32 Index = 0; Index < Words.Num(); ++Index)
+	{
+		// "steering" says it only alone or with "wheel": steering_column and steering_rack are other parts.
+		if (Words[Index] == TEXT("steeringwheel") || (Words[Index] == TEXT("steering") && (Index + 1 == Words.Num() || Words[Index + 1] == TEXT("wheel"))))
+		{
+			return true;
+		}
+	}
+	// The Fab cars' B_<car>_SW: a whole part between underscores, so "Sw" in a longer word or on its own is not it.
+	TArray<FString> Parts;
+	BoneName.ParseIntoArray(Parts, TEXT("_"), true);
+	return Parts.Num() >= 2 && Parts.ContainsByPredicate([](const FString& Part) { return Part.Equals(TEXT("SW"), ESearchCase::IgnoreCase); });
+}
+
+FName FMantleVehicleChassisSkin::SuggestSteeringWheelBone(const FMantleVehicleModel& Model, const FVector* Seat, const TConstArrayView<FName> Avoid)
+{
+	if (!Model.bSkeletal)
+	{
+		return FName();
+	}
+	const FBox Bounds = Model.Bounds();
+	FName Best;
+	double BestScore = 0.0;
+	// Bone 0 is the root: it carries the whole car and never turns.
+	for (int32 Bone = 1; Bone < Model.Bones.Num() && Bone < Model.BonePositions.Num(); ++Bone)
+	{
+		const FName Name = Model.Bones[Bone].Name;
+		if (!IsSteeringWheelBoneName(Name.ToString()) || Avoid.Contains(Name))
+		{
+			continue;
+		}
+		const FVector Position = Model.BonePositions[Bone];
+		// In the cabin: inside the body and above its floor (a third up). A model with no vertices cannot say, so the name alone decides.
+		if (Bounds.IsValid && (!Bounds.IsInsideOrOn(Position) || Position.Z < Bounds.Min.Z + 0.3 * Bounds.GetSize().Z))
+		{
+			continue;
+		}
+		double Score = Position.Y;
+		if (Seat)
+		{
+			const double Ahead = Position.X - Seat->X;
+			if (Ahead <= 0.0 || Ahead > 120.0)
+			{
+				continue;
+			}
+			// Level with the seat's side and a driver's arm length (40 cm) in front of it.
+			Score = FMath::Abs(Position.Y - Seat->Y) + FMath::Abs(Ahead - 40.0);
+		}
+		if (Best.IsNone() || Score < BestScore)
+		{
+			Best = Name;
+			BestScore = Score;
+		}
+	}
+	return Best;
+}
+
 FMantleVehicleSkinnedHinge FMantleVehicleChassisSkin::HingeFor(const EMantleVehicleHingePart Part, const FName Bone, const FBox& PartBox, const FBox& BodyBox, const FVector* BonePosition,
 	const bool bFlipped)
 {

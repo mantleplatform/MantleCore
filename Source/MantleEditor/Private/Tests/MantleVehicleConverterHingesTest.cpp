@@ -1,4 +1,5 @@
 // Copyright Joshua Eger. All Rights Reserved.
+#include "MantleVehicleBuilder.h"
 #include "MantleVehicleChassisSkin.h"
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleSource.h"
@@ -480,6 +481,72 @@ bool FMantleVehicleConverterHingesPackNamesTest::RunTest(const FString& Paramete
 	Check(Gta, TEXT("GTA"), EMantleVehicleHingePart::RearRightDoor, TEXT("door_pside_r"));
 	Check(Gta, TEXT("GTA"), EMantleVehicleHingePart::Hood, TEXT("bonnet"));
 	Check(Gta, TEXT("GTA"), EMantleVehicleHingePart::Trunk, TEXT("Boot"));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleSteeringWheelBoneNameTest,
+	"Mantle.Vehicle.Convert.SteeringWheelBoneName",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleSteeringWheelBoneNameTest::RunTest(const FString& Parameters)
+{
+	// The names the real skeletons use: the Fab cars' B_<car>_SW, Sedan03, the Military pack, our FiveM rebuilds, and GTA V's steeringwheel (from GTA's known bone list, not a file).
+	for (const TCHAR* Name : { TEXT("B_SUV01_SW"), TEXT("B_SUV03_SW"), TEXT("B_NYC_Car02_SW"), TEXT("b_suv01_sw"), TEXT("B_SteeringWheel"), TEXT("Steering_Wheel"), TEXT("Steering_wheel"),
+		TEXT("steering"), TEXT("steering_wheel"), TEXT("steeringwheel") })
+	{
+		TestTrue(FString::Printf(TEXT("%s is a steering wheel"), Name), FMantleVehicleChassisSkin::IsSteeringWheelBoneName(Name));
+	}
+	// "Sw" inside a word or alone, other steering parts, and bones that have nothing to do with it.
+	for (const TCHAR* Name : { TEXT("Sw"), TEXT("SW"), TEXT("Swing"), TEXT("swing_arm"), TEXT("B_Swivel"), TEXT("B_SUV01_Body"), TEXT("wheel_lf"), TEXT("B_SUV01_FLWheel"), TEXT("steering_column"),
+		TEXT("steering_rack"), TEXT("B_SUV01_Swaybar") })
+	{
+		TestFalse(FString::Printf(TEXT("%s is not a steering wheel"), Name), FMantleVehicleChassisSkin::IsSteeringWheelBoneName(Name));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleSteeringWheelBoneFillTest,
+	"Mantle.Vehicle.Convert.SteeringWheelBoneFill",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleSteeringWheelBoneFillTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleConverterHingesTestPrivate;
+
+	// SUV04: B_SUV04_SW is found and written, with the note.
+	const FMantleVehicleModel Suv = Suv04Joined();
+	UMantleVehicleSource* Source = NewSource();
+	Source->Tuning.bSeatLocation = true;
+	Source->Tuning.SeatLocation = FVector(30, -40, 100);
+	TArray<FString> Notes;
+	TestTrue(TEXT("a bone was filled"), FMantleVehicleBuilder::ApplySteeringWheelBone(Suv, *Source, Notes));
+	TestEqual(TEXT("it is the SW bone"), Source->Tuning.SteeringWheelBone.ToString(), FString(TEXT("B_SUV04_SW")));
+	TestTrue(TEXT("the notes say so"), AnyNote(Notes, TEXT("Steering wheel: the bone B_SUV04_SW turns with the steering (found from its name). Change it under Driver > Steering Wheel Bone in the vehicle asset.")));
+
+	// The creator's own bone is kept, and nothing is said.
+	UMantleVehicleSource* Own = NewSource();
+	Own->Tuning.SteeringWheelBone = FName(TEXT("MyWheel"));
+	TArray<FString> OwnNotes;
+	TestFalse(TEXT("a bone the creator set is not replaced"), FMantleVehicleBuilder::ApplySteeringWheelBone(Suv, *Own, OwnNotes));
+	TestEqual(TEXT("it stays"), Own->Tuning.SteeringWheelBone.ToString(), FString(TEXT("MyWheel")));
+	TestEqual(TEXT("with no note"), OwnNotes.Num(), 0);
+
+	// A stray SW bone outside the cabin (ahead of the nose) loses to the one inside, though it comes first; and one alone outside is not taken.
+	TArray<FConvHingeBone> Bones = Suv04Bones();
+	Bones.Insert({ TEXT("B_Extra_SW"), 0, FVector(300, -40, 110) }, 1);
+	FMantleVehicleModel Stray = BonesOnly(Bones);
+	AddBox(Stray, FVector(-220, -90, 20), FVector(220, 90, 130), 0);
+	TestEqual(TEXT("the one inside the cabin wins"), FMantleVehicleChassisSkin::SuggestSteeringWheelBone(Stray, nullptr, TArray<FName>()).ToString(), FString(TEXT("B_SUV04_SW")));
+	Bones.RemoveAll([](const FConvHingeBone& Bone) { return FString(Bone.Name) == TEXT("B_SUV04_SW"); });
+	FMantleVehicleModel Alone = BonesOnly(Bones);
+	AddBox(Alone, FVector(-220, -90, 20), FVector(220, 90, 130), 0);
+	TestTrue(TEXT("one outside the cabin alone is not taken"), FMantleVehicleChassisSkin::SuggestSteeringWheelBone(Alone, nullptr, TArray<FName>()).IsNone());
+
+	// Behind the seat is not in front of it.
+	const FVector Seat(100, -40, 100);
+	TestTrue(TEXT("a wheel behind the driver's seat is not taken"), FMantleVehicleChassisSkin::SuggestSteeringWheelBone(Stray, &Seat, TArray<FName>()).IsNone());
 	return true;
 }
 

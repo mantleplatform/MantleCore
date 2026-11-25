@@ -311,6 +311,13 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	static void ApplyOwnHinges(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options);
 
 	/**
+	 * The steering wheel's bone, found from the model's bone names (FMantleVehicleChassisSkin::SuggestSteeringWheelBone) when Source's is empty. A bone the creator set is kept,
+	 * and the wheels' bones, what they hang from and the doors', hood's and trunk's are never taken (the cook turns each bone for one part only). True, with a note in OutNotes,
+	 * when it filled one; nothing is said when no bone is named like one. It does not tick Steering Wheel: the bone is used once the wheel is placed.
+	 */
+	static bool ApplySteeringWheelBone(const FMantleVehicleModel& Model, UMantleVehicleSource& Source, TArray<FString>& OutNotes);
+
+	/**
 	 * Where the driver sits when Source has no seat placed. A vehicle of a type gets its chassis's seat fitted to the model's wheels,
 	 * as Build places it (a built vehicle always has its seat, so this is for older ones). With no type, where the cook puts the driver
 	 * (vehicle.go, "Behind the middle, on the left"): a tenth of the length behind the middle, a fifth of the width to the left of it

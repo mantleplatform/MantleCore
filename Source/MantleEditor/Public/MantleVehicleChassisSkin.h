@@ -382,6 +382,21 @@ struct MANTLEEDITOR_API FMantleVehicleChassisSkin
 	static FMantleVehicleHingeMap SuggestHinges(const FMantleVehicleModel& Model, TArray<FString>* OutNotes = nullptr);
 
 	/**
+	 * Whether a bone's name says it is the steering wheel. Read in words as SuggestHinges reads them: "steering" alone or followed by "wheel" (Steering_Wheel, steering_wheel,
+	 * B_SteeringWheel, steering), the one word "steeringwheel" (GTA V's standard name for it, from its published bone list, not checked against a file here), or a whole
+	 * underscore part "SW" in any case with at least one other part (B_SUV01_SW, B_NYC_Car02_SW). "Sw" inside another word (swing_arm) or alone is not it.
+	 */
+	static bool IsSteeringWheelBoneName(const FString& BoneName);
+
+	/**
+	 * The model's bone that is the steering wheel, by its name (IsSteeringWheelBoneName), or none. Only a bone inside the cabin counts: within the model's bounds and above the
+	 * lowest third of its height, and, when Seat is given (the driver's seat, body's space, nose on +X), in front of it by at most 120 cm, so a stray part elsewhere never wins.
+	 * Of several, the one nearest the driver (the seat's side and just ahead of it; with no seat, the driver's side, -Y). The root and the bones in Avoid (the wheels' bones and
+	 * what they hang from, a door's) are never taken. A static model gives none.
+	 */
+	static FName SuggestSteeringWheelBone(const FMantleVehicleModel& Model, const FVector* Seat, TConstArrayView<FName> Avoid);
+
+	/**
 	 * Where Part's hinge goes, from the box around its vertices and where its bone is (the pure part of Skin, also used for a model that keeps its own skeleton), all in the
 	 * body's space. PartBox is the box around the part's vertices, BodyBox the box around the whole body, BonePosition the bone's place when it is known. A door turns about
 	 * its front edge (the bone's place when it is within a quarter of the door's length from the front, else the front edge at the outer side, halfway up) on an upright

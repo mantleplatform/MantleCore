@@ -1928,6 +1928,8 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 				}
 			}
 			AddHinges(Model, Evidence, WheelNames, Source, Result.Notes);
+			// The steering wheel's bone too, from the bones' names, unless the creator has set one.
+			FMantleVehicleBuilder::ApplySteeringWheelBone(Model, Source, Result.Notes);
 		}
 		else
 		{

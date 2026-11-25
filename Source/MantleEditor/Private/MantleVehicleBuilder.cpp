@@ -1674,6 +1674,39 @@ void FMantleVehicleBuilder::ApplyHinges(UMantleVehicleSource& Source, const TCon
 	OutNotes.Add(FString::Printf(TEXT("The %s open%s in the game."), *List, Opens.Num() == 1 ? TEXT("s") : TEXT("")));
 }
 
+bool FMantleVehicleBuilder::ApplySteeringWheelBone(const FMantleVehicleModel& Model, UMantleVehicleSource& Source, TArray<FString>& OutNotes)
+{
+	FMantleVehicleSourceTuning& T = Source.Tuning;
+	if (!T.SteeringWheelBone.IsNone() || !Model.bSkeletal)
+	{
+		return false;
+	}
+	// Not the wheels' bones nor any bone a wheel hangs from, and not one a door, the hood or the trunk already turns.
+	TArray<FName> Avoid;
+	for (const FMantleVehicleSourceWheel& Wheel : Source.Wheels)
+	{
+		for (int32 Up = Model.FindBone(Wheel.Bone), Guard = 0; Up != INDEX_NONE && Guard < 1024; Up = Model.Bones[Up].ParentIndex, ++Guard)
+		{
+			Avoid.AddUnique(Model.Bones[Up].Name);
+		}
+	}
+	if (T.bHasDriverDoor) { Avoid.Add(T.DriverDoor.Bone); }
+	if (T.bHasPassengerDoor) { Avoid.Add(T.PassengerDoor.Bone); }
+	if (T.bRearLeftDoor) { Avoid.Add(T.RearLeftDoor.Bone); }
+	if (T.bRearRightDoor) { Avoid.Add(T.RearRightDoor.Bone); }
+	if (T.bHood) { Avoid.Add(T.HoodLid.Bone); }
+	if (T.bTrunk) { Avoid.Add(T.TrunkLid.Bone); }
+	const FName Found = FMantleVehicleChassisSkin::SuggestSteeringWheelBone(Model, T.bSeatLocation ? &T.SeatLocation : nullptr, Avoid);
+	if (Found.IsNone())
+	{
+		return false;
+	}
+	Source.Modify();
+	T.SteeringWheelBone = Found;
+	OutNotes.Add(FString::Printf(TEXT("Steering wheel: the bone %s turns with the steering (found from its name). Change it under Driver > Steering Wheel Bone in the vehicle asset."), *Found.ToString()));
+	return true;
+}
+
 void FMantleVehicleBuilder::ApplyOwnHinges(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options)
 {
 	UMantleVehicleSource* Source = Built.Source;
@@ -1718,7 +1751,9 @@ void FMantleVehicleBuilder::ApplyOwnHinges(FMantleVehicleBuildResult& Built, con
 		}
 		Built.Notes = MoveTemp(Once);
 	}
-	if ((Found.Num() > 0 || bCleared || bHide) && Built.bSaved)
+	// The steering wheel's bone, from the bones' names, after the hinges so a door's bone is never taken for it.
+	const bool bWheelBone = ApplySteeringWheelBone(Read, *Source, Built.Notes);
+	if ((Found.Num() > 0 || bCleared || bHide || bWheelBone) && Built.bSaved)
 	{
 		Built.bSaved = SaveVehicle(*Source, Built.SaveProblem);
 	}
