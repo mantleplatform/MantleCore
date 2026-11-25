@@ -1721,12 +1721,14 @@ namespace MantleVehicleChassisSkinPrivate
 	constexpr int32 SteeringMinVertices = 24;
 	/** The wheel's thickness (smallest spread) may be at most this much of its next spread: a wheel is flat. */
 	constexpr double SteeringMaxFlatness = 0.4;
-	/** Its two wide spreads may differ by at most this ratio: a wheel is round, not long. */
+	/** Its face's two sizes, edge to edge, may differ by at most this ratio: a wheel is round, not long (the FiveM rebuilds' wheels are 1.00 to 1.04). */
 	constexpr double SteeringMaxRoundness = 1.5;
 	/** The column's direction along the car (the X of its unit vector) is at least this: the wheel faces the driver and not the side or the sky. */
 	constexpr double SteeringMinFacing = 0.7;
-	/** At least this share of the vertices lie at 80% of the rim's radius or more: a ring, not a blob around the hub. */
-	constexpr double SteeringMinRimShare = 0.4;
+	/** The face around the bone in this many equal sectors; a ring has vertices at 80% of its radius or more in at least SteeringMinRimSectors of them (a flat-bottomed
+	 * or open rim may miss a couple), not a blob around the hub. */
+	constexpr int32 SteeringRimSectors = 12;
+	constexpr int32 SteeringMinRimSectors = 10;
 	/** The hub (the bone) is within this much of the radius from the middle of the vertices, in the wheel's plane. */
 	constexpr double SteeringMaxHubOffset = 0.25;
 	/** The rim, cm: the vehicle asset's own range for Steering Wheel Radius. */
@@ -1834,7 +1836,23 @@ FMantleVehicleSteeringFit FMantleVehicleChassisSkin::MeasureSteeringWheel(const 
 		Out.Why = TEXT("its vertices are not flat enough to be a wheel");
 		return Out;
 	}
-	if (Widest > SteeringMaxRoundness * Wide)
+	// Round by its face's own size (from edge to edge along the face's two directions), not by how its vertices spread: a detailed hub (an airbag, buttons, paddles)
+	// holds most of them and pulls the spread long while the rim is round (the FiveM BMW's face is 39.1 by 39.2 cm, its spread 1.67 to 1).
+	const FVector FaceA = Vectors[Sorted[1]].GetSafeNormal();
+	const FVector FaceB = Vectors[Sorted[2]].GetSafeNormal();
+	double MinA = TNumericLimits<double>::Max(), MaxA = -TNumericLimits<double>::Max(), MinB = MinA, MaxB = MaxA;
+	for (const FVector& Point : Points)
+	{
+		const double A = FVector::DotProduct(Point - Middle, FaceA);
+		const double B = FVector::DotProduct(Point - Middle, FaceB);
+		MinA = FMath::Min(MinA, A);
+		MaxA = FMath::Max(MaxA, A);
+		MinB = FMath::Min(MinB, B);
+		MaxB = FMath::Max(MaxB, B);
+	}
+	const double SpanA = MaxA - MinA;
+	const double SpanB = MaxB - MinB;
+	if (FMath::Min(SpanA, SpanB) < UE_KINDA_SMALL_NUMBER || FMath::Max(SpanA, SpanB) > SteeringMaxRoundness * FMath::Min(SpanA, SpanB))
 	{
 		Out.Why = TEXT("its vertices are long, not round");
 		return Out;
@@ -1849,27 +1867,31 @@ FMantleVehicleSteeringFit FMantleVehicleChassisSkin::MeasureSteeringWheel(const 
 		Out.Why = TEXT("its face does not look along the car");
 		return Out;
 	}
-	TArray<double> Distances;
-	for (const FVector& Point : Points)
-	{
-		const FVector Off = Point - Hub;
-		Distances.Add((Off - Column * FVector::DotProduct(Off, Column)).Size());
-	}
-	Distances.Sort();
-	const double Radius = Distances[FMath::FloorToInt(0.9 * (Distances.Num() - 1))];
+	// The rim's radius is half the face's size, edge to edge: however many of the vertices are the hub's.
+	const double Radius = 0.25 * (SpanA + SpanB);
 	if (Radius < SteeringMinRadius || Radius > SteeringMaxRadius)
 	{
 		Out.Why = FString::Printf(TEXT("its rim measures %.0f cm across from the bone, outside the %.0f to %.0f cm a wheel may be"), Radius, SteeringMinRadius, SteeringMaxRadius);
 		return Out;
 	}
-	int32 OnRim = 0;
-	for (const double Distance : Distances)
+	// A ring: the rim goes all the way round the bone (vertices out at the rim in nearly every direction around it), however many vertices the hub has.
+	const FVector Up = (FVector::UpVector - Column * FVector::DotProduct(FVector::UpVector, Column)).GetSafeNormal();
+	const FVector Across = FVector::CrossProduct(Column, Up);
+	TBitArray<> Covered(false, SteeringRimSectors);
+	for (const FVector& Point : Points)
 	{
-		OnRim += Distance >= 0.8 * Radius ? 1 : 0;
+		const FVector Off = Point - Hub;
+		const FVector InFace = Off - Column * FVector::DotProduct(Off, Column);
+		if (InFace.Size() >= 0.8 * Radius)
+		{
+			const double Angle = FMath::Atan2(FVector::DotProduct(InFace, Up), FVector::DotProduct(InFace, Across)) + PI;
+			Covered[FMath::Clamp(FMath::FloorToInt(Angle / (2.0 * PI) * SteeringRimSectors), 0, SteeringRimSectors - 1)] = true;
+		}
 	}
+	const int32 RimSectors = Covered.CountSetBits();
 	const FVector MiddleOff = Middle - Hub;
 	const double HubOffset = (MiddleOff - Column * FVector::DotProduct(MiddleOff, Column)).Size();
-	if (OnRim < SteeringMinRimShare * Points.Num() || HubOffset > SteeringMaxHubOffset * Radius)
+	if (RimSectors < SteeringMinRimSectors || HubOffset > SteeringMaxHubOffset * Radius)
 	{
 		Out.Why = TEXT("its vertices are not a ring around the bone");
 		return Out;

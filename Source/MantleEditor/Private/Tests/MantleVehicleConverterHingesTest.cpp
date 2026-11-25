@@ -666,6 +666,47 @@ bool FMantleVehicleSteeringWheelPlaceTest::RunTest(const FString& Parameters)
 		TestFalse(TEXT("a rim outside 10 to 30 cm is not placed"), Source->Tuning.bSteeringWheel);
 	}
 
+	// A detailed hub (an airbag and a row of buttons, as the FiveM rebuilds' wheels have): most of the vertices are the hub's, a wide bar across the middle. The
+	// face is still round and the rim goes all the way round, so it is placed, at the rim's size (the FiveM BMW was refused as "long, not round").
+	{
+		FMantleVehicleModel Model = SuvWithWheel(32, -20.0);
+		const FMatrix Frame = FRotationMatrix::MakeFromXZ(FRotator(-20.0, 0.0, 0.0).Vector(), FVector::UpVector);
+		for (int32 Index = 0; Index < 160; ++Index)
+		{
+			const double Along = -12.0 + 24.0 * (Index / 2) / 79.0;
+			const FVector Point = FVector(70, -40, 110) + Along * Frame.GetUnitAxis(EAxis::Y) + (Index % 2 ? 2.0 : -2.0) * Frame.GetUnitAxis(EAxis::Z);
+			Model.LOD.Positions.Add(FVector3f(Point));
+			Model.LOD.InfluenceBones.Add(6);
+			Model.LOD.InfluenceWeights.Add(255);
+		}
+		UMantleVehicleSource* Source = SeatedSource();
+		TArray<FString> Notes;
+		FMantleVehicleBuilder::ApplySteeringWheelBone(Model, *Source, Notes);
+		TestTrue(*FString::Printf(TEXT("a wheel with a detailed hub is placed (%s)"), *FString::Join(Notes, TEXT(" "))), Source->Tuning.bSteeringWheel);
+		TestTrue(*FString::Printf(TEXT("at its rim's size, not the hub's (%.2f)"), Source->Tuning.SteeringWheelRadius), FMath::IsNearlyEqual(Source->Tuning.SteeringWheelRadius, 19.f, 2.f));
+	}
+
+	// Half a ring (an arc over the top, nothing below) is not a wheel: the rim does not go round.
+	{
+		FMantleVehicleModel Model = BonesOnly(Suv04Bones());
+		AddBox(Model, FVector(-220, -90, 20), FVector(220, 90, 130), 0);
+		const FMatrix Frame = FRotationMatrix::MakeFromXZ(FRotator(-20.0, 0.0, 0.0).Vector(), FVector::UpVector);
+		for (int32 Index = 0; Index < 48; ++Index)
+		{
+			const double Angle = PI * Index / 47.0;
+			const double Radial = Index % 3 == 0 ? 6.0 : 19.0;
+			const FVector Point = FVector(70, -40, 110) + Radial * (FMath::Cos(Angle) * Frame.GetUnitAxis(EAxis::Y) + FMath::Sin(Angle) * Frame.GetUnitAxis(EAxis::Z))
+				+ (Index % 2 ? 0.3 : -0.3) * Frame.GetUnitAxis(EAxis::X);
+			Model.LOD.Positions.Add(FVector3f(Point));
+			Model.LOD.InfluenceBones.Add(6);
+			Model.LOD.InfluenceWeights.Add(255);
+		}
+		UMantleVehicleSource* Source = SeatedSource();
+		TArray<FString> Notes;
+		FMantleVehicleBuilder::ApplySteeringWheelBone(Model, *Source, Notes);
+		TestFalse(TEXT("half a ring is not placed as a wheel"), Source->Tuning.bSteeringWheel);
+	}
+
 	// No driver seat yet: nothing is placed, and the note asks for the seat.
 	{
 		const FMantleVehicleModel Model = SuvWithWheel(32, -20.0);
