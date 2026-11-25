@@ -19,6 +19,7 @@
 #include "Engine/SkeletalMesh.h"
 #include "HAL/PlatformTime.h"
 #include "IContentBrowserSingleton.h"
+#include "Misc/App.h"
 #include "Misc/PackageName.h"
 #include "Misc/ScopeExit.h"
 #include "Modules/ModuleManager.h"
@@ -1080,11 +1081,19 @@ bool FMantleEmoteRetarget::RetargetThrough(UAnimSequence* Sequence, USkeletalMes
 	// IK Rig's batch retarget points the Content Browser at what it made (SyncBrowserToAssets): a copy that is gone a moment
 	// later, so the creator's browser would jump to the transient folder and keep a deleted asset selected. It goes back to
 	// what was selected, else to the folder it was showing, once the copy is gone.
+	// Unattended or in a commandlet the batch retarget leaves the browser alone (IKRetargetBatchOperation.cpp:818-822), and so does
+	// this: restoring a selection there spawned a headless browser whose selection reached the editor's global selection, which then
+	// held an element for a clip its caller freed (mantle #441's Unreal run crashed on the next garbage collection).
+	const bool bTouchBrowser = !IsRunningCommandlet() && !FApp::IsUnattended();
 	IContentBrowserSingleton& Browser = FModuleManager::LoadModuleChecked<FContentBrowserModule>(TEXT("ContentBrowser")).Get();
 	TArray<FAssetData> WasSelected;
-	Browser.GetSelectedAssets(WasSelected);
-	const FContentBrowserItemPath WasPath = Browser.GetCurrentPath();
-	const FString WasFolder = WasPath.HasInternalPath() ? WasPath.GetInternalPathString() : FString();
+	FString WasFolder;
+	if (bTouchBrowser)
+	{
+		Browser.GetSelectedAssets(WasSelected);
+		const FContentBrowserItemPath WasPath = Browser.GetCurrentPath();
+		WasFolder = WasPath.HasInternalPath() ? WasPath.GetInternalPathString() : FString();
+	}
 
 	TArray<FAssetData> Created;
 	{
@@ -1122,6 +1131,10 @@ bool FMantleEmoteRetarget::RetargetThrough(UAnimSequence* Sequence, USkeletalMes
 			MantleEmoteRetargetPrivate::DiscardTemporary(Asset, Folder);
 		}
 		MantleEmoteRetargetPrivate::RemoveFolderIfEmpty(Folder);
+		if (!bTouchBrowser)
+		{
+			return;
+		}
 		if (WasSelected.Num() > 0)
 		{
 			Browser.SyncBrowserToAssets(WasSelected, /*bAllowLockedBrowsers*/ false, /*bFocusContentBrowser*/ false);

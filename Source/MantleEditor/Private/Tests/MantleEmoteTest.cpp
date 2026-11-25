@@ -17,6 +17,8 @@
 #include "ReferenceSkeleton.h"
 #include "UObject/Package.h"
 #include "UObject/SoftObjectPath.h"
+#include "Editor.h"
+#include "Selection.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -24,6 +26,20 @@
 // skeleton a clip is on, and IK Rig's batch retarget the upload runs.
 namespace MantleEmoteTestPrivate
 {
+	/**
+	 * Drops a clip a test made in memory: out of the editor's selection first (a selection holds an editor element for what it has,
+	 * and that element outliving the clip crashed the next garbage collection), then no longer kept, and garbage.
+	 */
+	void Discard(UObject* Sequence)
+	{
+		if (GEditor && GEditor->GetSelectedObjects())
+		{
+			GEditor->GetSelectedObjects()->Deselect(Sequence);
+		}
+		Sequence->ClearFlags(RF_Public | RF_Standalone);
+		Sequence->MarkAsGarbage();
+	}
+
 	const FMantleAvatarContract* Contract(FAutomationTestBase& Test)
 	{
 		FString Error;
@@ -432,8 +448,7 @@ bool FMantleEmoteRetargetSmokeTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("the copy is made in the transient folder"), Retargeted.GetPackage()->GetName().StartsWith(FString(FMantleEmoteRetarget::TransientFolder) + TEXT("/")));
 			return FMantleAnimClipWriter::Sample(&Retargeted, *C, Clip, OutUseError);
 		}, Error);
-	Sequence->ClearFlags(RF_Public | RF_Standalone);
-	Sequence->MarkAsGarbage();
+	MantleEmoteTestPrivate::Discard(Sequence);
 	if (!TestTrue(FString::Printf(TEXT("IK Rig's batch retarget runs (%s)"), *Error), bRetargeted))
 	{
 		return false;
@@ -706,8 +721,7 @@ bool FMantleEmoteSampleTest::RunTest(const FString& Parameters)
 
 	FMantleAnimClipData Clip;
 	const bool bSampled = FMantleAnimClipWriter::Sample(Sequence, *C, Clip, Error);
-	Sequence->ClearFlags(RF_Public | RF_Standalone);
-	Sequence->MarkAsGarbage();
+	MantleEmoteTestPrivate::Discard(Sequence);
 	if (!TestTrue(FString::Printf(TEXT("the clip samples (%s)"), *Error), bSampled))
 	{
 		return false;
@@ -870,8 +884,7 @@ namespace MantleEmoteTestPrivate
 		FMantleAnimClipData Source;
 		FString SourceError;
 		FMantleAnimClipWriter::Sample(Sequence, *C, Source, SourceError);
-		Sequence->ClearFlags(RF_Public | RF_Standalone);
-		Sequence->MarkAsGarbage();
+		MantleEmoteTestPrivate::Discard(Sequence);
 		if (!Test.TestTrue(FString::Printf(TEXT("the fist retargets (%s)"), *Error), bRetargeted))
 		{
 			return false;
