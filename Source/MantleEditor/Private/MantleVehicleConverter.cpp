@@ -1,5 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleVehicleConverter.h"
+#include "MantleVehicleBuilder.h"
+#include "MantleVehicleChassisSkin.h"
 #include "MantleVehicleRimFinder.h"
 #include "MantleVehicleBodyLODs.h"
 #include "MantleVehicleBuiltInMaterials.h"
@@ -14,6 +16,7 @@
 #include "MantleVehicleShape.h"
 #include "MantleVehicleSource.h"
 
+#include "Algo/AnyOf.h"
 #include "Animation/PreviewAssetAttachComponent.h"
 #include "Animation/Skeleton.h"
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -1519,8 +1522,148 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 			Source.Linkage.Num()));
 	}
 
+	// Doors, hood and trunk (#546): their hinges, found from the bones' names, unless the creator has set any.
+	{
+		FMantleVehicleModel Model;
+		FString ModelError;
+		if (FMantleVehicleModel::Read(Mesh, Model, ModelError))
+		{
+			// The attached meshes riding a bone (the doors of a bare skeleton), in the body's space.
+			FMantleVehicleHingeEvidence Evidence;
+			for (const FMantleVehicleSourcePart& Part : Source.Parts)
+			{
+				const UStaticMesh* PartMesh = Part.Mesh.LoadSynchronous();
+				const int32 Bone = Skeleton.FindRawBoneIndex(Part.Bone);
+				if (PartMesh && Pose.IsValidIndex(Bone))
+				{
+					Evidence.Riding.Add(TPair<FName, FBox>(Part.Bone, PartMesh->GetBoundingBox().TransformBy(Part.Transform * Pose[Bone])));
+				}
+			}
+			AddHinges(Model, Evidence, WheelNames, Source, Result.Notes);
+		}
+		else
+		{
+			Result.Notes.Add(FString::Printf(TEXT("Doors, hood and trunk were not looked for, because the model's shape could not be read (%s)."), *ModelError));
+		}
+	}
+
 	Result.bSuccess = true;
 	return Result;
+}
+
+void FMantleVehicleConverter::AddHinges(const FMantleVehicleModel& Model, const FMantleVehicleHingeEvidence& Evidence, const TConstArrayView<FName> WheelBones,
+	UMantleVehicleSource& Source, TArray<FString>& OutNotes)
+{
+	FMantleVehicleSourceTuning& T = Source.Tuning;
+
+	// Each hinge on its own: one that is already set (the creator's, or an earlier conversion's) stays as it is; an empty one is filled when its part is found. So a
+	// conversion after the seats are set adds the front doors, which a conversion before them had to leave shut.
+	struct FHingeSlot
+	{
+		EMantleVehicleHingePart Part;
+		bool bSet;
+		FName Bone;
+	};
+	const FHingeSlot Slots[] = {
+		{ EMantleVehicleHingePart::DriverDoor, T.bHasDriverDoor, T.DriverDoor.Bone },
+		{ EMantleVehicleHingePart::PassengerDoor, T.bHasPassengerDoor, T.PassengerDoor.Bone },
+		{ EMantleVehicleHingePart::RearLeftDoor, T.bRearLeftDoor, T.RearLeftDoor.Bone },
+		{ EMantleVehicleHingePart::RearRightDoor, T.bRearRightDoor, T.RearRightDoor.Bone },
+		{ EMantleVehicleHingePart::Hood, T.bHood, T.HoodLid.Bone },
+		{ EMantleVehicleHingePart::Trunk, T.bTrunk, T.TrunkLid.Bone },
+	};
+	TArray<FString> Kept;
+	for (const FHingeSlot& Slot : Slots)
+	{
+		if (Slot.bSet)
+		{
+			Kept.Add(FMantleVehicleChassisSkin::HingeLabel(Slot.Part).ToString().ToLower());
+		}
+	}
+	if (Kept.Num() > 0)
+	{
+		OutNotes.Add(FString::Printf(TEXT("Doors, hood and trunk: your %d (%s) are kept. Untick one in the vehicle asset and convert again to have Mantle find it."), Kept.Num(),
+			*FString::Join(Kept, TEXT(", "))));
+		if (Kept.Num() == UE_ARRAY_COUNT(Slots))
+		{
+			return;
+		}
+	}
+
+	TArray<FString> Notes;
+	FMantleVehicleHingeMap Wanted = FMantleVehicleChassisSkin::SuggestHinges(Model, &Notes);
+
+	// The cook refuses the root, a wheel's bone and a bone a wheel hangs from (the wheel would turn with the door): left out, and said.
+	TArray<EMantleVehicleHingePart> Refused;
+	for (const TPair<EMantleVehicleHingePart, FName>& Candidate : Wanted.Bones)
+	{
+		const int32 Bone = Model.FindBone(Candidate.Value);
+		for (const FName WheelBone : WheelBones)
+		{
+			bool bCarries = false;
+			for (int32 Up = Model.FindBone(WheelBone), Guard = 0; Up != INDEX_NONE && Guard < 1024 && !bCarries; Up = Model.Bones[Up].ParentIndex, ++Guard)
+			{
+				bCarries = Up == Bone;
+			}
+			if (bCarries)
+			{
+				Refused.Add(Candidate.Key);
+				Notes.Add(FString::Printf(TEXT("%s is named like the %s, but a wheel is on it or hangs from it, so it cannot open."), *Candidate.Value.ToString(),
+					*FMantleVehicleChassisSkin::HingeLabel(Candidate.Key).ToString().ToLower()));
+				break;
+			}
+		}
+	}
+	// What is set stays: its part is not found again, and no other part takes its bone (the cook refuses two hinges on one bone).
+	for (const TPair<EMantleVehicleHingePart, FName>& Candidate : Wanted.Bones)
+	{
+		const bool bTaken = Slots[static_cast<int32>(Candidate.Key)].bSet
+			|| Algo::AnyOf(Slots, [&Candidate](const FHingeSlot& Slot) { return Slot.bSet && Slot.Bone == Candidate.Value; });
+		if (bTaken)
+		{
+			Refused.AddUnique(Candidate.Key);
+		}
+	}
+	// A vehicle that hides its riders (no interior) has no enter animation and no swinging doors: it stays as it is, with the rider hidden. Its hood and trunk still open.
+	if (T.bHideDriver || T.bHidePassenger)
+	{
+		bool bDoorsLeft = false;
+		for (const TPair<EMantleVehicleHingePart, FName>& Candidate : Wanted.Bones)
+		{
+			const bool bDoor = Candidate.Key != EMantleVehicleHingePart::Hood && Candidate.Key != EMantleVehicleHingePart::Trunk;
+			if (bDoor && !Refused.Contains(Candidate.Key))
+			{
+				Refused.AddUnique(Candidate.Key);
+				bDoorsLeft = true;
+			}
+		}
+		if (bDoorsLeft)
+		{
+			Notes.Add(TEXT("Doors stay shut: this vehicle hides its riders (no interior). The hood and trunk still open."));
+		}
+	}
+	for (const EMantleVehicleHingePart Part : Refused)
+	{
+		Wanted.Bones.Remove(Part);
+	}
+
+	if (Wanted.IsEmpty())
+	{
+		OutNotes.Append(Notes);
+		// Parts were found but are set, left shut or cannot open (each said above): not "no bone is named like a door".
+		if (Kept.Num() > 0 || Refused.Num() > 0)
+		{
+			return;
+		}
+		OutNotes.Add(TEXT("No bone is named like a door, the hood or the trunk, so nothing opens. Name a door's bone like Door_FL (front left; _FR, _RL and _RR are the others), the hood's Hood and the trunk's Trunk, or set Driver Door, Hood and the others under Tuning in the vehicle asset."));
+		return;
+	}
+
+	FMantleVehicleHingeEvidence Held = Evidence;
+	Held.bCheckPlaces = true;
+	const TArray<FMantleVehicleSkinnedHinge> Found = FMantleVehicleChassisSkin::FindHingesOnModel(Model, FMantleVehicleModelPlacement(), Wanted, &Notes, &Held);
+	FMantleVehicleBuilder::ApplyHinges(Source, Found, Notes);
+	OutNotes.Append(Notes);
 }
 
 UMantleVehicleSource* FMantleVehicleConverter::ConvertAsset(USkeletalMesh* Mesh, FMantleVehicleConversion& OutResult, const FMantleVehicleSurroundings* Around)
