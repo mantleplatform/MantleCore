@@ -1,11 +1,12 @@
 // Copyright Joshua Eger. All Rights Reserved.
 //
-// Maintainer command: Mantle.Dev.VehicleOpenShot <VehicleSource> <Directory> [size] [degrees]
+// Maintainer command: Mantle.Dev.VehicleOpenShot <VehicleSource> <Directory> [size] [degrees] [yaw]
 // Draws a built vehicle as its library card does (FMantleVehicleThumbnail: the engine's thumbnail scene through
 // FMantleCosmeticThumbnail), once shut and once with every hinge it has turned open: the doors, the hood and the trunk.
 // Each hinge turns its bone about its pivot and axis by degrees (default 70) times its scale, as the game turns it.
 // The vehicle's parts (a body split by material leaves its painted panels as parts) ride their bones, so a door's panel swings with it.
-// Writes <Directory>/<Name>_shut_front.png, _open_front.png, _shut_back.png and _open_back.png. Nothing is saved or uploaded.
+// Writes <Directory>/<Name>_shut_front.png, _open_front.png, _shut_back.png and _open_back.png; with yaw, also _shut_yaw<yaw>.png and _open_yaw<yaw>.png from
+// the front view turned by yaw degrees about the car (the same framing), to see a part from its side. Nothing is saved or uploaded.
 // Logs MANTLE_VEHICLE_OPEN_SHOT lines.
 #include "MantleCosmeticThumbnail.h"
 #include "MantlePng.h"
@@ -78,7 +79,7 @@ namespace MantleDevVehicleOpenShotPrivate
 	{
 		if (Args.Num() < 2)
 		{
-			UE_LOG(LogMantleVehicleOpenShot, Error, TEXT("MANTLE_VEHICLE_OPEN_SHOT usage: Mantle.Dev.VehicleOpenShot <VehicleSource> <Directory> [size] [degrees]"));
+			UE_LOG(LogMantleVehicleOpenShot, Error, TEXT("MANTLE_VEHICLE_OPEN_SHOT usage: Mantle.Dev.VehicleOpenShot <VehicleSource> <Directory> [size] [degrees] [yaw]"));
 			return;
 		}
 		const int32 Size = Args.Num() > 2 ? FMath::Clamp(FCString::Atoi(*Args[2]), 128, 2048) : 1024;
@@ -100,15 +101,21 @@ namespace MantleDevVehicleOpenShotPrivate
 		const FBox Frame = Bounds.ExpandBy(FVector(Bounds.GetExtent().X * 0.25, Bounds.GetExtent().Y * 0.6, Bounds.GetExtent().Z * 0.4));
 		const FRotator Front = FMantleVehicleThumbnail::View();
 		const FRotator Back(Front.Pitch, Front.Yaw + 180.0, 0.0);
+		TArray<TPair<FString, FRotator>> Views = { { TEXT("front"), Front }, { TEXT("back"), Back } };
+		if (Args.Num() > 4)
+		{
+			const int32 Yaw = FCString::Atoi(*Args[4]);
+			Views.Emplace(FString::Printf(TEXT("yaw%d"), Yaw), FRotator(Front.Pitch, Front.Yaw + Yaw, 0.0));
+		}
 		for (const bool bOpen : { false, true })
 		{
-			for (const TPair<const TCHAR*, FRotator>& View : { TPair<const TCHAR*, FRotator>(TEXT("front"), Front), TPair<const TCHAR*, FRotator>(TEXT("back"), Back) })
+			for (const TPair<FString, FRotator>& View : Views)
 			{
 				FMantleThumbnailSubject Shot;
 				Shot.SkeletalMeshes.Add(Mesh);
 				Shot.Frame = Frame;
 				Shot.View = View.Value;
-				Shot.Describe = FString::Printf(TEXT("%s, %s, %s"), *Mesh->GetName(), bOpen ? TEXT("open") : TEXT("shut"), View.Key);
+				Shot.Describe = FString::Printf(TEXT("%s, %s, %s"), *Mesh->GetName(), bOpen ? TEXT("open") : TEXT("shut"), *View.Key);
 				Shot.Pose = [&Pose, Source, bOpen](FPreviewScene& Scene, TConstArrayView<USkeletalMeshComponent*> Components, FBox&)
 				{
 					USkeletalMeshComponent* Body = Components.Num() > 0 ? Components[0] : nullptr;
@@ -146,7 +153,7 @@ namespace MantleDevVehicleOpenShotPrivate
 				};
 				TArray<FColor> Pixels;
 				FString Error;
-				const FString File = FPaths::Combine(Args[1], FString::Printf(TEXT("%s_%s_%s.png"), *Source->GetName(), bOpen ? TEXT("open") : TEXT("shut"), View.Key));
+				const FString File = FPaths::Combine(Args[1], FString::Printf(TEXT("%s_%s_%s.png"), *Source->GetName(), bOpen ? TEXT("open") : TEXT("shut"), *View.Key));
 				const bool bWritten = FMantleCosmeticThumbnail::Capture(Shot, Size, Pixels, Error)
 					&& FFileHelper::SaveArrayToFile(FMantlePng::EncodeRGBA8(Size, Size, Pixels), *File);
 				UE_LOG(LogMantleVehicleOpenShot, Display, TEXT("MANTLE_VEHICLE_OPEN_SHOT %s %s"), bWritten ? *File : TEXT("FAILED"), bWritten ? TEXT("") : *Error);
@@ -157,6 +164,6 @@ namespace MantleDevVehicleOpenShotPrivate
 
 	FAutoConsoleCommand GMantleDevVehicleOpenShotCommand(
 		TEXT("Mantle.Dev.VehicleOpenShot"),
-		TEXT("Mantle.Dev.VehicleOpenShot <VehicleSource> <Directory> [size] [degrees] -- draws a built vehicle as its library card does, shut and with its doors, hood and trunk open"),
+		TEXT("Mantle.Dev.VehicleOpenShot <VehicleSource> <Directory> [size] [degrees] [yaw] -- draws a built vehicle as its library card does, shut and with its doors, hood and trunk open (yaw: one more view, turned from the front)"),
 		FConsoleCommandWithArgsDelegate::CreateStatic(&Run));
 }
