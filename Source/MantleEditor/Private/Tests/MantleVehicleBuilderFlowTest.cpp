@@ -372,11 +372,23 @@ bool FMantleVehicleBuilderFlowOnePaintRuleTest::RunTest(const FString& Parameter
 		TestTrue(TEXT("nothing ticked: PRIMARY is the body paint"), Paint.Sections == TArray<FString>({ TEXT("carbody_PRIMARY_") }));
 		const FMantleVehicleSourcePaintLayer* Second = Paint.Layers.FindByPredicate([](const FMantleVehicleSourcePaintLayer& Has) { return Has.Layer == EMantleVehicleSourcePaintLayer::Secondary; });
 		TestTrue(TEXT("and SECONDARY the second paint"), Second && Second->Sections == TArray<FString>({ TEXT("stripe_SECONDARY_") }));
-		for (const TCHAR* Own : { TEXT("SUV_Interior"), TEXT("vehicle_dashboard"), TEXT("Rim_FL") })
+		for (const TCHAR* Own : { TEXT("SUV_Interior"), TEXT("vehicle_dashboard") })
 		{
 			TestFalse(*FString::Printf(TEXT("%s keeps its own material: no layer from its name"), Own),
 				Paint.Layers.ContainsByPredicate([Own](const FMantleVehicleSourcePaintLayer& Has) { return Has.Sections.Contains(Own); }));
 		}
+		// A section named like a rim gets no layer from its name. It is on the Wheels layer only when the rim step found it a wheel's rim by its shape (#286), which
+		// the rim finder decides, not the paint guess.
+		const bool bShapeRim = Built.Source->Wheels.ContainsByPredicate([](const FMantleVehicleSourceWheel& Wheel) { return Wheel.RimSections.Contains(TEXT("Rim_FL")); });
+		FString RimLayers;
+		for (const FMantleVehicleSourcePaintLayer& Layer : Paint.Layers)
+		{
+			RimLayers += Layer.Sections.Contains(TEXT("Rim_FL")) ? FString::Printf(TEXT(" layer %d"), static_cast<int32>(Layer.Layer)) : FString();
+		}
+		const bool bOnWheels = Paint.Layers.ContainsByPredicate([](const FMantleVehicleSourcePaintLayer& Has) { return Has.Layer == EMantleVehicleSourcePaintLayer::Wheels && Has.Sections.Contains(TEXT("Rim_FL")); });
+		const bool bOnOther = Paint.Layers.ContainsByPredicate([](const FMantleVehicleSourcePaintLayer& Has) { return Has.Layer != EMantleVehicleSourcePaintLayer::Wheels && Has.Sections.Contains(TEXT("Rim_FL")); });
+		TestTrue(*FString::Printf(TEXT("Rim_FL is on a layer only as a rim found by its shape (on:%s; a wheel's rim by shape: %s)"), RimLayers.IsEmpty() ? TEXT(" none") : *RimLayers, bShapeRim ? TEXT("yes") : TEXT("no")),
+			!bOnOther && bOnWheels == bShapeRim);
 	}
 
 	// The window starts its ticks from the same rule.
