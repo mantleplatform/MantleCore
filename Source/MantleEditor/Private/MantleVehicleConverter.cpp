@@ -2785,7 +2785,25 @@ bool FMantleVehicleConverter::IsGtaTintLayer(const FString& Name, const UMateria
 	const bool bExcluded = HasWord(Words, { TEXT("glass"), TEXT("window"), TEXT("windows"), TEXT("windshield"), TEXT("windscreen"), TEXT("tire"), TEXT("tires"), TEXT("tyre"), TEXT("tyres"),
 		TEXT("rubber"), TEXT("chrome"), TEXT("carbon"), TEXT("lens"), TEXT("lights"), TEXT("lamp"), TEXT("lamps"), TEXT("headlight"), TEXT("headlights"), TEXT("taillight"),
 		TEXT("taillights"), TEXT("brake"), TEXT("brakes"), TEXT("steering"), TEXT("signal"), TEXT("signals") });
-	return !bExcluded && HasWord(Words, { TEXT("primary"), TEXT("secondary"), TEXT("wheel") });
+	if (bExcluded)
+	{
+		return false;
+	}
+	// The marker is GTA's own spelling: PRIMARY, SECONDARY or WHEEL in capitals, a whole part of the name between underscores (vehicle_generic_smallspecmap__WHEEL_).
+	// A word inside another name is not one: a Fab pack's WheelSet_07 or MI_WheelSet_05_Inst is a rim with its own look, and a layer would draw it in white paint.
+	TArray<FString> Parts;
+	Name.ParseIntoArray(Parts, TEXT("_"), /*bCullEmpty*/ true);
+	if (Material)
+	{
+		TArray<FString> MaterialParts;
+		Material->GetName().ParseIntoArray(MaterialParts, TEXT("_"), /*bCullEmpty*/ true);
+		Parts.Append(MaterialParts);
+	}
+	return Parts.ContainsByPredicate([](const FString& Part)
+	{
+		return Part.Equals(TEXT("PRIMARY"), ESearchCase::CaseSensitive) || Part.Equals(TEXT("SECONDARY"), ESearchCase::CaseSensitive)
+			|| Part.Equals(TEXT("WHEEL"), ESearchCase::CaseSensitive);
+	});
 }
 
 bool FMantleVehicleConverter::BodySectionIsTintMask(const UMantleVehicleSource& Source, const FString& Section, const UMaterialInterface* Material)
