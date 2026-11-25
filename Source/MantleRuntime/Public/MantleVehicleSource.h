@@ -636,6 +636,20 @@ struct MANTLERUNTIME_API FMantleVehicleSourceLights
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lights")
 	TArray<FMantleVehicleSourceLightBeam> Beams;
 
+	/**
+	 * Light sections (listed in a kind above) that keep their own material instead of Mantle's lamp lens: a printed part that glows with a light, as GTA's
+	 * lights-emissive livery does. The section publishes with its own material, and the game turns its glow (its own picture) up and down with that light.
+	 * A model marks one by naming its material <name>_glow_<kind> (head, rear, reverse, left or right).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lights")
+	TArray<FString> OwnMaterial;
+
+	/** Whether a section keeps its own material (OwnMaterial), ignoring case as the document's section names do. */
+	bool KeepsOwnMaterial(const FString& Section) const
+	{
+		return OwnMaterial.ContainsByPredicate([&Section](const FString& Own) { return Own.Equals(Section, ESearchCase::IgnoreCase); });
+	}
+
 	bool IsEmpty() const { return Head.IsEmpty() && Rear.IsEmpty() && Reverse.IsEmpty() && Left.IsEmpty() && Right.IsEmpty() && Beams.IsEmpty(); }
 };
 

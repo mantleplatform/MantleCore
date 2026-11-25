@@ -11,6 +11,7 @@
 #include "MantleVehicleCollision.h"
 #include "MantleVehicleLightFinder.h"
 #include "MantleCosmeticExport.h"
+#include "MantleGlowMaterial.h"
 #include "MantlePlaceAssets.h"
 #include "MantleRuntime.h"
 #include "MantleVehiclePreset.h"
@@ -3348,6 +3349,14 @@ bool FMantleVehicleConverter::BodySectionIsTintMask(const UMantleVehicleSource& 
 	{
 		return false;
 	}
+	// A light glows with its own picture (a printed livery that follows a light keeps every color of it): never a grey mask.
+	for (const EMantleLightKind Kind : { EMantleLightKind::Head, EMantleLightKind::Rear, EMantleLightKind::Reverse, EMantleLightKind::Left, EMantleLightKind::Right })
+	{
+		if (FMantleVehicleLights::Sections(Source.Lights, Kind).ContainsByPredicate([&Section](const FString& Light) { return Light.Equals(Section, ESearchCase::IgnoreCase); }))
+		{
+			return false;
+		}
+	}
 	const bool bPainted = Source.Paint.Sections.Contains(Section)
 		|| Source.Paint.Layers.ContainsByPredicate([&Section](const FMantleVehicleSourcePaintLayer& Layer) { return Layer.Sections.Contains(Section); });
 	return bPainted && IsGtaTintLayer(Section, Material);
@@ -5030,6 +5039,20 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 					*FMantleVehicleLights::Label(Kind).ToString().ToLower(), *FString::Join(SectionNames, TEXT(", "))),
 					TEXT("Pick the light's section again in the vehicle builder's Seats and paint step, or name one of the body's sections under Lights."));
 			}
+		}
+	}
+	// A light that keeps its own material glows only as much as that material does.
+	for (const FString& Section : Source->Lights.OwnMaterial)
+	{
+		const int32 Index = SectionNames.IndexOfByPredicate([&Section](const FString& Name) { return Name.Equals(Section, ESearchCase::IgnoreCase); });
+		const UMaterialInterface* Material = Materials.IsValidIndex(Index) ? FMantleVehicleLights::OriginalOf(Materials[Index]) : nullptr;
+		FMantleMaterialGlow Glow;
+		if (Material && (!FMantleMaterialGlow::Read(Material, Glow) || (Glow.bColorOff && Glow.Textures.IsEmpty())))
+		{
+			OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
+				FString::Printf(TEXT("%s: light section '%s' keeps its own material (%s), but that material does not glow, so it will not light up."), *Subject, *Section,
+					*Material->GetName()),
+				TEXT("Give the material an emissive (its own picture, with an emissive color above black), or take the section out of Lights > Own Material.") });
 		}
 	}
 	if (Body.Joints.Num() > FMantleVehicleLimits::MaxBones)

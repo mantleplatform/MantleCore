@@ -167,6 +167,11 @@ FString FMantleVehicleBuiltInMaterials::ForSection(const UMantleVehicleSource& S
 		bLight = FMantleVehicleLights::Sections(Source.Lights, static_cast<EMantleLightKind>(Kind)).ContainsByPredicate(
 			[&SectionName](const FString& Light) { return Light.Equals(SectionName, ESearchCase::IgnoreCase); });
 	}
+	if (bLight && Source.Lights.KeepsOwnMaterial(SectionName))
+	{
+		// A printed part that glows with its light (Lights > Own Material) publishes its own material: the game glows its own picture.
+		return FString();
+	}
 	return Detect(Material, SectionName, bLight);
 }
 

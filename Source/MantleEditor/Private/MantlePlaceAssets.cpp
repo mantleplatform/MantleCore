@@ -4771,8 +4771,9 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 			}
 		}
 
-		// A vehicle light (FMantleVehicleLights::MakeLightMaterial): glows in its kind's color whatever the model set.
-		if (const TOptional<EMantleLightKind> LightKind = FMantleVehicleLights::KindOf(Material))
+		// A vehicle light (FMantleVehicleLights::MakeLightMaterial): glows in its kind's color whatever the model set. One that keeps its own look (a printed
+		// livery glowing with the light) keeps the model's own glow, its picture.
+		if (const TOptional<EMantleLightKind> LightKind = FMantleVehicleLights::KindOf(Material); LightKind && !FMantleVehicleLights::KeepsOwnLook(Material))
 		{
 			Fidelity.bVehicleLight = true;
 			Fidelity.VehicleLightColor = FMantleVehicleLights::Color(*LightKind);

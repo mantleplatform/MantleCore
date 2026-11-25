@@ -1,11 +1,13 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleSkinnedMesh.h"
 #include "MantleVehicleAsset.h"
+#include "MantleVehicleBuiltInMaterials.h"
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleLightFinder.h"
 #include "MantleVehicleSource.h"
 
 #include "MantleGlowMaterial.h"
+#include "MantlePlaceAssets.h"
 
 #include "Dom/JsonObject.h"
 #include "Engine/SkinnedAssetCommon.h"
@@ -677,6 +679,85 @@ bool FMantleVehicleLightsGlowMaskTest::RunTest(const FString& Parameters)
 	const FMantleVehicleLightGuess PlainGuess = FMantleVehicleLights::Find(Body, Materials, false);
 	TestEqual(TEXT("a plain full-glow lens keeps its headlights"), PlainGuess.Triangles[Head], TArray<int32>({ 0, 1, 2, 3 }));
 	TestTrue(TEXT("and its back lights"), PlainGuess.FoundAny() && PlainGuess.Triangles[static_cast<int32>(EMantleLightKind::Reverse)].Num() > 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleLightsOwnMaterialTest,
+	"Mantle.Vehicle.Lights.OwnMaterialMarker",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleLightsOwnMaterialTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleLightsTestPrivate;
+	// The marker the FiveM car rebuild writes for GTA's lights-emissive livery: <name>_glow_<kind>, the document's kind keys.
+	const auto Marks = [this](const TCHAR* Name, const TOptional<EMantleLightKind> Expected)
+	{
+		TestTrue(*FString::Printf(TEXT("'%s' marks as expected"), Name), FMantleVehicleLights::FromGlowMarker(Name) == Expected);
+	};
+	Marks(TEXT("Goku_Body_glow_head"), EMantleLightKind::Head);
+	Marks(TEXT("goku_wheels_GLOW_HEAD"), EMantleLightKind::Head);
+	Marks(TEXT("trim_glow_head.001"), EMantleLightKind::Head);
+	Marks(TEXT("Livery_glow_rear_2"), EMantleLightKind::Rear);
+	Marks(TEXT("bumper_glow_reverse"), EMantleLightKind::Reverse);
+	Marks(TEXT("mirror_glow_left"), EMantleLightKind::Left);
+	Marks(TEXT("mirror-glow-right"), EMantleLightKind::Right);
+	Marks(TEXT("BodyGlowHead"), EMantleLightKind::Head);
+	Marks(TEXT("Body_glow_headlights"), TOptional<EMantleLightKind>());
+	Marks(TEXT("Body_glow"), TOptional<EMantleLightKind>());
+	Marks(TEXT("glow_head_body"), TOptional<EMantleLightKind>());
+	Marks(TEXT("head"), TOptional<EMantleLightKind>());
+	Marks(TEXT("M_Body"), TOptional<EMantleLightKind>());
+
+	// A body all one marked material, over both ends and the roof: one whole headlight slot, not cut by where its spots sit, and it keeps its own material.
+	FMantleSkinnedMesh Body;
+	TArray<FSkeletalMaterial> Materials;
+	MakeBody(Body, Materials, TEXT("Goku_Body_glow_head"));
+	const FMantleVehicleLightGuess Found = FMantleVehicleLights::Find(Body, Materials, false);
+	const int32 Head = static_cast<int32>(EMantleLightKind::Head);
+	TestEqual(TEXT("the marked slot is a whole headlight"), Found.WholeSlots[Head], TArray<int32>({ 0 }));
+	TestEqual(TEXT("and keeps its own material"), Found.OwnMaterialSlots, TArray<int32>({ 0 }));
+	bool bCut = false;
+	for (int32 Kind = 0; Kind < FMantleVehicleLights::NumKinds; ++Kind)
+	{
+		bCut = bCut || Found.Triangles[Kind].Num() > 0 || (Kind != Head && Found.WholeSlots[Kind].Num() > 0);
+	}
+	TestFalse(TEXT("nothing is cut out of it or given another kind"), bCut);
+	// A printed body is no lamp: the beams fall back to the front corners (40% up the body), not the body's middle.
+	TestEqual(TEXT("two beams"), Found.Beams.Num(), 2);
+	for (const FMantleVehicleSourceLightBeam& Beam : Found.Beams)
+	{
+		TestTrue(TEXT("each at a front corner"), FMath::IsNearlyEqual(Beam.Position.X, 200.0) && FMath::IsNearlyEqual(Beam.Position.Z, 40.0, 0.01));
+	}
+
+	FMantleVehicleSourceLights Lights;
+	FMantleVehicleLights::Cut(Body, Materials, Found, Lights);
+	TestEqual(TEXT("the cut leaves its one section"), Body.LODs[0].Sections.Num(), 1);
+	TestEqual(TEXT("it is a headlight section"), Lights.Head, TArray<FString>{ TEXT("Goku_Body_glow_head") });
+	TestEqual(TEXT("that keeps its own material"), Lights.OwnMaterial, TArray<FString>{ TEXT("Goku_Body_glow_head") });
+
+	// Publishing: a lamp is Mantle's lens, a light that keeps its own material publishes its own (no built-in), and so does a section that is no light.
+	UMantleVehicleSource* Source = MakeSource();
+	Source->Lights.Head = { TEXT("Goku_Body_glow_head"), TEXT("M_Headlight") };
+	Source->Lights.OwnMaterial = { TEXT("goku_body_GLOW_head") };
+	TestTrue(TEXT("Own Material ignores case"), Source->Lights.KeepsOwnMaterial(TEXT("Goku_Body_glow_head")));
+	TestEqual(TEXT("the lamp draws with the lamp lens"), FMantleVehicleBuiltInMaterials::ForSection(*Source, TEXT("M_Headlight"), nullptr),
+		FString(FMantleVehicleBuiltInMaterials::LightLens()));
+	TestEqual(TEXT("the printed light keeps its own material"), FMantleVehicleBuiltInMaterials::ForSection(*Source, TEXT("Goku_Body_glow_head"), nullptr), FString());
+
+	// Its glowing copy publishes the model's own glow (its picture, its colors), not the kind's one color as a lamp's copy does.
+	UMaterial* Glowing = MakeLightsMaterial(false);
+	FString Error;
+	UMaterialInterface* Own = FMantleVehicleLights::MakeLightMaterial(Glowing, EMantleLightKind::Rear, TEXT("/Temp/MantleOwnLook"), TEXT("MI_OwnLook_rear_own"), Error, /*bOwnLook*/ true);
+	UMaterialInterface* Lamp = FMantleVehicleLights::MakeLightMaterial(Glowing, EMantleLightKind::Rear, TEXT("/Temp/MantleOwnLook"), TEXT("MI_OwnLook_rear"), Error);
+	if (TestNotNull(*FString::Printf(TEXT("both copies are made (%s)"), *Error), Own) && TestNotNull(TEXT("the lamp's too"), Lamp))
+	{
+		TestTrue(TEXT("the own-look copy is still a rear light"), FMantleVehicleLights::KindOf(Own) == TOptional<EMantleLightKind>(EMantleLightKind::Rear));
+		TestTrue(TEXT("that keeps its own look"), FMantleVehicleLights::KeepsOwnLook(Own));
+		TestFalse(TEXT("the lamp's copy does not"), FMantleVehicleLights::KeepsOwnLook(Lamp));
+		TestFalse(TEXT("so the own-look copy does not publish in the rear lights' red"), FMantlePlaceAssets::AnalyzeMaterial(Own).Fidelity2.bVehicleLight);
+		TestTrue(TEXT("and the lamp's does"), FMantlePlaceAssets::AnalyzeMaterial(Lamp).Fidelity2.bVehicleLight);
+	}
 	return true;
 }
 
