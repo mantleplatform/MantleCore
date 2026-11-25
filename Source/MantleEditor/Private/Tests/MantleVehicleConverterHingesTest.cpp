@@ -734,4 +734,61 @@ bool FMantleVehicleSteeringWheelPlaceTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleSideHingedTailgateTest,
+	"Mantle.Vehicle.Hinges.SideHingedTailgateSwingsOut",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleSideHingedTailgateTest::RunTest(const FString& Parameters)
+{
+	using FSkin = FMantleVehicleChassisSkin;
+	// The FiveM Jeep's gate (rerun11, from the converter, cm in the body's space: nose +X, driver -Y): the boot bone sits at the passenger-side edge, halfway up, so the
+	// gate swings out on an upright axis like a door. It lifted about +Y and looked torn off (Jeep v6, car-prep\v6-pictures).
+	const FBox Body(FVector(-260.0, -100.0, 0.0), FVector(230.0, 100.0, 200.0));
+	const FBox Gate(FVector(-247.2, -58.3, 73.0), FVector(-184.2, 67.4, 179.7));
+	const FVector RightBone(-199.6, 58.3, 115.1);
+	// Where a hinge takes a point when the part opens by Degrees, as the game turns it (the same quaternion that swings a left door, +Z, out to -Y).
+	const auto Opened = [](const FMantleVehicleSkinnedHinge& Hinge, const FVector& Point, const double Degrees)
+	{
+		return Hinge.Pivot + FQuat(Hinge.Axis.GetSafeNormal(), FMath::DegreesToRadians(Degrees)).RotateVector(Point - Hinge.Pivot);
+	};
+	const FMantleVehicleSkinnedHinge Right = FSkin::HingeFor(EMantleVehicleHingePart::Trunk, TEXT("boot"), Gate, Body, &RightBone, false);
+	TestTrue(*FString::Printf(TEXT("hinged at the right edge, the gate turns about -Z (%s)"), *Right.Axis.ToString()), Right.Axis.Equals(FVector(0, 0, -1)));
+	TestTrue(*FString::Printf(TEXT("through the bone (%s)"), *Right.Pivot.ToString()), Right.Pivot.Equals(RightBone, 0.01));
+	TestTrue(*FString::Printf(TEXT("its stand stays behind the car (%s)"), *Right.Stand.ToString()), Right.Stand.X < Body.Min.X && FMath::IsNearlyZero(Right.Stand.Z));
+	// The gate's far edge (the side away from the hinge) swings back, out of the car, not into it.
+	const FVector FarEdge(Gate.Min.X, Gate.Min.Y, RightBone.Z);
+	const FVector RightOpen = Opened(Right, FarEdge, 80.0);
+	TestTrue(*FString::Printf(TEXT("its far edge swings back behind the car (%s)"), *RightOpen.ToString()), RightOpen.X < Gate.Min.X - 50.0);
+	TestTrue(TEXT("and comes round to the hinge's side"), RightOpen.Y > FarEdge.Y + 50.0);
+
+	// Mirrored: hinged at the left edge it turns about +Z and swings back the same way.
+	const FVector LeftBone(-199.6, -58.3, 115.1);
+	const FBox Mirrored(FVector(-247.2, -67.4, 73.0), FVector(-184.2, 58.3, 179.7));
+	const FMantleVehicleSkinnedHinge Left = FSkin::HingeFor(EMantleVehicleHingePart::Trunk, TEXT("boot"), Mirrored, Body, &LeftBone, false);
+	TestTrue(*FString::Printf(TEXT("hinged at the left edge, it turns about +Z (%s)"), *Left.Axis.ToString()), Left.Axis.Equals(FVector(0, 0, 1)));
+	const FVector LeftOpen = Opened(Left, FVector(Mirrored.Min.X, Mirrored.Max.Y, LeftBone.Z), 80.0);
+	TestTrue(*FString::Printf(TEXT("and its far edge swings back too (%s)"), *LeftOpen.ToString()), LeftOpen.X < Mirrored.Min.X - 50.0);
+
+	// The door rule this follows: a left door's +Z takes its back edge out to the left.
+	const FBox Door(FVector(0.0, -95.0, 40.0), FVector(110.0, -80.0, 120.0));
+	const FMantleVehicleSkinnedHinge DriverDoor = FSkin::HingeFor(EMantleVehicleHingePart::DriverDoor, TEXT("door_dside_f"), Door, Body, nullptr, false);
+	TestTrue(TEXT("(a left door swings out to -Y the same way)"), Opened(DriverDoor, FVector(Door.Min.X, Door.Min.Y, 80.0), 60.0).Y < Door.Min.Y - 50.0);
+
+	// Everything else keeps the lift about +Y at the top front edge: a bone in the middle, a bone at the top (even at a side), and no bone at all.
+	const FVector Lift(Gate.Max.X, Gate.GetCenter().Y, Gate.Max.Z);
+	for (const FVector& Bone : { FVector(-199.6, 4.5, 175.0), FVector(-199.6, 58.3, 175.0), FVector(-199.6, 4.5, 115.1) })
+	{
+		const FMantleVehicleSkinnedHinge Kept = FSkin::HingeFor(EMantleVehicleHingePart::Trunk, TEXT("boot"), Gate, Body, &Bone, false);
+		TestTrue(*FString::Printf(TEXT("a bone at %s keeps the lift about +Y (%s, %s)"), *Bone.ToString(), *Kept.Axis.ToString(), *Kept.Pivot.ToString()),
+			Kept.Axis.Equals(FVector(0, 1, 0)) && Kept.Pivot.Equals(Lift, 0.01));
+	}
+	const FMantleVehicleSkinnedHinge NoBone = FSkin::HingeFor(EMantleVehicleHingePart::Trunk, TEXT("boot"), Gate, Body, nullptr, false);
+	TestTrue(TEXT("no bone keeps the lift"), NoBone.Axis.Equals(FVector(0, 1, 0)) && NoBone.Pivot.Equals(Lift, 0.01));
+	// Flipped still turns the axis the other way.
+	TestTrue(TEXT("flipped turns the upright axis round"), FSkin::HingeFor(EMantleVehicleHingePart::Trunk, TEXT("boot"), Gate, Body, &RightBone, true).Axis.Equals(FVector(0, 0, 1)));
+	return true;
+}
+
 #endif

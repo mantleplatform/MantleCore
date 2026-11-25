@@ -1904,6 +1904,12 @@ FMantleVehicleSteeringFit FMantleVehicleChassisSkin::MeasureSteeringWheel(const 
 	return Out;
 }
 
+bool FMantleVehicleChassisSkin::BoneAtEdge(const double Bone, const double Edge, const double Span)
+{
+	// A hinge bone sits at a part's edge when it is within a quarter of the part's size from it (a door's front, a side-hinged tailgate's side).
+	return FMath::Abs(Edge - Bone) <= 0.25 * Span;
+}
+
 FMantleVehicleSkinnedHinge FMantleVehicleChassisSkin::HingeFor(const EMantleVehicleHingePart Part, const FName Bone, const FBox& PartBox, const FBox& BodyBox, const FVector* BonePosition,
 	const bool bFlipped)
 {
@@ -1926,7 +1932,7 @@ FMantleVehicleSkinnedHinge FMantleVehicleChassisSkin::HingeFor(const EMantleVehi
 		// A door turns about its front edge on an upright axis; the bone is the hinge when it sits at the front.
 		const double Length = Box.GetSize().X;
 		FVector Pivot(Box.Max.X, Side < 0 ? Box.Min.Y : Box.Max.Y, Center.Z);
-		if (BonePosition && FMath::Abs(Box.Max.X - BonePosition->X) <= 0.25 * Length)
+		if (BonePosition && BoneAtEdge(BonePosition->X, Box.Max.X, Length))
 		{
 			Pivot = *BonePosition;
 		}
@@ -1946,9 +1952,23 @@ FMantleVehicleSkinnedHinge FMantleVehicleChassisSkin::HingeFor(const EMantleVehi
 	}
 	else
 	{
-		// The trunk turns about its front edge, at the top; someone behind the car opens it.
-		Out.Pivot = FVector(Box.Max.X, Center.Y, Box.Max.Z);
-		Out.Axis = FVector(0.0, 1.0, 0.0);
+		// The trunk turns about its front edge, at the top; someone behind the car opens it. A tailgate whose bone sits at one side edge, not at its top (a Jeep's
+		// swing-out gate with the spare wheel), turns on an upright axis through the bone instead, swinging out away from the car's middle as a door does: hinged on
+		// the -Y side it turns about +Z, on the +Y side about -Z.
+		const FVector Size = Box.GetSize();
+		const bool bAtMinY = BonePosition && BoneAtEdge(BonePosition->Y, Box.Min.Y, Size.Y);
+		const bool bAtMaxY = BonePosition && BoneAtEdge(BonePosition->Y, Box.Max.Y, Size.Y);
+		const bool bAtTop = BonePosition && BoneAtEdge(BonePosition->Z, Box.Max.Z, Size.Z);
+		if ((bAtMinY != bAtMaxY) && !bAtTop)
+		{
+			Out.Pivot = *BonePosition;
+			Out.Axis = FVector(0.0, 0.0, bAtMinY ? 1.0 : -1.0);
+		}
+		else
+		{
+			Out.Pivot = FVector(Box.Max.X, Center.Y, Box.Max.Z);
+			Out.Axis = FVector(0.0, 1.0, 0.0);
+		}
 		Out.Stand = FVector(Body.Min.X - StandOut, Center.Y, 0.0);
 		Out.Yaw = 0.0;
 	}
