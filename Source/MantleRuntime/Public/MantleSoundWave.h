@@ -17,6 +17,42 @@
 MANTLERUNTIME_API FSoundAttenuationSettings MantleSoundAttenuationForRadius(double Radius);
 
 /**
+ * The muffle every sound the player hears goes through (#383): a sound behind a wall (MantleApplyWorldSoundSettings) and the sky's weather
+ * indoors (MantleWeatherSoundDefaults, MantleWeatherMuffleFor) share these numbers, in one place. Fully blocked or enclosed, a sound is
+ * filtered down to BlockedLowPassFrequency and played at BlockedVolume times its volume. The attenuation assets (DefaultAttenuation, ATT_*)
+ * are set with these same numbers by the editor script that makes them.
+ */
+namespace MantleSoundMuffle
+{
+	/** The low-pass cutoff of a fully blocked or enclosed sound (Hz). */
+	constexpr float BlockedLowPassFrequency = 600.0f;
+
+	/** The volume multiplier of a fully blocked or enclosed sound. */
+	constexpr float BlockedVolume = 0.2f;
+
+	/** How long a sound takes to ease into, or out of, the muffle (s), so a step past a wall corner is not a click. */
+	constexpr float InterpolationSeconds = 0.25f;
+
+	/**
+	 * How often a sound re-checks for a wall (s). Must equal both ini values in DefaultEngine.ini: DefaultOcclusionCheckInterval (the sounds without a
+	 * component) and [/Script/Engine.AudioComponent] OcclusionCheckInterval (every audio component, which new components copy from the class default).
+	 * MantleSoundEnclosureTest checks the component one.
+	 */
+	constexpr float OcclusionCheckSeconds = 0.25f;
+}
+
+/**
+ * Turns on, for a sound that plays in the world, what every such sound gets (#383), the one place that does:
+ *  - Behind-wall muffling: the engine's own per-sound occlusion (a trace from the sound to the listener, ignoring only the sound's owner)
+ *    on the Visibility channel, which walls block and characters (capsule, mesh, ragdoll) ignore, so a person standing between you and a
+ *    sound does not muffle it. Blocked, the sound takes MantleSoundMuffle's cutoff and volume, eased over MantleSoundMuffle::InterpolationSeconds.
+ *  - Room echo: the sound is sent to the master reverb by distance (the reverb the room echo, UMantleSoundEnclosureSubsystem, fills in),
+ *    from the sound's own full volume radius out to the end of its falloff.
+ * Call it after Settings' radius (AttenuationShapeExtents) and FalloffDistance are set; it keeps both, and every other setting, as they are.
+ */
+MANTLERUNTIME_API void MantleApplyWorldSoundSettings(FSoundAttenuationSettings& Settings);
+
+/**
  * The component tag a script puts on a SoundEmitter's audio component while it has stopped it
  * (Entity:StopSound). The place builder binds an uploaded sound that arrives late without
  * starting it while the tag is there, so an emitter a script silenced stays silent until

@@ -1,8 +1,28 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleSoundWave.h"
 
+#include "Engine/EngineTypes.h"
 #include "Sound/SoundGenerator.h"
 #include "Sound/SoundGroups.h"
+
+void MantleApplyWorldSoundSettings(FSoundAttenuationSettings& Settings)
+{
+	// Behind a wall (#383). Visibility, not Camera: the Pawn, CharacterMesh and Ragdoll collision profiles all ignore Visibility but a
+	// character's capsule blocks Camera, so on Camera every player walking between you and a sound would muffle it. The engine's own
+	// default for this setting is Visibility too, and the weather's rays (UMantleSoundEnclosureSubsystem) use it, so rain and a
+	// sound behind the same wall are muffled by the same walls.
+	Settings.bEnableOcclusion = true;
+	Settings.OcclusionTraceChannel = ECC_Visibility;
+	Settings.OcclusionLowPassFilterFrequency = MantleSoundMuffle::BlockedLowPassFrequency;
+	Settings.OcclusionVolumeAttenuation = MantleSoundMuffle::BlockedVolume;
+	Settings.OcclusionInterpolationTime = MantleSoundMuffle::InterpolationSeconds;
+
+	// Room echo: the send to the master reverb grows with distance over the sound's own audible range, as the engine's own defaults do
+	// for a new attenuation (it fills them in before the radius is known).
+	Settings.bEnableReverbSend = true;
+	Settings.ReverbDistanceMin = static_cast<float>(Settings.AttenuationShapeExtents.X);
+	Settings.ReverbDistanceMax = Settings.ReverbDistanceMin + Settings.FalloffDistance;
+}
 
 FSoundAttenuationSettings MantleSoundAttenuationForRadius(const double Radius)
 {
@@ -12,6 +32,7 @@ FSoundAttenuationSettings MantleSoundAttenuationForRadius(const double Radius)
 	Attenuation.AttenuationShape = EAttenuationShape::Sphere;
 	Attenuation.AttenuationShapeExtents = FVector(Radius * 0.1, 0.0, 0.0);
 	Attenuation.FalloffDistance = static_cast<float>(Radius * 0.9);
+	MantleApplyWorldSoundSettings(Attenuation);
 	return Attenuation;
 }
 
