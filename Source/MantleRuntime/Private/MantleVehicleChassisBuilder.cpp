@@ -411,8 +411,29 @@ bool FMantleVehicleChassisBuilder::MakeAsset(const FMantleChassisSpec& Spec, FMa
 	FMantleSkinnedMeshLOD& LOD = Body.LODs.AddDefaulted_GetRef();
 	LOD.NumInfluences = 4;
 	FShapeBuilder Shapes(LOD);
-	const FMantleChassisBlock BodyBlock = Spec.BodyBlock();
-	Shapes.AddBox(FVector3f(BodyBlock.Min), FVector3f(BodyBlock.Max), 0);
+	if (Spec.HasTractorFrame())
+	{
+		// A fifth-wheel tractor (#446): its cab, and the low frame behind it a trailer's floor clears, with the fifth wheel's plate on the frame.
+		for (const FMantleChassisBlock& Block : { Spec.CabBlock(), Spec.FrameBlock() })
+		{
+			Shapes.AddBox(FVector3f(Block.Min), FVector3f(Block.Max), 0);
+		}
+		const FVector Plate = Spec.Hitch.Location;
+		const double Half = 0.35 * Spec.Width;
+		Shapes.AddBox(FVector3f(FVector(Plate.X - Half, -Half, Spec.FrameBlock().Max.Z)), FVector3f(FVector(Plate.X + Half, Half, Plate.Z)), 0);
+	}
+	else
+	{
+		const FMantleChassisBlock BodyBlock = Spec.BodyBlock();
+		Shapes.AddBox(FVector3f(BodyBlock.Min), FVector3f(BodyBlock.Max), 0);
+	}
+	// A trailer's landing gear (#446), drawn where it stands.
+	if (Spec.bTrailer && Spec.Trailer.bLandingGear)
+	{
+		const FVector Center = Spec.Trailer.LandingGearCenter;
+		const FVector Extent = Spec.Trailer.LandingGearExtent;
+		Shapes.AddBox(FVector3f(Center - Extent), FVector3f(Center + Extent), 0);
+	}
 	// A helicopter's wheels are its skids' hidden contact points, so none is drawn: the skids below stand for them. A hovercraft's are where its pads lift,
 	// under its skirt, and are not drawn either.
 	const bool bDrawWheels = !Spec.Helicopter.bSet && !Spec.Hovercraft.bSet;

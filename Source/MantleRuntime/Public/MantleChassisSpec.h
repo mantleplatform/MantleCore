@@ -24,6 +24,9 @@ enum class EMantleChassisType : uint8
 	Plane,
 	Helicopter,
 	Hovercraft,
+	/** Towed (#446): no engine of its own; its layout's steer and drive flags only satisfy the reader. Its body sits forward of its axles (chassis.body.x)
+	 *  and its coupler (chassis.trailer) at the front. */
+	Trailer,
 };
 
 /** One axle of a chassis's layout. */
@@ -341,6 +344,23 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	FMantleChassisHelicopter Helicopter;
 	/** A hovercraft's pads, fan, fin, skirt and damping (chassis.hovercraft); bSet is false for everything else. */
 	FMantleChassisHovercraft Hovercraft;
+	/** A towing vehicle's hitch (chassis.hitch, #446): model space, cm. bHitch false: it tows nothing. */
+	bool bHitch = false;
+	FMantleVehicleHitchDesc Hitch;
+	/** A trailer's coupler, landing gear and cargo (chassis.trailer, #446): model space, cm. bTrailer false for everything else. */
+	bool bTrailer = false;
+	FMantleVehicleTrailerDesc Trailer;
+
+	/** How far a fifth-wheel tractor's frame stands below its hitch, cm: what a trailer's floor clears when it is backed over it. */
+	static constexpr double FifthWheelFrameGap = 10.0;
+	/** How far behind the cab's back the fifth wheel sits at least, cm: the cab ends this far ahead of the hitch. */
+	static constexpr double FifthWheelCabGap = 100.0;
+	/** Whether the body is split into a cab and a low frame behind it (a fifth-wheel tractor). */
+	bool HasTractorFrame() const { return bHitch && Hitch.Kind == EMantleVehicleHitchKind::FifthWheel; }
+	/** A fifth-wheel tractor's body: the full-height cab from the front back to FifthWheelCabGap ahead of the hitch, and the frame from there to the rear,
+	 *  its top FifthWheelFrameGap below the hitch, so a trailer's floor clears it as the tractor backs under. */
+	FMantleChassisBlock CabBlock() const;
+	FMantleChassisBlock FrameBlock() const;
 
 	/** Whether axle Axle has one wheel, on the centerline: the whole layout's, or the axle's own. */
 	bool AxleIsCenterline(const int32 Axle) const { return bCenterline || Axles[Axle].bCenterline; }

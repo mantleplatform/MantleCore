@@ -125,7 +125,11 @@ bool FMantleChassisPlaneSpecTest::RunTest(const FString& Parameters)
 		TestFalse(*FString::Printf(TEXT("%s: no axle has a centerline of its own"), *Id), Other.Axles.ContainsByPredicate([](const FMantleChassisAxle& Axle) { return Axle.bCenterline; }));
 		TestEqual(*FString::Printf(TEXT("%s: a wheel each side, or one on the centerline all through"), *Id), Other.WheelCount(), (Other.bCenterline ? 1 : 2) * Other.Axles.Num());
 		TestFalse(*FString::Printf(TEXT("%s: it has no airframe"), *Id), Other.Aircraft.bSet);
-		TestEqual(*FString::Printf(TEXT("%s: its body is centered on the wheelbase"), *Id), Other.BodyX, 0.0);
+		// A trailer's body stands ahead of its axles and a tractor's cab ahead of its fifth wheel (#446): both move it with body.x, as a plane does.
+		if (!Other.bTrailer && !Other.HasTractorFrame())
+		{
+			TestEqual(*FString::Printf(TEXT("%s: its body is centered on the wheelbase"), *Id), Other.BodyX, 0.0);
+		}
 	}
 	return true;
 }

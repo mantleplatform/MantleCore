@@ -353,6 +353,69 @@ namespace MantleChassisSpecPrivate
 		return true;
 	}
 
+	/** A hitch or a coupler (#446): chassis.hitch or chassis.trailer.coupler, {"type": "fifthWheel" | "ball", "location": [x, y, z]}. */
+	bool ParseHitchObject(const TSharedPtr<FJsonObject>& Parent, const TCHAR* Key, const FString& Label, FMantleVehicleHitchDesc& Out, FString& OutError)
+	{
+		TSharedPtr<FJsonObject> Json;
+		FString Kind;
+		if (!GetObject(Parent, Key, Label, Json, OutError) || !GetVector(Json, TEXT("location"), Label + TEXT(".location"), Out.Location, OutError))
+		{
+			return false;
+		}
+		if (!Json->TryGetStringField(TEXT("type"), Kind) || !(Kind == TEXT("fifthWheel") || Kind == TEXT("ball")))
+		{
+			return Refuse(OutError, FString::Printf(TEXT("the preset's %s.type is missing or not fifthWheel or ball"), *Label));
+		}
+		Out.Kind = Kind == TEXT("ball") ? EMantleVehicleHitchKind::Ball : EMantleVehicleHitchKind::FifthWheel;
+		return true;
+	}
+
+	/** A trailer's block (chassis.trailer, #446): the coupler, the optional landing gear box and the optional cargo, the document's trailer block's shape. */
+	bool ParseTrailer(const TSharedPtr<FJsonObject>& Chassis, FMantleVehicleTrailerDesc& Out, FString& OutError)
+	{
+		TSharedPtr<FJsonObject> Json;
+		FMantleVehicleTrailerDesc Read;
+		if (!GetObject(Chassis, TEXT("trailer"), TEXT("chassis.trailer"), Json, OutError)
+			|| !ParseHitchObject(Json, TEXT("coupler"), TEXT("chassis.trailer.coupler"), Read.Coupler, OutError))
+		{
+			return false;
+		}
+		if (Json->HasField(TEXT("landingGear")))
+		{
+			TSharedPtr<FJsonObject> Gear;
+			if (!GetObject(Json, TEXT("landingGear"), TEXT("chassis.trailer.landingGear"), Gear, OutError)
+				|| !GetVector(Gear, TEXT("center"), TEXT("chassis.trailer.landingGear.center"), Read.LandingGearCenter, OutError)
+				|| !GetVector(Gear, TEXT("extent"), TEXT("chassis.trailer.landingGear.extent"), Read.LandingGearExtent, OutError))
+			{
+				return false;
+			}
+			Read.bLandingGear = true;
+		}
+		if (Json->HasField(TEXT("cargo")))
+		{
+			TSharedPtr<FJsonObject> Cargo;
+			if (!GetObject(Json, TEXT("cargo"), TEXT("chassis.trailer.cargo"), Cargo, OutError))
+			{
+				return false;
+			}
+			Cargo->TryGetNumberField(TEXT("maxLoad"), Read.MaxCargoKg);
+			if (Cargo->HasField(TEXT("location")))
+			{
+				if (!GetVector(Cargo, TEXT("location"), TEXT("chassis.trailer.cargo.location"), Read.CargoLocation, OutError))
+				{
+					return false;
+				}
+				Read.bCargoLocation = true;
+			}
+		}
+		if (!FMath::IsFinite(Read.MaxCargoKg) || Read.MaxCargoKg < 0.0)
+		{
+			return Refuse(OutError, TEXT("the preset's chassis.trailer.cargo.maxLoad is not a number of 0 or more"));
+		}
+		Out = Read;
+		return true;
+	}
+
 	/** The number at Path ("engine/maxTorque", objects separated by '/') under Root. False when any step is missing or the last is not a number. */
 	bool FindNumber(const TSharedPtr<FJsonObject>& Root, const FString& Path, double& Out)
 	{
@@ -562,6 +625,8 @@ const TCHAR* FMantleChassisSpec::TypeName(const EMantleChassisType Kind)
 		return TEXT("helicopter");
 	case EMantleChassisType::Hovercraft:
 		return TEXT("hovercraft");
+	case EMantleChassisType::Trailer:
+		return TEXT("trailer");
 	default:
 		return TEXT("car");
 	}
@@ -570,7 +635,7 @@ const TCHAR* FMantleChassisSpec::TypeName(const EMantleChassisType Kind)
 bool FMantleChassisSpec::ParseType(const FString& Name, EMantleChassisType& OutType)
 {
 	for (const EMantleChassisType Kind : { EMantleChassisType::Car, EMantleChassisType::Truck, EMantleChassisType::Motorcycle, EMantleChassisType::Plane,
-			 EMantleChassisType::Helicopter, EMantleChassisType::Hovercraft })
+			 EMantleChassisType::Helicopter, EMantleChassisType::Hovercraft, EMantleChassisType::Trailer })
 	{
 		if (Name.Equals(TypeName(Kind), ESearchCase::CaseSensitive))
 		{
@@ -701,12 +766,22 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 	{
 		return false;
 	}
+	if (Chassis->HasField(TEXT("hitch")) && !ParseHitchObject(Chassis, TEXT("hitch"), TEXT("chassis.hitch"), Spec.Hitch, OutError))
+	{
+		return false;
+	}
+	Spec.bHitch = Chassis->HasField(TEXT("hitch"));
+	if (Chassis->HasField(TEXT("trailer")) && !ParseTrailer(Chassis, Spec.Trailer, OutError))
+	{
+		return false;
+	}
+	Spec.bTrailer = Chassis->HasField(TEXT("trailer"));
 
 	// What the size derives from: the type, the derive block, the hand-tuned handling every derived number is a ratio of, and the dimensions it is a ratio against.
 	FString TypeText;
 	if (!Root->TryGetStringField(TEXT("type"), TypeText) || !ParseType(TypeText, Spec.Type))
 	{
-		return Refuse(OutError, TEXT("the preset's type is missing or not car, truck, motorcycle, plane, helicopter or hovercraft"));
+		return Refuse(OutError, TEXT("the preset's type is missing or not car, truck, motorcycle, plane, helicopter, hovercraft or trailer"));
 	}
 	if ((Spec.Type == EMantleChassisType::Motorcycle) != Spec.bCenterline)
 	{
@@ -731,6 +806,15 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 	if ((Spec.Type == EMantleChassisType::Hovercraft) != Spec.Hovercraft.bSet)
 	{
 		return Refuse(OutError, TEXT("the preset's type hovercraft and its chassis.hovercraft go together"));
+	}
+	if ((Spec.Type == EMantleChassisType::Trailer) != Spec.bTrailer)
+	{
+		return Refuse(OutError, TEXT("the preset's type trailer and its chassis.trailer go together"));
+	}
+	// One trailer per vehicle (#446): a trailer has no hitch of its own, and only a ground vehicle tows.
+	if (Spec.bHitch && (Spec.bTrailer || Spec.Aircraft.bSet || Spec.Helicopter.bSet || Spec.Hovercraft.bSet))
+	{
+		return Refuse(OutError, TEXT("the preset's chassis.hitch is only for a ground vehicle: a trailer, plane, helicopter or hovercraft tows nothing"));
 	}
 	// A hovercraft's pads are the four corners of two axles: its definition turns each of the layout's wheels into one, from a car's seat.
 	if (Spec.Type == EMantleChassisType::Hovercraft && (Spec.WheelCount() != 4 || !Spec.bSteeringWheel))
@@ -865,9 +949,23 @@ FString FMantleChassisSpec::ComposeDocument(const FMantleChassisSpec& Spec, TArr
 	else
 	{
 		const TSharedPtr<FJsonObject> Box = MakeShared<FJsonObject>();
-		Box->SetArrayField(TEXT("center"), NumberArray(FVector(Spec.BodyX, 0.0, Spec.Clearance + 0.5 * Spec.Height)));
-		Box->SetArrayField(TEXT("extent"), NumberArray(FVector(0.5 * Spec.Length, 0.5 * Spec.Width, 0.5 * Spec.Height)));
-		Boxes.Add(MakeShared<FJsonValueObject>(Box));
+		if (Spec.HasTractorFrame())
+		{
+			// A fifth-wheel tractor collides as its cab and its low frame, so a trailer's floor clears the frame while the tractor backs under it (#446).
+			for (const FMantleChassisBlock& Block : { Spec.CabBlock(), Spec.FrameBlock() })
+			{
+				const TSharedPtr<FJsonObject> Part = MakeShared<FJsonObject>();
+				Part->SetArrayField(TEXT("center"), NumberArray(0.5 * (Block.Min + Block.Max)));
+				Part->SetArrayField(TEXT("extent"), NumberArray(0.5 * (Block.Max - Block.Min)));
+				Boxes.Add(MakeShared<FJsonValueObject>(Part));
+			}
+		}
+		else
+		{
+			Box->SetArrayField(TEXT("center"), NumberArray(FVector(Spec.BodyX, 0.0, Spec.Clearance + 0.5 * Spec.Height)));
+			Box->SetArrayField(TEXT("extent"), NumberArray(FVector(0.5 * Spec.Length, 0.5 * Spec.Width, 0.5 * Spec.Height)));
+			Boxes.Add(MakeShared<FJsonValueObject>(Box));
+		}
 	}
 	Doc->SetArrayField(TEXT("collision"), Boxes);
 	Doc->SetArrayField(TEXT("centerOfMass"), NumberArray(Spec.CenterOfMass));
@@ -905,6 +1003,21 @@ FString FMantleChassisSpec::ComposeDocument(const FMantleChassisSpec& Spec, TArr
 FMantleChassisBlock FMantleChassisSpec::BodyBlock() const
 {
 	return { FVector(BodyX - 0.5 * Length, -0.5 * Width, Clearance), FVector(BodyX + 0.5 * Length, 0.5 * Width, Clearance + Height) };
+}
+
+FMantleChassisBlock FMantleChassisSpec::CabBlock() const
+{
+	const FMantleChassisBlock Body = BodyBlock();
+	const double Back = FMath::Clamp(Hitch.Location.X + FifthWheelCabGap, Body.Min.X + 1.0, Body.Max.X - 1.0);
+	return { FVector(Back, Body.Min.Y, Body.Min.Z), Body.Max };
+}
+
+FMantleChassisBlock FMantleChassisSpec::FrameBlock() const
+{
+	const FMantleChassisBlock Body = BodyBlock();
+	const double Back = FMath::Clamp(Hitch.Location.X + FifthWheelCabGap, Body.Min.X + 1.0, Body.Max.X - 1.0);
+	const double Top = FMath::Max(Hitch.Location.Z - FifthWheelFrameGap, Body.Min.Z + 1.0);
+	return { Body.Min, FVector(Back, Body.Max.Y, Top) };
 }
 
 FMantleChassisBlock FMantleChassisSpec::WingBlock() const
@@ -1163,6 +1276,13 @@ FMantleChassisSpec FMantleChassisSpec::Scaled(const FMantleChassisSpec& Spec, co
 	RiderOut.StopPelvisShift *= Factor;
 	// A plane's body box, airframe and cockpit grow with it. Its angles do not, and its areas and thrust follow from the handling below.
 	Out.BodyX *= Factor;
+	// A hitch, a coupler, a trailer's legs and where its cargo sits grow with it; how much cargo it carries is a weight, which follows its mass (#446).
+	Out.Hitch.Location *= Factor;
+	Out.Trailer.Coupler.Location *= Factor;
+	Out.Trailer.LandingGearCenter *= Factor;
+	Out.Trailer.LandingGearExtent *= Factor;
+	Out.Trailer.CargoLocation *= Factor;
+	Out.Trailer.MaxCargoKg *= Factor * Factor * Factor;
 	if (Out.Aircraft.bSet)
 	{
 		FMantleChassisAircraft& Plane = Out.Aircraft;

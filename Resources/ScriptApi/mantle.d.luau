@@ -1608,6 +1608,8 @@ declare extern type VehiclesService with
 	BoostStarted: Signal<(Entity)>
 	--- The car's driver stopped boosting: let go of the key, ran out of boost, or the car lost its fuel or health.
 	BoostStopped: Signal<(Entity)>
+	--- A trailer was coupled to the vehicle, by its driver's couple key or by Couple. trailer is nil when your scripts hold no Entity for it (GetTrailer gets one). Fires only for a vehicle your scripts hold as an Entity (Vehicles:Spawn, GetParked, GetTrailer, GetTowingVehicle).
+	Coupled: Signal<(Entity, Entity?)>
 	--- The car lost health: a crash, Damage, or SetHealth to a lower number. amount is how much it lost and health what it has left. Only fires for a car you spawned with Vehicles:Spawn, once health is on.
 	Damaged: Signal<(Entity, number, number)>
 	--- The car's health ran out. It cannot accelerate until it is repaired (Repair), so this is the moment to eject the driver, blow it up or remove it.
@@ -1618,10 +1620,16 @@ declare extern type VehiclesService with
 	FuelEmpty: Signal<(Entity)>
 	--- The car Vehicles:Spawn returned has been built and can be used: Seat, Lock, paint, livery, health, fuel and boost all work from here. The server builds spawned cars one per frame, so this fires a frame or more after Spawn (a burst of spawns takes that many frames). It fires once per spawn, also when the car was built at once. Connect before you Spawn or in the same script step; it only fires for a car you spawned with Vehicles:Spawn.
 	Ready: Signal<(Entity)>
+	--- A trailer came off the vehicle. reason is "player" (the driver's couple key), "script" (Uncouple), "broken" (pulled or pushed past SetCouplingBreakForce), "destroyed" (the vehicle or the trailer was removed) or "fault" (the game let go of a coupling that had come apart). trailer is nil when your scripts hold no Entity for it. Fires only for a vehicle your scripts hold as an Entity.
+	Uncoupled: Signal<(Entity, Entity?, string)>
+	--- Couple a trailer to the vehicle's hitch. With snap true, the trailer is first moved straight behind the vehicle with its coupler on the hitch: use it to spawn a ready rig. Without snap the trailer is coupled where it stands and drawn onto the hitch over a moment, so put it close behind first. Returns false, changing nothing, when the vehicle has no hitch, the trailer is not a trailer, the hitch and the trailer's coupler are different kinds (a fifth wheel and a ball: see GetHitchType and GetCouplerType), either one is coupled already, or the loaded trailer weighs more than five times the vehicle. A script can couple a locked coupling (SetCouplingLocked). Fires Vehicles.Coupled. (server only)
+	function Couple(self, vehicle: Entity, trailer: Entity, snap: boolean?): boolean
 	--- Take amount of health off the car (never below 0) and return the health it has left. Fires Vehicles.Damaged, and Vehicles.Destroyed if it reaches 0. Turn health on first with SetHealthEnabled. (server only)
 	function Damage(self, vehicle: Entity, amount: number): number
 	--- Put the player back on foot beside the car they are driving. Returns false when they are not driving, the car is still moving, or there is nowhere beside it to stand. (server only)
 	function Eject(self, player: Player): boolean
+	--- How far the trailer has swung from straight behind, in degrees: 0 straight, positive with the trailer to the right, negative to the left. Give it the towing vehicle or the trailer; 0 when not coupled. Watch it for a jackknife warning. Errors if the entity is not a vehicle or no longer exists. (server only)
+	function GetArticulation(self, vehicle: Entity): number
 	--- The boost the car has left, from 0 to MaxBoost. (server only)
 	function GetBoost(self, vehicle: Entity): number
 	--- How much boost is used each second while the driver boosts (25 unless you change it). (server only)
@@ -1630,6 +1638,12 @@ declare extern type VehiclesService with
 	function GetBoostRegen(self, vehicle: Entity): number
 	--- How hard the boost pushes, from 0 (nothing) to 1 (the hardest it can; about 18 m/s of extra speed every second). 0.5 unless you change it. (server only)
 	function GetBoostStrength(self, vehicle: Entity): number
+	--- The cargo a trailer carries, in kg; 0 for a vehicle that is not a trailer. Errors if the entity is not a vehicle or no longer exists. (server only)
+	function GetCargoMass(self, trailer: Entity): number
+	--- A trailer's coupler: "fifthWheel" (a semi trailer's kingpin) or "ball" (a ball socket), or nil when the vehicle is not a trailer. It couples only to a hitch of the same kind (GetHitchType). Errors if the entity is not a vehicle or no longer exists. (server only)
+	function GetCouplerType(self, trailer: Entity): string?
+	--- The break force set with SetCouplingBreakForce, in newtons, or nil when the coupling never breaks. Errors if the entity is not a vehicle or no longer exists. (server only)
+	function GetCouplingBreakForce(self, vehicle: Entity): number?
 	--- The fuel in the tank, from 0 to MaxFuel. (server only)
 	function GetFuel(self, vehicle: Entity): number
 	--- How much fuel the car burns each second while it is driven and moving (1 unless you change it). (server only)
@@ -1638,16 +1652,22 @@ declare extern type VehiclesService with
 	function GetHeadlightColor(self, vehicle: Entity): string?
 	--- The car's health, from 0 to MaxHealth. It only changes while health is on. (server only)
 	function GetHealth(self, vehicle: Entity): number
+	--- The vehicle's hitch: "fifthWheel" (a semi truck's) or "ball" (a tow ball), or nil when it has none and cannot tow. A vehicle only couples a trailer whose coupler is the same kind (GetCouplerType). Errors if the entity is not a vehicle or no longer exists. (server only)
+	function GetHitchType(self, vehicle: Entity): string?
 	--- The script's word on a light: "on", "off" or "auto" (the game decides). light is "head", "rear", "reverse", "left" or "right". Errors if the entity is not a car or no longer exists. (server only)
 	function GetLights(self, vehicle: Entity, light: string): string
 	--- The names of the car's liveries, in the order SetLivery counts them: the first name is livery index 0, the next is 1, and so on. A name is what the vehicle's creator called it, or "Livery 1", "Livery 2" and so on for one without a name. The list is empty for a car published with no liveries, for the built-in cars, and for an entity that is not a car. (server only)
 	function GetLiveries(self, vehicle: Entity): {string}
+	--- For the vehicle the local player is driving: "coupled" when it tows a trailer, "inRange" when a trailer is in place and the couple key would couple it now, and "none" otherwise, also on foot. There is no built-in prompt: read this every frame to draw your own. (client only)
+	function GetLocalCouplingState(self): string
 	--- The speed of the vehicle the local player is driving, in centimeters per second (Vehicles:GetSpeed's unit; multiply by 0.036 for km/h): its whole velocity, so it is not negative in reverse. nil while the local player is not driving a vehicle. Works on a client script, where Vehicles:GetSpeed does not; read it every frame to draw a speedometer. (client only)
 	function GetLocalSpeed(self): number?
 	--- The throttle of the aircraft the local player is flying, from 0 to 1; for a helicopter it is the collective. nil while the local player is not flying a plane or a helicopter (a car has no throttle lever; read its speed instead). (client only)
 	function GetLocalThrottle(self): number?
 	--- The most boost the car can store (100 unless you change it). (server only)
 	function GetMaxBoost(self, vehicle: Entity): number
+	--- The most cargo the trailer takes, in kg: its own limit, or less while it is coupled to a vehicle too light to pull that much. 0 for a vehicle that is not a trailer. Errors if the entity is not a vehicle or no longer exists. (server only)
+	function GetMaxCargoMass(self, trailer: Entity): number
 	--- The tank's size (100 unless you change it). (server only)
 	function GetMaxFuel(self, vehicle: Entity): number
 	--- The most health the car can have (100 unless you change it). (server only)
@@ -1668,6 +1688,10 @@ declare extern type VehiclesService with
 	function GetPartStandSpot(self, vehicle: Entity, part: string): {position: Vector3, yaw: number}?
 	--- The car's speed in centimeters per second, as the simulation reports it. Errors if the entity is not a car or no longer exists. (server only)
 	function GetSpeed(self, vehicle: Entity): number
+	--- The vehicle towing this trailer, or nil when it is not coupled. Errors if the entity is not a vehicle or no longer exists. (server only)
+	function GetTowingVehicle(self, trailer: Entity): Entity?
+	--- The trailer the vehicle is towing, or nil when it tows nothing. Errors if the entity is not a vehicle or no longer exists. (server only)
+	function GetTrailer(self, vehicle: Entity): Entity?
 	--- The underglow color set with SetUnderglow as "#RRGGBB". Nil when the underglow is off or the entity is not a car. (server only)
 	function GetUnderglow(self, vehicle: Entity): string?
 	--- The names of the wheels the car can wear: "stock" (its own wheels) first, then the wheels in the place's Storage, in Storage order. A car whose wheels are part of its body cannot swap and lists only "stock". Empty when the entity is not a car. (server only)
@@ -1682,6 +1706,8 @@ declare extern type VehiclesService with
 	function IsBoostEnabled(self, vehicle: Entity): boolean
 	--- Whether the car's driver is boosting right now. (server only)
 	function IsBoosting(self, vehicle: Entity): boolean
+	--- Whether the vehicle's coupling is locked (SetCouplingLocked). Errors if the entity is not a vehicle or no longer exists. (server only)
+	function IsCouplingLocked(self, vehicle: Entity): boolean
 	--- Whether the car has health on and none left. (server only)
 	function IsDestroyed(self, vehicle: Entity): boolean
 	--- Whether the car has a fuel tank and it is empty. (server only)
@@ -1700,6 +1726,8 @@ declare extern type VehiclesService with
 	function IsLocked(self, vehicle: Entity): boolean
 	--- Whether one of the car's parts is open (see SetPartOpen). Nil when the entity is not a car or the car does not have that part. (server only)
 	function IsPartOpen(self, vehicle: Entity, part: string): boolean?
+	--- Whether the vehicle is a trailer (its vehicle was made with the trailer movement type). Errors if the entity is not a vehicle or no longer exists. (server only)
+	function IsTrailer(self, vehicle: Entity): boolean
 	--- Lock the car. A locked car opens only for the last player who drove it: anyone else's vehicle key rattles the door, and holding the key breaks in -- the window on that side breaks, the car unlocks, and it must be hotwired before it starts. The lock stays when the driver gets out, and its driver can also lock and unlock it from the seat (L / D-pad left). Returns false when the entity is not a car. (server only)
 	function Lock(self, vehicle: Entity): boolean
 	--- Put amount of fuel in the tank (never above MaxFuel), or fill it when you leave amount out. Returns the fuel in the tank now. Example: Vehicles:Refuel(car, 20) (server only)
@@ -1718,6 +1746,12 @@ declare extern type VehiclesService with
 	function SetBoostRegen(self, vehicle: Entity, perSecond: number): ()
 	--- Set how hard the boost pushes, from 0 (nothing) to 1 (the hardest it can). (server only)
 	function SetBoostStrength(self, vehicle: Entity, strength: number): ()
+	--- Load a trailer with kg of cargo. It is kept between 0 and what the trailer takes (GetMaxCargoMass), so read GetCargoMass to see what it got. The trailer gets heavier and its weight moves toward the load, for every player. Returns false when the entity is not a trailer. (server only)
+	function SetCargoMass(self, trailer: Entity, kg: number): boolean
+	--- How hard a pull or push at the hitch breaks the coupling, in newtons, set on the towing vehicle. Past it the trailer comes off and Vehicles.Uncoupled fires with the reason "broken". nil or 0 means it never breaks, which is how every vehicle starts. Any other value is at least 10000 (a lower one is raised to it), so a typo can't drop a trailer on the first bump. It stays when the vehicle couples another trailer. Returns false when the entity is not a vehicle with a hitch. (server only)
+	function SetCouplingBreakForce(self, vehicle: Entity, newtons: number?): boolean
+	--- Lock (true) or unlock (false) the vehicle's coupling. While the towing vehicle or its trailer is locked, the driver's couple key can neither couple nor uncouple it: for a delivery that must keep its trailer, or a rental. Couple and Uncouple from a script still work. Returns false when the entity is not a vehicle. (server only)
+	function SetCouplingLocked(self, vehicle: Entity, locked: boolean): boolean
 	--- Set the fuel, clamped to 0..MaxFuel. Fires Vehicles.FuelChanged, and Vehicles.FuelEmpty if it reaches 0. (server only)
 	function SetFuel(self, vehicle: Entity, fuel: number): ()
 	--- Set how much fuel the car burns each second while it is driven and moving, from 0 up. 0 means it never runs dry. (server only)
@@ -1760,6 +1794,8 @@ declare extern type VehiclesService with
 	function SetWindowTint(self, vehicle: Entity, level: number): boolean
 	--- Spawn a car at position and return it as an Entity. item is the library item id of a vehicle this place stores: the string Storage:Get returns for one of the place's storage names. Any other value errors -- an asset id, an object path, a built-in car's name, an item the place does not store, or a weapon. The car is a real replicated vehicle: every player sees it, walks up to it and can drive it. Read its Position, tag it, or Destroy it like any entity. The server builds cars one per frame, so the Entity comes back at once but the car is not ready to use: connect to Vehicles.Ready, which fires with the car when it is built, before you Seat, paint or Lock it or touch its health, fuel or boost (those error until then). (server only)
 	function Spawn(self, item: string, position: Vector3): Entity
+	--- Uncouple the trailer the vehicle tows or, given a trailer, uncouple it from what tows it. It works while moving and on a locked coupling. Returns false when nothing is coupled or the entity is not a vehicle. Fires Vehicles.Uncoupled with the reason "script". (server only)
+	function Uncouple(self, vehicle: Entity): boolean
 	--- Unlock the car, so anyone can open it again. A locked car opens only for the last player who drove it: anyone else's vehicle key rattles the door, and holding the key breaks in -- the window on that side breaks, the car unlocks, and it must be hotwired before it starts. The lock stays when the driver gets out, and its driver can also lock and unlock it from the seat (L / D-pad left). Returns false when the entity is not a car. (server only)
 	function Unlock(self, vehicle: Entity): boolean
 end

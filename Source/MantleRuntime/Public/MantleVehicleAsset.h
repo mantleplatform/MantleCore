@@ -229,6 +229,16 @@ enum class EMantleVehicleMovementKind : uint8
 	Plane,
 	Helicopter,
 	Hover,
+	/** Towed by a vehicle with a hitch (#446): no engine of its own; every wheel rolls free and brakes, none steers. */
+	Trailer,
+};
+
+/** What couples a trailer to the vehicle that tows it (#446): a semi's fifth wheel and kingpin, or a tow ball and its coupler. Both sides must match. */
+UENUM(BlueprintType)
+enum class EMantleVehicleHitchKind : uint8
+{
+	FifthWheel,
+	Ball,
 };
 
 /** A seat's kind (the document's seat.kind): the clip set its occupant plays (MantleVehicleSeatAssets::ForDriverSeatKind). */
@@ -405,6 +415,27 @@ struct FMantleVehicleHoverDesc
 	FMantleVehicleHoverDampingDesc Damping;
 	/** The chassis's angular damping on the ground and in the air alike. */
 	double AngularDamping = 0.5;
+};
+
+/** A hitch (the document's hitch block, a towing vehicle's) or a coupler (trailer.coupler): its kind and where it is, cm, in the body's space. */
+struct FMantleVehicleHitchDesc
+{
+	EMantleVehicleHitchKind Kind = EMantleVehicleHitchKind::FifthWheel;
+	FVector Location = FVector::ZeroVector;
+};
+
+/** A trailer's block (MovementType Trailer, #446): its coupler, the legs it stands on while uncoupled, and how much cargo it may carry. */
+struct FMantleVehicleTrailerDesc
+{
+	FMantleVehicleHitchDesc Coupler;
+	/** The landing gear (a jockey stand on a ball trailer): one collision box, cm in the body's space, that collides only while the trailer is uncoupled. */
+	bool bLandingGear = false;
+	FVector LandingGearCenter = FVector::ZeroVector;
+	FVector LandingGearExtent = FVector::ZeroVector;
+	/** The most cargo it may carry, kg, and where its center sits (unset: the center of mass). Cargo is set by script and is 0 when spawned. */
+	double MaxCargoKg = 0.0;
+	bool bCargoLocation = false;
+	FVector CargoLocation = FVector::ZeroVector;
 };
 
 /**
@@ -592,6 +623,11 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	FMantleVehicleFlightDesc Flight;
 	FMantleVehicleHelicopterDesc Helicopter;
 	FMantleVehicleHoverDesc Hover;
+	/** A trailer's coupler, legs and cargo (MovementType Trailer). */
+	FMantleVehicleTrailerDesc Trailer;
+	/** A towing vehicle's hitch (the hitch block, #446): wheeled vehicles only. */
+	bool bHitch = false;
+	FMantleVehicleHitchDesc Hitch;
 
 	/** The seats' kinds (seat.kind and passengerSeat.kind). */
 	EMantleVehicleSeatKind SeatKind = EMantleVehicleSeatKind::Car;

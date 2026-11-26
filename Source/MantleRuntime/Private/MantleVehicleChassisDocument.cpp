@@ -164,6 +164,37 @@ namespace MantleVehicleChassisDocumentPrivate
 		return Out;
 	}
 
+	/** A hitch or a coupler (#446): its type and location. */
+	TSharedRef<FJsonObject> HitchJson(const FMantleVehicleHitchDesc& Hitch)
+	{
+		const TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
+		Out->SetStringField(TEXT("type"), Hitch.Kind == EMantleVehicleHitchKind::Ball ? TEXT("ball") : TEXT("fifthWheel"));
+		Out->SetField(TEXT("location"), Triple(Hitch.Location));
+		return Out;
+	}
+
+	/** A trailer's block (#446): the coupler, the landing gear box when it has one, and its cargo. */
+	TSharedRef<FJsonObject> TrailerJson(const FMantleVehicleTrailerDesc& T)
+	{
+		const TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
+		Out->SetObjectField(TEXT("coupler"), HitchJson(T.Coupler));
+		if (T.bLandingGear)
+		{
+			const TSharedRef<FJsonObject> Gear = MakeShared<FJsonObject>();
+			Gear->SetField(TEXT("center"), Triple(T.LandingGearCenter));
+			Gear->SetField(TEXT("extent"), Triple(T.LandingGearExtent));
+			Out->SetObjectField(TEXT("landingGear"), Gear);
+		}
+		const TSharedRef<FJsonObject> Cargo = MakeShared<FJsonObject>();
+		Cargo->SetField(TEXT("maxLoad"), Number(T.MaxCargoKg));
+		if (T.bCargoLocation)
+		{
+			Cargo->SetField(TEXT("location"), Triple(T.CargoLocation));
+		}
+		Out->SetObjectField(TEXT("cargo"), Cargo);
+		return Out;
+	}
+
 	TSharedRef<FJsonObject> HoverJson(const FMantleVehicleHoverDesc& H)
 	{
 		const TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
@@ -678,6 +709,26 @@ namespace MantleVehicleChassisDocumentPrivate
 			Hold(TEXT("hover/damping/maxSkirtBrakeAccel"), H.Damping.MaxSkirtBrakeAccel);
 			Hold(TEXT("hover/angularDamping"), H.AngularDamping);
 		}
+		// A trailer's points and its cargo (#446): a utility trailer at 2.5 times its size would carry 35 t, past what a document can say.
+		if (D.MovementType == EMantleVehicleMovementKind::Trailer)
+		{
+			FMantleVehicleTrailerDesc& T = D.Trailer;
+			HoldVector(TEXT("trailer/coupler/location/*"), T.Coupler.Location);
+			if (T.bLandingGear)
+			{
+				HoldVector(TEXT("trailer/landingGear/center/*"), T.LandingGearCenter);
+				HoldVector(TEXT("trailer/landingGear/extent/*"), T.LandingGearExtent);
+			}
+			Hold(TEXT("trailer/cargo/maxLoad"), T.MaxCargoKg);
+			if (T.bCargoLocation)
+			{
+				HoldVector(TEXT("trailer/cargo/location/*"), T.CargoLocation);
+			}
+		}
+		if (D.bHitch)
+		{
+			HoldVector(TEXT("hitch/location/*"), D.Hitch.Location);
+		}
 	}
 
 	/** What a document path is, for a creator: the first row whose prefix the path starts with. */
@@ -765,6 +816,8 @@ const TCHAR* FMantleVehicleChassisDocument::MovementName(const EMantleVehicleMov
 		return TEXT("helicopter");
 	case EMantleVehicleMovementKind::Hover:
 		return TEXT("hover");
+	case EMantleVehicleMovementKind::Trailer:
+		return TEXT("trailer");
 	default:
 		return TEXT("wheeled");
 	}
@@ -807,6 +860,9 @@ void FMantleVehicleChassisDocument::Derive(const FMantleChassisSpec& Spec, FMant
 	InOutDesc.Flight = FMantleVehicleFlightDesc();
 	InOutDesc.Helicopter = FMantleVehicleHelicopterDesc();
 	InOutDesc.Hover = FMantleVehicleHoverDesc();
+	InOutDesc.Trailer = FMantleVehicleTrailerDesc();
+	InOutDesc.bHitch = false;
+	InOutDesc.Hitch = FMantleVehicleHitchDesc();
 	InOutDesc.SeatKind = SeatKindOf(Spec.DriverSeat);
 	InOutDesc.PassengerSeatKind = EMantleVehicleSeatKind::Car;
 	InOutDesc.bSeatExitSideDistance = false;
@@ -830,6 +886,17 @@ void FMantleVehicleChassisDocument::Derive(const FMantleChassisSpec& Spec, FMant
 	{
 		DeriveHovercraft(Spec, Handling, InOutDesc);
 	}
+	// A trailer and a hitch (#446): the chassis's own, in its space; a resized one's were scaled with it (FMantleChassisSpec::Scaled).
+	if (Spec.bTrailer)
+	{
+		InOutDesc.MovementType = EMantleVehicleMovementKind::Trailer;
+		InOutDesc.Trailer = Spec.Trailer;
+	}
+	if (Spec.bHitch)
+	{
+		InOutDesc.bHitch = true;
+		InOutDesc.Hitch = Spec.Hitch;
+	}
 	HoldToRanges(InOutDesc, OutHeld);
 }
 
@@ -852,8 +919,15 @@ void FMantleVehicleChassisDocument::Write(const FMantleVehicleDesc& Desc, FJsonO
 	case EMantleVehicleMovementKind::Hover:
 		Document.SetObjectField(TEXT("hover"), HoverJson(Desc.Hover));
 		break;
+	case EMantleVehicleMovementKind::Trailer:
+		Document.SetObjectField(TEXT("trailer"), TrailerJson(Desc.Trailer));
+		break;
 	default:
 		break;
+	}
+	if (Desc.bHitch)
+	{
+		Document.SetObjectField(TEXT("hitch"), HitchJson(Desc.Hitch));
 	}
 	WriteSeatAndCamera(Desc, Document);
 }
@@ -954,7 +1028,7 @@ FString FMantleVehicleChassisDocument::MovementBlocksJson(const FMantleChassisSp
 	const TSharedRef<FJsonObject> Scratch = MakeShared<FJsonObject>();
 	Compose(Spec, *Scratch);
 	const TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
-	for (const TCHAR* Block : { TEXT("flight"), TEXT("helicopter"), TEXT("hover") })
+	for (const TCHAR* Block : { TEXT("flight"), TEXT("helicopter"), TEXT("hover"), TEXT("trailer"), TEXT("hitch") })
 	{
 		const TSharedPtr<FJsonObject>* Found = nullptr;
 		if (Scratch->TryGetObjectField(Block, Found) && Found && Found->IsValid())
@@ -1065,7 +1139,8 @@ bool FMantleVehicleChassisDocument::MergeSource(const UMantleVehicleSource& Sour
 			return Refuse(FString::Printf(TEXT("the vehicle's movement blocks hold %s, which is not an object"), *Key));
 		}
 		if (Key.Equals(TEXT("flight"), ESearchCase::CaseSensitive) || Key.Equals(TEXT("helicopter"), ESearchCase::CaseSensitive)
-			|| Key.Equals(TEXT("hover"), ESearchCase::CaseSensitive))
+			|| Key.Equals(TEXT("hover"), ESearchCase::CaseSensitive) || Key.Equals(TEXT("trailer"), ESearchCase::CaseSensitive)
+			|| Key.Equals(TEXT("hitch"), ESearchCase::CaseSensitive))
 		{
 			Document.SetObjectField(Key, Value);
 			continue;
@@ -1082,7 +1157,7 @@ bool FMantleVehicleChassisDocument::MergeSource(const UMantleVehicleSource& Sour
 		}
 		else
 		{
-			return Refuse(FString::Printf(TEXT("the vehicle's movement blocks hold %s; a source sets flight, helicopter, hover, seat or camera there (the type and the kinds are its own fields)"), *Key));
+			return Refuse(FString::Printf(TEXT("the vehicle's movement blocks hold %s; a source sets flight, helicopter, hover, trailer, hitch, seat or camera there (the type and the kinds are its own fields)"), *Key));
 		}
 		const TSharedPtr<FJsonObject>* Target = nullptr;
 		if (!Document.TryGetObjectField(Key, Target) || !Target || !Target->IsValid())

@@ -47,6 +47,8 @@ namespace MantleClientFeatures
 	inline const TCHAR* const VehiclePaintLayers = TEXT("vehiclePaintLayers");
 	/** A vehicle's livery names (the vehicle-livery-names cook fixtures). */
 	inline const TCHAR* const VehicleLiveryNames = TEXT("vehicleLiveryNames");
+	/** A vehicle document's movementType trailer and its trailer block, and a wheeled vehicle's hitch (#446). */
+	inline const TCHAR* const VehicleTrailer = TEXT("vehicleTrailer");
 	inline const TCHAR* const Effect = TEXT("effect");
 	/** The sprites archetype of an Effect: NS_MantleSprites and its materials, and the keys that tune it. */
 	inline const TCHAR* const EffectSprites = TEXT("effectSprites");
@@ -104,7 +106,7 @@ namespace MantleClientFeatures
 	{
 		return {
 			InstancedMesh, CrowdSpawner, CrowdPointsOfInterest, SkeletalMesh, RectLight, Decal, LightShape, Terrain, TerrainGrass,
-			Vehicle, VehicleLinkage, VehicleParts, VehicleCarInteraction, VehicleContactPoints, VehicleHiddenSeat, VehicleFliers, VehicleHover, VehicleSeatKind, VehicleWeaponArc, VehicleLights, VehiclePaintLayers, VehicleLiveryNames, Effect, EffectSprites, Constraint, Scatter, ReflectionProbes, Storage,
+			Vehicle, VehicleLinkage, VehicleParts, VehicleCarInteraction, VehicleContactPoints, VehicleHiddenSeat, VehicleFliers, VehicleHover, VehicleSeatKind, VehicleWeaponArc, VehicleLights, VehiclePaintLayers, VehicleLiveryNames, VehicleTrailer, Effect, EffectSprites, Constraint, Scatter, ReflectionProbes, Storage,
 			UIDocuments, EnvironmentDefaults, EnvironmentLighting, AvatarHeight, SoundEmitterAutoplay, StaticMeshPhysics, PhysicsMaterial, Surface, DrawDistance, CarPaint,
 			MaterialFidelity, MaterialAdditive, WeaponDocument, WorldText, VoxelWorld, ScatterDrawDistance, ScatterTerrain, ScatterShapes, ScatterCollision, ScatterPaintLayer, ScatterGroundAlign, ScatterMinSpacing, ScatterPathStep, ScatterPathExclusions, ScatterLarge
 		};

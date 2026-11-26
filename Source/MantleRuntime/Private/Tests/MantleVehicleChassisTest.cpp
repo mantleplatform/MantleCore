@@ -132,7 +132,8 @@ bool FMantleVehicleChassisPresetsMakeAssetsTest::RunTest(const FString& Paramete
 			TestEqual(*FString::Printf(TEXT("%s: wheel %d's center is at its radius"), *Id, Index), Asset.WheelPositions[Index].Z, Desc.Wheels[Index].Radius);
 			TestTrue(*FString::Printf(TEXT("%s: wheel %d has a width"), *Id, Index), Desc.Wheels[Index].Width > 0.0);
 		}
-		TestEqual(*FString::Printf(TEXT("%s: one collision box"), *Id), Desc.Collision.Num(), 1);
+		// A fifth-wheel tractor (#446) collides as its cab and the frame under its fifth wheel.
+		TestEqual(*FString::Printf(TEXT("%s: one collision box (a tractor's cab and frame: two)"), *Id), Desc.Collision.Num(), Reference.HasTractorFrame() ? 2 : 1);
 		TestTrue(*FString::Printf(TEXT("%s: it has a center of mass"), *Id), Desc.bCenterOfMass);
 		// A rider straddles a bike (on the centerline) or a quad (the ATV's wheels in pairs, #376 step 9d): on the centerline, no wheel, no passenger.
 		if (Reference.bCenterline || Reference.Rider.bSet)
@@ -140,6 +141,12 @@ bool FMantleVehicleChassisPresetsMakeAssetsTest::RunTest(const FString& Paramete
 			TestTrue(*FString::Printf(TEXT("%s: the rider sits on the centerline"), *Id), FMath::IsNearlyZero(Desc.SeatLocation.Y));
 			TestFalse(*FString::Printf(TEXT("%s: a rider has handlebars, not a steering wheel"), *Id), Desc.bSteeringWheel);
 			TestFalse(*FString::Printf(TEXT("%s: and no passenger"), *Id), Desc.bPassengerSeat);
+			continue;
+		}
+		// A trailer (#446) keeps the document's driver seat (the hovercraft precedent: its movement type ignores it) and has no passenger.
+		if (Reference.bTrailer)
+		{
+			TestFalse(*FString::Printf(TEXT("%s: a trailer has no passenger"), *Id), Desc.bPassengerSeat);
 			continue;
 		}
 		TestTrue(*FString::Printf(TEXT("%s: the driver sits on the left, -Y"), *Id), Desc.SeatLocation.Y < 0.0);

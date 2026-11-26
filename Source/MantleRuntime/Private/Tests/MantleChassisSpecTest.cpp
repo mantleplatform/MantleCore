@@ -7,7 +7,9 @@
 #include "MantleVehicleChassisBuilder.h"
 #include "Misc/AutomationTest.h"
 #include "Serialization/JsonReader.h"
+#include "Policies/CondensedJsonPrintPolicy.h"
 #include "Serialization/JsonSerializer.h"
+#include "Serialization/JsonWriter.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -426,6 +428,68 @@ namespace MantleChassisSpecTestPrivate
 		}
 	},
 
+	// #446: the semi truck (a cab and a frame under its fifth wheel) and both trailers (a body ahead of the axles, a semitrailer's landing gear).
+	{
+		TEXT("semi"),
+		TEXT(R"MCS({"mass":8200,"maxSpeed":2917,"dragCoefficient":0.59999999999999998,"frontalArea":10,"engine":{"maxTorque":2237,"maxRPM":2000,"idleRPM":600,"torqueCurve":[[0,0.69999999999999996],[600,0.69999999999999996],[1000,0.94999999999999996],[1100,1],[1400,1],[1625,0.89000000000000001],[2000,0.59999999999999998]],"tractionControl":true,"engineBraking":0.5},"transmission":{"gearRatios":[7.4649999999999999,4.5650000000000004,2.7949999999999999,1.71,1.0449999999999999,0.81999999999999995,0.64000000000000001,0.5],"reverseRatio":8.1950000000000003,"finalDrive":4.5599999999999996,"changeUpRPM":1800,"changeDownRPM":1000,"shiftTime":0.5},"suspension":{"maxRaise":15,"maxDrop":22,"springRate":449,"springPreload":260,"damping":1.47},"steering":{"maxAngle":45,"ackermann":true},"brakes":{"brakeTorque":14200,"handbrakeTorque":13200,"abs":true,"frontShare":0.45000000000000001},"tires":{"friction":1.1499999999999999},"camera":{"armLength":900,"height":380},"schemaVersion":1,"wheels":[{"bone":"wheel_a1_l","steering":true,"driven":false,"handbrake":false,"radius":50.700000000000003,"width":30},{"bone":"wheel_a1_r","steering":true,"driven":false,"handbrake":false,"radius":50.700000000000003,"width":30},{"bone":"wheel_a2_l","steering":false,"driven":true,"handbrake":true,"radius":50.700000000000003,"width":30},{"bone":"wheel_a2_r","steering":false,"driven":true,"handbrake":true,"radius":50.700000000000003,"width":30},{"bone":"wheel_a3_l","steering":false,"driven":true,"handbrake":true,"radius":50.700000000000003,"width":30},{"bone":"wheel_a3_r","steering":false,"driven":true,"handbrake":true,"radius":50.700000000000003,"width":30}],"collision":[{"center":[147.875,0,180],"extent":[206.125,125,120]},{"center":[-162.125,0,84.5],"extent":[103.875,125,24.5]}],"centerOfMass":[59.5,0,100],"seat":{"location":[210,-55,190],"steeringWheel":{"location":[256.80000000000001,-55,193],"rotation":[-20,0,0],"radius":25}},"passengerSeat":{"location":[210,55,190]}})MCS"),
+		516, 324,
+		{ -304.9500122, -125, 0 }, { 354, 125, 300 },
+		{
+			{ TEXT("root"), -1, { 0, 0, 0 } },
+			{ TEXT("wheel_a1_l"), 0, { 254.25, -102.5, 50.7 } },
+			{ TEXT("wheel_a1_r"), 0, { 254.25, 102.5, 50.7 } },
+			{ TEXT("wheel_a2_l"), 0, { -122.2434, -102.5, 50.7 } },
+			{ TEXT("wheel_a2_r"), 0, { -122.2434, 102.5, 50.7 } },
+			{ TEXT("wheel_a3_l"), 0, { -254.25, -102.5, 50.7 } },
+			{ TEXT("wheel_a3_r"), 0, { -254.25, 102.5, 50.7 } }
+		},
+		{
+			{ 254.25, -102.5, 50.7 },
+			{ 254.25, 102.5, 50.7 },
+			{ -122.2434, -102.5, 50.7 },
+			{ -122.2434, 102.5, 50.7 },
+			{ -254.25, -102.5, 50.7 },
+			{ -254.25, 102.5, 50.7 }
+		}
+	},
+	{
+		TEXT("semitrailer"),
+		TEXT(R"MCS({"mass":6800,"maxSpeed":2917,"dragCoefficient":0.29999999999999999,"frontalArea":10,"engine":{"maxTorque":576,"maxRPM":5000,"idleRPM":600,"torqueCurve":[[0,0.59999999999999998],[1000,0.75],[2500,0.90000000000000002],[3800,1],[4500,0.96199999999999997],[5000,0.84999999999999998]]},"transmission":{"gearRatios":[4.0270000000000001,2.3639999999999999,1.532,1.1519999999999999,0.85199999999999998,0.66700000000000004],"reverseRatio":3.0640000000000001,"finalDrive":4.4589999999999996,"changeUpRPM":4500,"changeDownRPM":1200},"suspension":{"maxRaise":15,"maxDrop":22,"springRate":363,"springPreload":200,"damping":1.1899999999999999},"steering":{"maxAngle":35,"ackermann":true},"brakes":{"brakeTorque":17000,"handbrakeTorque":17000,"abs":true,"frontShare":0.5},"tires":{"friction":1.1499999999999999},"camera":{"armLength":1600,"height":450},"schemaVersion":1,"wheels":[{"bone":"wheel_fl","steering":true,"driven":false,"handbrake":true,"radius":50.700000000000003,"width":30},{"bone":"wheel_fr","steering":true,"driven":false,"handbrake":true,"radius":50.700000000000003,"width":30},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":true,"radius":50.700000000000003,"width":30},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":true,"radius":50.700000000000003,"width":30}],"collision":[{"center":[533.5,0,266],"extent":[807.5,129.5,145]}],"centerOfMass":[438,0,160],"seat":{"location":[900,-42,250],"steeringWheel":{"location":[946.79999999999995,-42,253],"rotation":[-20,0,0],"radius":21}}})MCS"),
+		344, 216,
+		{ -274, -129.5, 0 }, { 1341, 129.5, 411 },
+		{
+			{ TEXT("root"), -1, { 0, 0, 0 } },
+			{ TEXT("wheel_fl"), 0, { 62, -91.5, 50.7 } },
+			{ TEXT("wheel_fr"), 0, { 62, 91.5, 50.7 } },
+			{ TEXT("wheel_rl"), 0, { -62, -91.5, 50.7 } },
+			{ TEXT("wheel_rr"), 0, { -62, 91.5, 50.7 } }
+		},
+		{
+			{ 62, -91.5, 50.7 },
+			{ 62, 91.5, 50.7 },
+			{ -62, -91.5, 50.7 },
+			{ -62, 91.5, 50.7 }
+		}
+	},
+	{
+		TEXT("utilitytrailer"),
+		TEXT(R"MCS({"mass":900,"maxSpeed":2917,"dragCoefficient":0.40000000000000002,"frontalArea":1.5,"engine":{"maxTorque":576,"maxRPM":5000,"idleRPM":600,"torqueCurve":[[0,0.59999999999999998],[1000,0.75],[2500,0.90000000000000002],[3800,1],[4500,0.96199999999999997],[5000,0.84999999999999998]]},"transmission":{"gearRatios":[4.0270000000000001,2.3639999999999999,1.532,1.1519999999999999,0.85199999999999998,0.66700000000000004],"reverseRatio":3.0640000000000001,"finalDrive":4.4589999999999996,"changeUpRPM":4500,"changeDownRPM":1200},"suspension":{"maxRaise":10,"maxDrop":22,"springRate":62,"springPreload":30,"damping":0.20300000000000001},"steering":{"maxAngle":35,"ackermann":true},"brakes":{"brakeTorque":2400,"handbrakeTorque":2400,"abs":true,"frontShare":0.5},"tires":{"friction":1.1499999999999999},"camera":{"armLength":600,"height":250},"schemaVersion":1,"wheels":[{"bone":"wheel_fl","steering":true,"driven":false,"handbrake":true,"radius":35,"width":20},{"bone":"wheel_fr","steering":true,"driven":false,"handbrake":true,"radius":35,"width":20},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":true,"radius":35,"width":20},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":true,"radius":35,"width":20}],"collision":[{"center":[40,0,80],"extent":[213.5,106.5,30]}],"centerOfMass":[60,0,60],"seat":{"location":[100,-42,120],"steeringWheel":{"location":[146.80000000000001,-42,123],"rotation":[-20,0,0],"radius":18}}})MCS"),
+		344, 216,
+		{ -173.5, -106.5, 0 }, { 348, 106.5, 110 },
+		{
+			{ TEXT("root"), -1, { 0, 0, 0 } },
+			{ TEXT("wheel_fl"), 0, { 44.5, -90, 35 } },
+			{ TEXT("wheel_fr"), 0, { 44.5, 90, 35 } },
+			{ TEXT("wheel_rl"), 0, { -44.5, -90, 35 } },
+			{ TEXT("wheel_rr"), 0, { -44.5, 90, 35 } }
+		},
+		{
+			{ 44.5, -90, 35 },
+			{ 44.5, 90, 35 },
+			{ -44.5, -90, 35 },
+			{ -44.5, 90, 35 }
+		}
+	},
 		};
 		return Table;
 	}
@@ -496,7 +560,7 @@ namespace MantleChassisSpecTestPrivate
 		{
 			return Value;
 		}
-		for (const TCHAR* Key : { TEXT("movementType"), TEXT("flight"), TEXT("helicopter"), TEXT("hover") })
+		for (const TCHAR* Key : { TEXT("movementType"), TEXT("flight"), TEXT("helicopter"), TEXT("hover"), TEXT("trailer"), TEXT("hitch") })
 		{
 			Doc->RemoveField(Key);
 		}
@@ -540,6 +604,56 @@ bool FMantleChassisSpecComposesLikeBeforeTest::RunTest(const FString& Parameters
 	using namespace MantleChassisSpecTestPrivate;
 	const TArray<FString> Ids = FMantleVehicleChassisBuilder::PresetIds();
 	TestEqual(TEXT("every shipped preset has a golden entry"), Ids.Num(), Golden().Num());
+	// A shipped preset with no entry yet: the entry it would have, logged ready to paste once its body is checked by eye.
+	for (const FString& Id : Ids)
+	{
+		if (Golden().ContainsByPredicate([&Id](const FGoldenChassis& Entry) { return Id == Entry.Id; }))
+		{
+			continue;
+		}
+		FString Text;
+		FString Error;
+		FMantleChassisSpec Spec;
+		FMantleVehicleAsset Asset;
+		if (!FMantleVehicleChassisBuilder::LoadPresetText(Id, Text, Error) || !FMantleChassisSpec::Parse(Text, Spec, Error)
+			|| !FMantleVehicleChassisBuilder::MakeAsset(Spec, Asset, Error) || Asset.Body.LODs.Num() != 1)
+		{
+			AddError(FString::Printf(TEXT("%s has no golden entry and does not build (%s)"), *Id, *Error));
+			continue;
+		}
+		const FMantleSkinnedMeshLOD& LOD = Asset.Body.LODs[0];
+		FVector3f Min(TNumericLimits<float>::Max());
+		FVector3f Max(-TNumericLimits<float>::Max());
+		for (const FVector3f& Point : LOD.Positions)
+		{
+			Min = FVector3f(FMath::Min(Min.X, Point.X), FMath::Min(Min.Y, Point.Y), FMath::Min(Min.Z, Point.Z));
+			Max = FVector3f(FMath::Max(Max.X, Point.X), FMath::Max(Max.Y, Point.Y), FMath::Max(Max.Z, Point.Z));
+		}
+		// The document as the comparison reads it: without its movement blocks.
+		FString Document;
+		const TSharedPtr<FJsonValue> Without = ParseJsonWithoutMovement(FMantleChassisSpec::ComposeDocument(Spec));
+		const TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer = TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Document);
+		if (Without.IsValid() && Without->Type == EJson::Object)
+		{
+			FJsonSerializer::Serialize(Without->AsObject().ToSharedRef(), Writer);
+		}
+		FString Entry = FString::Printf(TEXT("\t{\n\t\tTEXT(\"%s\"),\n\t\tTEXT(R\"MCS(%s)MCS\"),\n\t\t%d, %d,\n\t\t{ %.10g, %.10g, %.10g }, { %.10g, %.10g, %.10g },\n\t\t{\n"), *Id, *Document,
+			LOD.Positions.Num(), LOD.NumTriangles(), Min.X, Min.Y, Min.Z, Max.X, Max.Y, Max.Z);
+		for (int32 Index = 0; Index < Asset.Body.Bones.Num(); ++Index)
+		{
+			const FVector At = Asset.Body.ReferencePose.IsValidIndex(Index) ? Asset.Body.ReferencePose[Index].GetLocation() : FVector::ZeroVector;
+			Entry += FString::Printf(TEXT("\t\t\t{ TEXT(\"%s\"), %d, { %.10g, %.10g, %.10g } }%s\n"), *Asset.Body.Bones[Index].Name.ToString(), Asset.Body.Bones[Index].ParentIndex,
+				At.X, At.Y, At.Z, Index + 1 < Asset.Body.Bones.Num() ? TEXT(",") : TEXT(""));
+		}
+		Entry += TEXT("\t\t},\n\t\t{\n");
+		for (int32 Index = 0; Index < Asset.WheelPositions.Num(); ++Index)
+		{
+			const FVector& At = Asset.WheelPositions[Index];
+			Entry += FString::Printf(TEXT("\t\t\t{ %.10g, %.10g, %.10g }%s\n"), At.X, At.Y, At.Z, Index + 1 < Asset.WheelPositions.Num() ? TEXT(",") : TEXT(""));
+		}
+		Entry += TEXT("\t\t}\n\t},");
+		AddError(FString::Printf(TEXT("%s has no golden entry; once its body is checked, this is the entry it would have:\n%s"), *Id, *Entry));
+	}
 	for (const FGoldenChassis& Want : Golden())
 	{
 		const FString Id = Want.Id;

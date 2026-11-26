@@ -255,6 +255,14 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("hover/damping/skirtBrakePerSecond"), 0.0, 50.0 },
 		{ TEXT("hover/damping/maxSkirtBrakeAccel"), 0.0, 5000.0 },
 		{ TEXT("hover/angularDamping"), 0.0, 5.0 },
+		// A trailer's block and a towing vehicle's hitch (#446). A trailer's points reach twice as far as a position (its origin is under its axles, and a 53 ft
+		// trailer's kingpin is 12.5 m ahead of them).
+		{ TEXT("trailer/coupler/location/*"), -2000.0, 2000.0 },
+		{ TEXT("trailer/landingGear/center/*"), -2000.0, 2000.0 },
+		{ TEXT("trailer/landingGear/extent/*"), 1.0, 1000.0 },
+		{ TEXT("trailer/cargo/maxLoad"), 0.0, 30000.0 },
+		{ TEXT("trailer/cargo/location/*"), -2000.0, 2000.0 },
+		{ TEXT("hitch/location/*"), -1000.0, 1000.0 },
 	};
 
 	/** The longest wheel bone name the schema allows, in characters. */
@@ -1908,6 +1916,88 @@ namespace MantleVehicleAssetPrivate
 		D.Hover = MoveTemp(H);
 	}
 
+	/** A hitch or coupler object (#446): exactly type and location, both required; type fifthWheel or ball. */
+	bool ReadVehicleHitchObject(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Obj, const FString& Pointer, const TCHAR* RangePrefix, FMantleVehicleHitchDesc& Out)
+	{
+		static const TCHAR* const Kinds[] = { TEXT("fifthWheel"), TEXT("ball") };
+		int32 Kind = 0;
+		const FString LocationRange = FString(RangePrefix) + TEXT("/location/*");
+		if (!P.Keys(Obj, Pointer, { TEXT("type"), TEXT("location") }, { TEXT("type"), TEXT("location") })
+			|| !ReadVehicleEnumName(P, Obj, Pointer, TEXT("type"), Kinds, Kind)
+			|| !P.Vector(Obj->TryGetField(TEXT("location")), Pointer + TEXT("/location"), *LocationRange, Out.Location))
+		{
+			return false;
+		}
+		Out.Kind = static_cast<EMantleVehicleHitchKind>(Kind);
+		return true;
+	}
+
+	/** A trailer's block: exactly its keys, the coupler required, the landing gear box and the cargo optional. */
+	void ReadVehicleTrailer(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
+	{
+		const FString Pointer = TEXT("/trailer");
+		TSharedPtr<FJsonObject> Block;
+		TSharedPtr<FJsonObject> Coupler;
+		FMantleVehicleTrailerDesc T;
+		if (!P.Object(Root, TEXT(""), TEXT("trailer"), Block)
+			|| !P.Keys(Block, Pointer, { TEXT("coupler"), TEXT("landingGear"), TEXT("cargo") }, { TEXT("coupler") })
+			|| !P.Object(Block, Pointer, TEXT("coupler"), Coupler)
+			|| !ReadVehicleHitchObject(P, Coupler, Pointer + TEXT("/coupler"), TEXT("trailer/coupler"), T.Coupler))
+		{
+			return;
+		}
+		if (Block->HasField(TEXT("landingGear")))
+		{
+			TSharedPtr<FJsonObject> Gear;
+			const FString GearPointer = Pointer + TEXT("/landingGear");
+			if (!P.Object(Block, Pointer, TEXT("landingGear"), Gear)
+				|| !P.Keys(Gear, GearPointer, { TEXT("center"), TEXT("extent") }, { TEXT("center"), TEXT("extent") })
+				|| !P.Vector(Gear->TryGetField(TEXT("center")), GearPointer + TEXT("/center"), TEXT("trailer/landingGear/center/*"), T.LandingGearCenter)
+				|| !P.Vector(Gear->TryGetField(TEXT("extent")), GearPointer + TEXT("/extent"), TEXT("trailer/landingGear/extent/*"), T.LandingGearExtent))
+			{
+				return;
+			}
+			T.bLandingGear = true;
+		}
+		if (Block->HasField(TEXT("cargo")))
+		{
+			TSharedPtr<FJsonObject> Cargo;
+			const FString CargoPointer = Pointer + TEXT("/cargo");
+			if (!P.Object(Block, Pointer, TEXT("cargo"), Cargo)
+				|| !P.Keys(Cargo, CargoPointer, { TEXT("maxLoad"), TEXT("location") }, {})
+				|| !P.OptNumber(Cargo, CargoPointer, TEXT("maxLoad"), TEXT("trailer/cargo/maxLoad"), T.MaxCargoKg))
+			{
+				return;
+			}
+			if (Cargo->HasField(TEXT("location")))
+			{
+				if (!P.Vector(Cargo->TryGetField(TEXT("location")), CargoPointer + TEXT("/location"), TEXT("trailer/cargo/location/*"), T.CargoLocation))
+				{
+					return;
+				}
+				T.bCargoLocation = true;
+			}
+		}
+		D.Trailer = MoveTemp(T);
+	}
+
+	/** A towing vehicle's hitch: a wheeled vehicle's only, so a trailer can't tow another (one trailer per vehicle). */
+	void ReadVehicleHitch(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
+	{
+		if (D.MovementType != EMantleVehicleMovementKind::Wheeled)
+		{
+			P.Fail(TEXT("/hitch"), TEXT("is only for a wheeled vehicle: a trailer, plane, helicopter or hovercraft tows nothing"));
+			return;
+		}
+		TSharedPtr<FJsonObject> Block;
+		FMantleVehicleHitchDesc Hitch;
+		if (P.Object(Root, TEXT(""), TEXT("hitch"), Block) && ReadVehicleHitchObject(P, Block, TEXT("/hitch"), TEXT("hitch"), Hitch))
+		{
+			D.bHitch = true;
+			D.Hitch = Hitch;
+		}
+	}
+
 	/** A seat's kind (seat.kind or passengerSeat.kind) when it names one: car, motorcycle or pilot. */
 	bool ReadVehicleSeatKind(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Seat, const FString& Pointer, EMantleVehicleSeatKind& Out)
 	{
@@ -2079,14 +2169,14 @@ namespace MantleVehicleAssetPrivate
 		return true;
 	}
 
-	/** The movement type the document names: wheeled when it names none, else wheeled, plane, helicopter or hover. */
+	/** The movement type the document names: wheeled when it names none, else wheeled, plane, helicopter, hover or trailer. */
 	bool ReadVehicleMovementType(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
 	{
 		if (!Root->HasField(TEXT("movementType")))
 		{
 			return true;
 		}
-		static const TCHAR* const Kinds[] = { TEXT("wheeled"), TEXT("plane"), TEXT("helicopter"), TEXT("hover") };
+		static const TCHAR* const Kinds[] = { TEXT("wheeled"), TEXT("plane"), TEXT("helicopter"), TEXT("hover"), TEXT("trailer") };
 		int32 Kind = 0;
 		if (!ReadVehicleEnumName(P, Root, TEXT(""), TEXT("movementType"), Kinds, Kind))
 		{
@@ -2112,8 +2202,9 @@ namespace MantleVehicleAssetPrivate
 			{ EMantleVehicleMovementKind::Plane, TEXT("flight"), TEXT("plane") },
 			{ EMantleVehicleMovementKind::Helicopter, TEXT("helicopter"), TEXT("helicopter") },
 			{ EMantleVehicleMovementKind::Hover, TEXT("hover"), TEXT("hover") },
+			{ EMantleVehicleMovementKind::Trailer, TEXT("trailer"), TEXT("trailer") },
 		};
-		static const TCHAR* const Names[] = { TEXT("wheeled"), TEXT("plane"), TEXT("helicopter"), TEXT("hover") };
+		static const TCHAR* const Names[] = { TEXT("wheeled"), TEXT("plane"), TEXT("helicopter"), TEXT("hover"), TEXT("trailer") };
 		for (const FBlock& Block : Blocks)
 		{
 			const bool bHas = Root->HasField(Block.Key);
@@ -2246,7 +2337,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 		  TEXT("engine"), TEXT("transmission"), TEXT("suspension"), TEXT("steering"), TEXT("brakes"), TEXT("tires"), TEXT("wheels"),
 		  TEXT("seat"), TEXT("camera"), TEXT("collision"), TEXT("materials"), TEXT("paint"), TEXT("lights"), TEXT("liveries"), TEXT("liveryNames"), TEXT("liveryGlow"), TEXT("liveryUV"),
 		  TEXT("defaultLivery"), TEXT("linkage"), TEXT("parts"), TEXT("passengerSeat"), TEXT("trunk"), TEXT("hood"), TEXT("rearLeftDoor"), TEXT("rearRightDoor"), TEXT("horn"), TEXT("preset"), TEXT("movementType"),
-		  TEXT("flight"), TEXT("helicopter"), TEXT("hover") },
+		  TEXT("flight"), TEXT("helicopter"), TEXT("hover"), TEXT("trailer"), TEXT("hitch") },
 		{ TEXT("schemaVersion"), TEXT("mass"), TEXT("dragCoefficient"), TEXT("frontalArea"), TEXT("engine"),
 		  TEXT("transmission"), TEXT("suspension"), TEXT("steering"), TEXT("brakes"), TEXT("tires"), TEXT("wheels"), TEXT("seat"),
 		  TEXT("camera"), TEXT("collision") });
@@ -2658,6 +2749,14 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	if (P.Ok() && D.MovementType == EMantleVehicleMovementKind::Hover)
 	{
 		ReadVehicleHover(P, Root, D);
+	}
+	if (P.Ok() && D.MovementType == EMantleVehicleMovementKind::Trailer)
+	{
+		ReadVehicleTrailer(P, Root, D);
+	}
+	if (P.Ok() && Root->HasField(TEXT("hitch")))
+	{
+		ReadVehicleHitch(P, Root, D);
 	}
 
 	if (P.Ok())
