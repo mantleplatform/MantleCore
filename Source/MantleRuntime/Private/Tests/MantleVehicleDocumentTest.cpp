@@ -550,10 +550,15 @@ bool FMantleVehicleDocumentExamplesTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	for (const TCHAR* Id : { TEXT("plane"), TEXT("jet"), TEXT("helicopter"), TEXT("hovercraft"), TEXT("motorcycle") })
+	// Each example and the preset it is composed from (#379: valid-plane.json is the warbird's; the light plane has no example of its own).
+	const TPair<const TCHAR*, const TCHAR*> Pairs[] = { { TEXT("warbird"), TEXT("plane") }, { TEXT("jet"), TEXT("jet") }, { TEXT("helicopter"), TEXT("helicopter") },
+		{ TEXT("hovercraft"), TEXT("hovercraft") }, { TEXT("motorcycle"), TEXT("motorcycle") } };
+	for (const TPair<const TCHAR*, const TCHAR*>& Pair : Pairs)
 	{
+		const TCHAR* Id = Pair.Key;
+		const TCHAR* File = Pair.Value;
 		FString Example;
-		if (!TestTrue(*FString::Printf(TEXT("%s: the example exists"), Id), FFileHelper::LoadFileToString(Example, *FPaths::Combine(Directory, FString::Printf(TEXT("valid-%s.json"), Id)))))
+		if (!TestTrue(*FString::Printf(TEXT("%s: the example valid-%s.json exists"), Id, File), FFileHelper::LoadFileToString(Example, *FPaths::Combine(Directory, FString::Printf(TEXT("valid-%s.json"), File)))))
 		{
 			continue;
 		}
@@ -586,6 +591,11 @@ bool FMantleVehicleDocumentExamplesTest::RunTest(const FString& Parameters)
 		FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(B), JsonB);
 		const FString Difference = JsonDifference(JsonA, JsonB, FString(), 1.0e-3);
 		TestTrue(*FString::Printf(TEXT("%s: the document the editor composes is the example (differs at %s: %s)"), Id, *Difference, *FirstDifferenceOf(A, B)), Difference.IsEmpty());
+		if (!Difference.IsEmpty())
+		{
+			// The composed document, for refreshing the example (Saved/VehicleExamples/valid-<preset>.json; its movement part is what this compares).
+			FFileHelper::SaveStringToFile(Composed, *FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("VehicleExamples"), FString::Printf(TEXT("valid-%s.json"), File)));
+		}
 	}
 	return true;
 }
@@ -649,10 +659,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FMantleVehicleDocumentHeldTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleDocumentTestPrivate;
-	// A plane 1.6 times the preset's size has its tail surfaces 13 m back: past the +-1000 cm a document can say. Positive control: it is held, said so, and the
+	// The warbird 1.6 times the preset's size has its tail surfaces 13 m back (#379: the light plane's reach only 9.4 m): past the +-1000 cm a document can say. Positive control: it is held, said so, and the
 	// document still reads, with the held position at the range's end.
 	FMantleChassisSpec Plane;
-	if (!LoadSpec(*this, TEXT("plane@1.6"), Plane))
+	if (!LoadSpec(*this, TEXT("warbird@1.6"), Plane))
 	{
 		return false;
 	}
