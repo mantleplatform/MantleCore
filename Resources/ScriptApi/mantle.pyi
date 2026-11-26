@@ -1756,6 +1756,9 @@ class _VehiclesService:
     def get_engine_size(self, vehicle: Entity, /) -> Optional[float]:
         """The vehicle's engine size in cc (cubic centimeters), as its creator picked it: a motorcycle's 125, 300, 600, 1000 or 1800 cc engine. nil when the vehicle does not give one (cars, aircraft). Errors if the entity is not a vehicle or no longer exists."""
         ...
+    def get_flight_info(self, vehicle: Entity, /) -> Optional[dict[str, Any]]:
+        """What a plane or helicopter is doing: airspeed and verticalSpeed (cm/s, up positive), altitude (its height in the world, cm: the air thins with it, from world height 0), heightAboveGround (a helicopter's rotor over the ground, cm; nil past one rotor diameter), throttle (0 to 1; a helicopter's collective), a helicopter's inGroundEffect (the ground cushion is helping lift) and inVortexRing (it is sinking into its own downwash and losing lift), and assists (a helicopter's level, heightHold and yawHold, as its creator set them). Nil when the entity is not a plane or a helicopter."""
+        ...
     def get_fuel(self, vehicle: Entity, /) -> float:
         """The fuel in the tank, from 0 to MaxFuel."""
         ...
@@ -1776,6 +1779,9 @@ class _VehiclesService:
         ...
     def get_liveries(self, vehicle: Entity, /) -> list[str]:
         """The names of the car's liveries, in the order SetLivery counts them: the first name is livery index 0, the next is 1, and so on. A name is what the vehicle's creator called it, or 'Livery 1', 'Livery 2' and so on for one without a name. The list is empty for a car published with no liveries, for the built-in cars, and for an entity that is not a car."""
+        ...
+    def get_local_flight_info(self) -> Optional[dict[str, Any]]:
+        """GetFlightInfo for the plane or helicopter the local player is flying, for a place that draws its own instruments. Nil while the local player is not flying one."""
         ...
     def get_local_lean_angle(self) -> Optional[float]:
         """How far the motorcycle the local player is riding leans now, in degrees (Vehicles:GetLeanAngle's sign: positive right). nil while the local player is not riding a motorcycle. Works on a client script; read it every frame for a lean readout."""

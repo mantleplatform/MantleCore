@@ -133,7 +133,9 @@ bool FMantleChassisHelicopterSpecTest::RunTest(const FString& Parameters)
 		FMantleChassisSpec Other;
 		FString Text;
 		FString Error;
-		if (Id == TEXT("helicopter") || !FMantleVehicleChassisBuilder::LoadPresetText(Id, Text, Error) || !FMantleChassisSpec::Parse(Text, Other, Error))
+		// The two helicopters (#380: the Bell 407 and the light one, an R44) have theirs.
+		if (Id == TEXT("helicopter") || Id == TEXT("lighthelicopter") || !FMantleVehicleChassisBuilder::LoadPresetText(Id, Text, Error)
+			|| !FMantleChassisSpec::Parse(Text, Other, Error))
 		{
 			continue;
 		}
