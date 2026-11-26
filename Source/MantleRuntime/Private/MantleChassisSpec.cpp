@@ -789,6 +789,16 @@ FString FMantleChassisSpec::ComposeDocument(const FMantleChassisSpec& Spec, TArr
 	{
 		ApplyHandling(Doc, Spec.Derived.GetValue());
 	}
+	else if (Spec.DriveEngineBrakingScale != 1.0)
+	{
+		// The creator's drive choice on the type's own handling (ApplyDrive): engine braking is per driven wheel, so it follows how many there are now.
+		const TSharedPtr<FJsonObject> Engine = ChildObject(Doc, TEXT("engine"));
+		double Braking = 0.0;
+		if (Engine->TryGetNumberField(TEXT("engineBraking"), Braking))
+		{
+			Engine->SetNumberField(TEXT("engineBraking"), Braking * Spec.DriveEngineBrakingScale);
+		}
+	}
 	SetDefault(Doc, TEXT("mass"), DefaultMass);
 	SetDefault(Doc, TEXT("maxSpeed"), DefaultMaxSpeed);
 	SetDefault(Doc, TEXT("dragCoefficient"), DefaultDragCoefficient);
@@ -1225,6 +1235,70 @@ FMantleChassisSpec FMantleChassisSpec::Scaled(const FMantleChassisSpec& Spec, co
 	// The preset's trim is for the preset's weight, wings and thrust: a plane of another size needs its own camber and cruise throttle to fly level hands-off.
 	Trim(Out);
 	return Out;
+}
+
+bool FMantleChassisSpec::IsDriveOffered() const
+{
+	if (bCenterline || Aircraft.bSet || Helicopter.bSet || Hovercraft.bSet || Axles.Num() < 2)
+	{
+		return false;
+	}
+	for (const FMantleChassisAxle& Axle : Axles)
+	{
+		if (Axle.bCenterline) return false;
+	}
+	return true;
+}
+
+EMantleVehicleDrive FMantleChassisSpec::DefaultDrive() const
+{
+	if (!IsDriveOffered())
+	{
+		return EMantleVehicleDrive::Type;
+	}
+	bool bFront = Axles[0].bDrive;
+	bool bAllRear = true, bAnyRear = false;
+	for (int32 Axle = 1; Axle < Axles.Num(); ++Axle)
+	{
+		bAllRear &= Axles[Axle].bDrive;
+		bAnyRear |= Axles[Axle].bDrive;
+	}
+	if (bFront && bAllRear) return EMantleVehicleDrive::All;
+	if (bFront && !bAnyRear) return EMantleVehicleDrive::Front;
+	if (!bFront && bAllRear) return EMantleVehicleDrive::Rear;
+	return EMantleVehicleDrive::Type;
+}
+
+bool FMantleChassisSpec::ApplyDrive(const EMantleVehicleDrive Choice)
+{
+	if (Choice == EMantleVehicleDrive::Type)
+	{
+		return true;
+	}
+	if (!IsDriveOffered())
+	{
+		return false;
+	}
+	DriveChoice = Choice;
+	// Every axle has two wheels here (IsDriveOffered), so the driven wheels are twice the driven axles.
+	int32 Before = 0, After = 0;
+	for (int32 Axle = 0; Axle < Axles.Num(); ++Axle)
+	{
+		Before += Axles[Axle].bDrive ? 2 : 0;
+		Axles[Axle].bDrive = Choice == EMantleVehicleDrive::All || (Axle == 0) == (Choice == EMantleVehicleDrive::Front);
+		After += Axles[Axle].bDrive ? 2 : 0;
+	}
+	if (Before > 0 && After > 0 && Before != After)
+	{
+		const double Scale = static_cast<double>(Before) / static_cast<double>(After);
+		Archetype.EngineBraking *= Scale;
+		if (Derived.IsSet())
+		{
+			Derived.GetValue().EngineBraking *= Scale;
+		}
+		DriveEngineBrakingScale *= Scale;
+	}
+	return true;
 }
 
 bool FMantleChassisSpec::Trim(FMantleChassisSpec& InOutSpec)

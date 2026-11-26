@@ -299,6 +299,10 @@ private:
 	bool bUseSkin = false;
 	/** The frame is the twin-engined plane (FMantleVehicleChassisSkin::AsTwin): set when the model has two propellers, or by the creator. */
 	bool bTwinEngine = false;
+	/** The creator's drive choice (#376 off-road follow-on): the type's own, or front, rear or all-wheel drive. Kept when the type changes; a type whose drive
+	 *  isn't a choice hides it and ignores it. */
+	EMantleVehicleDrive DriveChoice = EMantleVehicleDrive::Type;
+	TArray<TSharedPtr<FString>> DriveChoices;
 	TSharedPtr<SVerticalBox> ResultBox;
 	/** What Import a file... did, in plain words, under the picker; red when it failed. */
 	FText ImportStatus;

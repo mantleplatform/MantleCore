@@ -638,7 +638,7 @@ namespace MantleVehicleBuilderPrivate
 	// Mantle.Vehicle.BuildModel: what the Build a vehicle window's Build button does for a model that is worn as a skin, from the console or a script.
 	FAutoConsoleCommand BuildModelCommand(
 		TEXT("Mantle.Vehicle.BuildModel"),
-		TEXT("Mantle.Vehicle.BuildModel <model object path> <vehicle type id> [yaw=<deg>] [name=<Name>] [folder=</Game/...>] [bone.<chassis bone>=<model bone>] [section.<chassis bone>=<n>] [overwrite=1] [hideriders=1] [paint=<words>] [notpaint=<words>] [secondary=<words>] [wheels=<words>] [interior=<words>] [dashboard=<words>] [secondaryfinish=<finish>] [wheelsfinish=<finish>] [interiorfinish=<finish>] [dashboardfinish=<finish>] "
+		TEXT("Mantle.Vehicle.BuildModel <model object path> <vehicle type id> [yaw=<deg>] [name=<Name>] [folder=</Game/...>] [bone.<chassis bone>=<model bone>] [section.<chassis bone>=<n>] [overwrite=1] [hideriders=1] [drive=front|rear|all] [paint=<words>] [notpaint=<words>] [secondary=<words>] [wheels=<words>] [interior=<words>] [dashboard=<words>] [secondaryfinish=<finish>] [wheelsfinish=<finish>] [interiorfinish=<finish>] [dashboardfinish=<finish>] "
 			 "-- puts a static or skeletal mesh on the type's chassis (BuildFromModel), saves it under the folder (default /Game/MantleVehicles) and logs MANTLE_VEHICLE_BUILD_MODEL "
 			 "ok=<0|1> with the vehicle's path, its Size and every note. The paint options pick the sections that have those whole words (wheels=rim is not PRIMARY). With no yaw or parts given Mantle chooses them. A name= that a vehicle already has is refused unless overwrite=1."),
 		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
@@ -680,6 +680,13 @@ namespace MantleVehicleBuilderPrivate
 				else if (Key.Equals(TEXT("overwrite"), ESearchCase::IgnoreCase))
 				{
 					Options.bOverwrite = Value == TEXT("1") || Value.Equals(TEXT("true"), ESearchCase::IgnoreCase);
+				}
+				else if (Key.Equals(TEXT("drive"), ESearchCase::IgnoreCase))
+				{
+					// The window's Drive choice (#376 off-road follow-on): front, rear or all.
+					Options.Drive = Value.Equals(TEXT("front"), ESearchCase::IgnoreCase) ? EMantleVehicleDrive::Front
+						: Value.Equals(TEXT("rear"), ESearchCase::IgnoreCase) ? EMantleVehicleDrive::Rear
+						: Value.Equals(TEXT("all"), ESearchCase::IgnoreCase) ? EMantleVehicleDrive::All : EMantleVehicleDrive::Type;
 				}
 				else if (Key.Equals(TEXT("hideriders"), ESearchCase::IgnoreCase))
 				{
@@ -1305,6 +1312,8 @@ namespace MantleVehicleBuilderPrivate
 		}
 		// A shaped chassis's numbers are its own, so they are held to the document's limits and not to a preset's narrower ones.
 		Source->Preset = Spec.Derived.IsSet() ? FName() : FName(*Spec.Id);
+		// The creator's drive choice (#376 off-road follow-on), kept with the vehicle so a rebuild keeps it.
+		Source->Drive = Spec.DriveChoice;
 		Source->FitScale = 1.f;
 		Source->Wheels.Reset();
 		for (int32 Index = 0; Index < Spec.WheelCount(); ++Index)
@@ -1958,6 +1967,13 @@ bool FMantleVehicleBuilder::PrepareFromModel(UObject* ModelAsset, const FString&
 		{
 			Out.Notes.Add(Held.ToString());
 		}
+	}
+
+	// The creator's drive choice (#376 off-road follow-on): front, rear or all-wheel drive on the type's axles, its engine braking held car-wide. A type
+	// whose drive isn't a choice (a bike, an aircraft, a hovercraft) keeps its own.
+	if (Options.Drive.IsSet() && !Spec.ApplyDrive(Options.Drive.GetValue()))
+	{
+		Out.Notes.Add(TEXT("This type of vehicle drives its own way, so the drive choice was left out."));
 	}
 
 	// The chassis's own skeleton at that size, and the model on it.

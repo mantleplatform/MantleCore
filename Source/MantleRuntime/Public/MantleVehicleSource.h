@@ -430,6 +430,29 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0.05", ClampMax = "2", EditCondition = "!bElectric"))
 	float ShiftTime = 0.5f;
 
+	/** A transfer case's low range (transmission.lowRange, #376 off-road): this ratio times the final drive while the driver has low range in (G, or
+	 *  Back + D-pad Up). 0: none. Not on an electric car. The Jeep Wrangler Rubicon's is 4.0. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0", ClampMax = "6", EditCondition = "!bElectric"))
+	float LowRange = 0.f;
+
+	/** The front axle's differential (transmission.differentials.front, #376 off-road). None: Mantle's equal split. Selectable: open until the driver
+	 *  locks it (K, or Back + D-pad Right). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission")
+	EMantleVehicleDifferential FrontDifferential = EMantleVehicleDifferential::None;
+
+	/** A limited-slip front differential's torque bias ratio (an Eaton Truetrac's is up to 3.5). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission",
+		meta = (ClampMin = "1.5", ClampMax = "10", EditCondition = "FrontDifferential == EMantleVehicleDifferential::LimitedSlip"))
+	float FrontDifferentialBias = 3.5f;
+
+	/** Every other axle's differential (transmission.differentials.rear). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission")
+	EMantleVehicleDifferential RearDifferential = EMantleVehicleDifferential::None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission",
+		meta = (ClampMin = "1.5", ClampMax = "10", EditCondition = "RearDifferential == EMantleVehicleDifferential::LimitedSlip"))
+	float RearDifferentialBias = 3.5f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Suspension", meta = (ClampMin = "0", ClampMax = "50", Units = "cm"))
 	float SuspensionMaxRaise = 10.f;
 
@@ -935,6 +958,13 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vehicle", meta = (ClampMin = 0.25, ClampMax = 4.0, DisplayName = "Size"))
 	float FitScale = 1.f;
+
+	/**
+	 * Which axles a vehicle built from a type drives (#376 off-road follow-on): the type's own, or front, rear or all-wheel drive. The builder writes
+	 * the wheels' Driven from it on every build, so a rebuild keeps it; a type where the drive isn't a choice (bikes, aircraft, hovercraft) ignores it.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vehicle")
+	EMantleVehicleDrive Drive = EMantleVehicleDrive::Type;
 
 	/** 2 to 8 wheels, each on a bone of the body. At least one steers and one is driven. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vehicle")

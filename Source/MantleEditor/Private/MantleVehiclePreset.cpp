@@ -5,6 +5,7 @@
 #include "Dom/JsonValue.h"
 #include "HAL/FileManager.h"
 #include "Interfaces/IPluginManager.h"
+#include "MantleChassisSpec.h"
 #include "MantleVehicleSource.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -125,6 +126,8 @@ namespace MantleVehiclePresetPrivate
 			TEXT("engine/drive"), TEXT("engine/peakPower"), TEXT("engine/regenBraking"), TEXT("engine/batteryCapacity"),
 			TEXT("transmission/gearRatios"), TEXT("transmission/reverseRatio"), TEXT("transmission/finalDrive"),
 			TEXT("transmission/changeUpRPM"), TEXT("transmission/changeDownRPM"), TEXT("transmission/shiftTime"),
+			TEXT("transmission/lowRange"), TEXT("transmission/differentials/front/type"), TEXT("transmission/differentials/front/biasRatio"),
+			TEXT("transmission/differentials/rear/type"), TEXT("transmission/differentials/rear/biasRatio"),
 			TEXT("suspension/maxRaise"), TEXT("suspension/maxDrop"), TEXT("suspension/springRate"),
 			TEXT("suspension/springPreload"), TEXT("suspension/damping"),
 			TEXT("steering/maxAngle"), TEXT("steering/ackermann"), TEXT("steering/speedCurve"),
@@ -383,11 +386,18 @@ FString FMantleVehiclePresets::CardSentence(const FMantleVehiclePreset& Preset)
 		{ TEXT("van"), TEXT("A tall box-bodied van: delivery vans, minibuses and ambulances.") },
 		{ TEXT("truck"), TEXT("A large, heavy road vehicle: box trucks, delivery trucks and campervans.") },
 	};
+	// Its own drive (#376 off-road follow-on), where a creator may change it.
+	const FString Drive = FMantleVehiclePresets::DriveWords(Preset.DefaultDrive);
+	// Before the sentence's full stop, so the card stays one sentence: "... pickups and SUVs (rear-wheel drive)."
+	const auto WithDrive = [&Drive](const FString& Sentence)
+	{
+		return Drive.IsEmpty() || !Sentence.EndsWith(TEXT(".")) ? Sentence : Sentence.LeftChop(1) + TEXT(" (") + Drive + TEXT(").");
+	};
 	for (const TPair<const TCHAR*, const TCHAR*>& Own : OwnLines)
 	{
 		if (Preset.Id == Own.Key && !Preset.Description.TrimStartAndEnd().IsEmpty())
 		{
-			return Own.Value;
+			return WithDrive(Own.Value);
 		}
 	}
 	FString Text = Preset.Description.TrimStartAndEnd();
@@ -404,7 +414,13 @@ FString FMantleVehiclePresets::CardSentence(const FMantleVehiclePreset& Preset)
 	{
 		Text += TEXT(".");
 	}
-	return Text;
+	return WithDrive(Text);
+}
+
+FString FMantleVehiclePresets::DriveWords(const EMantleVehicleDrive Drive)
+{
+	return Drive == EMantleVehicleDrive::Front ? TEXT("front-wheel drive") : Drive == EMantleVehicleDrive::Rear ? TEXT("rear-wheel drive")
+		: Drive == EMantleVehicleDrive::All ? TEXT("all-wheel drive") : FString();
 }
 
 const FMantleVehiclePreset* FMantleVehiclePresets::Find(const FString& Id)
@@ -517,6 +533,12 @@ bool FMantleVehiclePresets::Parse(const FString& Json, FMantleVehiclePreset& Out
 		}
 	}
 
+	// Its own drive (#376 off-road follow-on), for its card: from the chassis's axles where the drive is a creator's choice.
+	{
+		FMantleChassisSpec Spec;
+		FString SpecError;
+		Preset.DefaultDrive = FMantleChassisSpec::Parse(Json, Spec, SpecError) ? Spec.DefaultDrive() : EMantleVehicleDrive::Type;
+	}
 	Out = MoveTemp(Preset);
 	return true;
 }
@@ -600,6 +622,14 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 	Reader.Int(TEXT("transmission/changeDownRPM"), T.ChangeDownRPM);
 	// #376: each gear change's time, part of the car; absent, the tuning keeps its own (0.5 s).
 	Reader.Float(TEXT("transmission/shiftTime"), T.ShiftTime);
+	// #376 off-road: a low range and the differentials. A preset sets them whole: one without them takes them away.
+	T.LowRange = 0.f;
+	Reader.Float(TEXT("transmission/lowRange"), T.LowRange);
+	FString Front, Rear;
+	T.FrontDifferential = Reader.String(TEXT("transmission/differentials/front/type"), Front) ? MantleDifferentialFromName(Front) : EMantleVehicleDifferential::None;
+	T.RearDifferential = Reader.String(TEXT("transmission/differentials/rear/type"), Rear) ? MantleDifferentialFromName(Rear) : EMantleVehicleDifferential::None;
+	Reader.Float(TEXT("transmission/differentials/front/biasRatio"), T.FrontDifferentialBias);
+	Reader.Float(TEXT("transmission/differentials/rear/biasRatio"), T.RearDifferentialBias);
 
 	Reader.Float(TEXT("suspension/maxRaise"), T.SuspensionMaxRaise);
 	Reader.Float(TEXT("suspension/maxDrop"), T.SuspensionMaxDrop);

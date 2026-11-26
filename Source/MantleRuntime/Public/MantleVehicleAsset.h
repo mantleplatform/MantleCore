@@ -3,6 +3,7 @@
 
 #include "CoreMinimal.h"
 #include "MantleSkinnedMesh.h"
+#include "MantleVehicleDifferential.h"
 #include "UObject/Object.h"
 #include "MantleVehicleAsset.generated.h"
 
@@ -502,6 +503,13 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	int32 ChangeDownRPM = 0;
 	/** transmission.shiftTime: seconds each gear change takes (no drive while it shifts). Absent: 0.5, Epic's GearChangeTime default. */
 	double ShiftTime = 0.5;
+	/** transmission.lowRange (#376 off-road): the transfer case's low-range ratio; 0 = none. */
+	double LowRange = 0.0;
+	/** transmission.differentials (#376 off-road): each side's type (None = Mantle's equal split) and a limited-slip one's bias ratio. */
+	EMantleVehicleDifferential FrontDifferential = EMantleVehicleDifferential::None;
+	EMantleVehicleDifferential RearDifferential = EMantleVehicleDifferential::None;
+	double FrontDifferentialBias = 1.0;
+	double RearDifferentialBias = 1.0;
 
 	double SuspensionMaxRaise = 10.0;
 	double SuspensionMaxDrop = 10.0;

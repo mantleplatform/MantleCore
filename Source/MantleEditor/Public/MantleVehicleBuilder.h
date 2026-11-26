@@ -80,6 +80,9 @@ struct FMantleVehicleModelOptions
 	 * propeller bones. Ignored when Spec is given: that chassis is the one used.
 	 */
 	TOptional<bool> TwinEngine;
+	/** The creator's drive choice (#376 off-road follow-on): front, rear or all-wheel drive on the type's axles (FMantleChassisSpec::ApplyDrive). Unset or
+	 *  Type: the type's own. Ignored, with a note, on a type whose drive isn't a choice. */
+	TOptional<EMantleVehicleDrive> Drive;
 	/** The chassis to put the model on, already shaped (the window's); unset, the type's own sized to the model (FMantleVehicleChassisSkin::Propose). */
 	TOptional<FMantleChassisSpec> Spec;
 	/** The folder (a long package path) the vehicle is saved under, one subfolder of its name inside; empty for the project's MantleVehicles folder. */

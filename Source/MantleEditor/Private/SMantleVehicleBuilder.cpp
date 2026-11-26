@@ -1153,6 +1153,52 @@ void SMantleVehicleBuilder::RebuildModelRows()
 		];
 	}
 
+	// The drive (#376 off-road follow-on): the type's own, or the creator's front, rear or all-wheel drive, on a type where it is a choice.
+	if (Shape.GetArchetype().IsDriveOffered())
+	{
+		const EMantleVehicleDrive Own = Shape.GetArchetype().DefaultDrive();
+		const FString OwnWords = FMantleVehiclePresets::DriveWords(Own);
+		const FString OwnName = OwnWords.IsEmpty() ? FString(TEXT("its own")) : OwnWords;
+		DriveChoices = { MakeShared<FString>(FString::Printf(TEXT("The type's own (%s)"), *OwnName)), MakeShared<FString>(TEXT("Front-wheel drive")),
+			MakeShared<FString>(TEXT("Rear-wheel drive")), MakeShared<FString>(TEXT("All-wheel drive")) };
+		const int32 Current = FMath::Clamp(static_cast<int32>(DriveChoice), 0, DriveChoices.Num() - 1);
+		ModelRowsBox->AddSlot().AutoHeight().Padding(0, 0, 0, 6)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 2.f, 8.f, 2.f)
+			[
+				SNew(SBox).WidthOverride(150.f)
+				[
+					SNew(STextBlock)
+						.Text(LOCTEXT("DriveLabel", "Drive"))
+						.ToolTipText(LOCTEXT("DriveTip", "Which wheels the engine turns. A front-wheel-drive car pulls itself along and is steady; a rear-wheel-drive one pushes and can slide its tail; all-wheel drive pulls hardest off the line and on loose ground."))
+				]
+			]
+			+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
+			[
+				SNew(SComboBox<TSharedPtr<FString>>)
+					.OptionsSource(&DriveChoices)
+					.InitiallySelectedItem(DriveChoices[Current])
+					.OnGenerateWidget_Lambda([](TSharedPtr<FString> Item) { return SNew(STextBlock).Text(FText::FromString(*Item)); })
+					.OnSelectionChanged_Lambda([this](TSharedPtr<FString> Item, ESelectInfo::Type)
+					{
+						const int32 At = DriveChoices.IndexOfByKey(Item);
+						if (At != INDEX_NONE)
+						{
+							DriveChoice = static_cast<EMantleVehicleDrive>(At);
+						}
+					})
+					[
+						SNew(STextBlock).Text_Lambda([this]
+						{
+							const int32 At = static_cast<int32>(DriveChoice);
+							return DriveChoices.IsValidIndex(At) ? FText::FromString(*DriveChoices[At]) : FText::GetEmpty();
+						})
+					]
+			]
+		];
+	}
+
 	// What Mantle proposed for the frame, and the Size slider of a type that has one Size.
 	if (!ProposalText.IsEmpty())
 	{
@@ -1960,6 +2006,7 @@ FMantleVehicleModelOptions SMantleVehicleBuilder::MakeBuildOptions() const
 	if (bUseSkin)
 	{
 		Options.Spec = Shape.GetShaped();
+		Options.Drive = DriveChoice;
 		Options.YawDegrees = ModelYaw;
 		Options.Map = PartMap;
 		// Pressing Build again for the same type and model updates the vehicle this window made, in the same assets, instead of adding a new set each time.

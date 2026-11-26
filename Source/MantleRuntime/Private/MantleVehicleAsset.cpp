@@ -60,6 +60,9 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("transmission/changeUpRPM"), 500.0, 20000.0 },
 		{ TEXT("transmission/changeDownRPM"), 300.0, 20000.0 },
 		{ TEXT("transmission/shiftTime"), 0.05, 2.0 },
+		{ TEXT("transmission/lowRange"), 1.1, 6.0 },
+		{ TEXT("transmission/differentials/front/biasRatio"), 1.5, 10.0 },
+		{ TEXT("transmission/differentials/rear/biasRatio"), 1.5, 10.0 },
 		{ TEXT("suspension/maxRaise"), 0.0, 50.0 },
 		{ TEXT("suspension/maxDrop"), 0.0, 50.0 },
 		{ TEXT("suspension/springRate"), 1.0, 5000.0 },
@@ -453,6 +456,48 @@ namespace MantleVehicleAssetPrivate
 			return true;
 		}
 	};
+
+	/** transmission.differentials (#376 off-road): front and rear, each a type and, for limitedSlip only, its biasRatio. Absent: none. */
+	void ReadDifferentials(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Transmission, FMantleVehicleDesc& D)
+	{
+		TSharedPtr<FJsonObject> Differentials;
+		if (!P.Ok() || !Transmission->HasField(TEXT("differentials"))
+			|| !P.Object(Transmission, TEXT("/transmission"), TEXT("differentials"), Differentials)
+			|| !P.Keys(Differentials, TEXT("/transmission/differentials"), { TEXT("front"), TEXT("rear") }, {}))
+		{
+			return;
+		}
+		const auto ReadSide = [&P, &Differentials](const TCHAR* Side, EMantleVehicleDifferential& OutType, double& OutBias)
+		{
+			const FString Pointer = FString(TEXT("/transmission/differentials/")) + Side;
+			TSharedPtr<FJsonObject> Entry;
+			if (!Differentials->HasField(Side) || !P.Object(Differentials, TEXT("/transmission/differentials"), Side, Entry)
+				|| !P.Keys(Entry, Pointer, { TEXT("type"), TEXT("biasRatio") }, { TEXT("type") }))
+			{
+				return;
+			}
+			FString Type;
+			Entry->TryGetStringField(TEXT("type"), Type);
+			const EMantleVehicleDifferential Kind = MantleDifferentialFromName(Type);
+			if (Kind == EMantleVehicleDifferential::None)
+			{
+				P.Fail(Pointer + TEXT("/type"), FString::Printf(TEXT("is \"%s\", not open, limitedSlip, locked or selectable"), *Type));
+				return;
+			}
+			if ((Kind == EMantleVehicleDifferential::LimitedSlip) != Entry->HasField(TEXT("biasRatio")))
+			{
+				P.Fail(Pointer, TEXT("has a biasRatio exactly when it is limitedSlip"));
+				return;
+			}
+			const FString RangePath = FString(TEXT("transmission/differentials/")) + Side + TEXT("/biasRatio");
+			if (P.OptNumber(Entry, Pointer, TEXT("biasRatio"), *RangePath, OutBias))
+			{
+				OutType = Kind;
+			}
+		};
+		ReadSide(TEXT("front"), D.FrontDifferential, D.FrontDifferentialBias);
+		ReadSide(TEXT("rear"), D.RearDifferential, D.RearDifferentialBias);
+	}
 
 	/** How far Point is from a steering wheel's rim: the circle of Radius round Hub, square to the hub's X (its column). */
 	double VehicleOffRim(const FVector& Point, const FVector& Hub, const FRotator& Turn, const double Radius)
@@ -2356,8 +2401,9 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	// An electric car's (#445) one fixed reduction: its gear ratio and final drive only. Reverse turns the motor backwards through the same ratio, and it
 	// never shifts, so the change points are its top speed and none.
 	if (P.Ok() && D.bElectric && P.Object(Root, TEXT(""), TEXT("transmission"), Transmission)
-		&& P.Keys(Transmission, TEXT("/transmission"), { TEXT("gearRatios"), TEXT("finalDrive") }, { TEXT("gearRatios"), TEXT("finalDrive") }))
+		&& P.Keys(Transmission, TEXT("/transmission"), { TEXT("gearRatios"), TEXT("finalDrive"), TEXT("differentials") }, { TEXT("gearRatios"), TEXT("finalDrive") }))
 	{
+		ReadDifferentials(P, Transmission, D);
 		const TArray<TSharedPtr<FJsonValue>>* Gears = nullptr;
 		double Ratio = 0.0;
 		if (P.Array(Transmission->TryGetField(TEXT("gearRatios")), TEXT("/transmission/gearRatios"), 1, 1, Gears)
@@ -2373,9 +2419,13 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	}
 	else if (P.Ok() && !D.bElectric && P.Object(Root, TEXT(""), TEXT("transmission"), Transmission)
 		&& P.Keys(Transmission, TEXT("/transmission"),
-			{ TEXT("gearRatios"), TEXT("reverseRatio"), TEXT("finalDrive"), TEXT("changeUpRPM"), TEXT("changeDownRPM"), TEXT("shiftTime") },
+			{ TEXT("gearRatios"), TEXT("reverseRatio"), TEXT("finalDrive"), TEXT("changeUpRPM"), TEXT("changeDownRPM"), TEXT("shiftTime"), TEXT("lowRange"),
+				TEXT("differentials") },
 			{ TEXT("gearRatios"), TEXT("reverseRatio"), TEXT("finalDrive"), TEXT("changeUpRPM"), TEXT("changeDownRPM") }))
 	{
+		// The off-road driveline (#376 off-road): a transfer case's low range, and the axles' differentials.
+		P.OptNumber(Transmission, TEXT("/transmission"), TEXT("lowRange"), TEXT("transmission/lowRange"), D.LowRange);
+		ReadDifferentials(P, Transmission, D);
 		const TArray<TSharedPtr<FJsonValue>>* Gears = nullptr;
 		if (P.Array(Transmission->TryGetField(TEXT("gearRatios")), TEXT("/transmission/gearRatios"), 1, FMantleVehicleLimits::MaxGears, Gears))
 		{

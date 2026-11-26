@@ -104,7 +104,11 @@ bool FMantleVehicleBuilderCardsTest::RunTest(const FString& Parameters)
 		TestFalse(*FString::Printf(TEXT("%s's is one sentence"), *Card->Id), Sentence.Contains(TEXT(". ")));
 		// Three tall road vehicles would each name vans first, so their cards say their own line (FMantleVehiclePresets::CardSentence); every other card is its file's first sentence.
 		const bool bOwnLine = Card->Id == TEXT("pickup") || Card->Id == TEXT("van") || Card->Id == TEXT("truck");
-		TestTrue(*FString::Printf(TEXT("%s's is the start of its description, or its own line"), *Card->Id), bOwnLine || Card->Description.StartsWith(Sentence.LeftChop(1)));
+		// #376 off-road follow-on: a road type names its own drive in brackets before the stop.
+		const FString Drive = FMantleVehiclePresets::DriveWords(Card->DefaultDrive);
+		const FString Plain = Drive.IsEmpty() ? Sentence : Sentence.Replace(*FString::Printf(TEXT(" (%s)."), *Drive), TEXT("."));
+		TestTrue(*FString::Printf(TEXT("%s names its drive"), *Card->Id), Drive.IsEmpty() || Sentence.EndsWith(FString::Printf(TEXT(" (%s)."), *Drive)));
+		TestTrue(*FString::Printf(TEXT("%s's is the start of its description, or its own line"), *Card->Id), bOwnLine || Card->Description.StartsWith(Plain.LeftChop(1)));
 		TestTrue(*FString::Printf(TEXT("%s has a fit range to hold its size to"), *Card->Id), Card->FitMinScale > 0.0 && Card->FitMaxScale >= Card->FitMinScale);
 	}
 
@@ -121,6 +125,17 @@ bool FMantleVehicleBuilderCardsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("a stop inside a number is not the end"), Card(TEXT("Tops out at 2.5 m/s. Slowly.")), FString(TEXT("Tops out at 2.5 m/s.")));
 	TestEqual(TEXT("surrounding space is trimmed"), Card(TEXT("  A van.  ")), FString(TEXT("A van.")));
 	TestEqual(TEXT("no description, no sentence"), Card(TEXT("")), FString());
+	// The drive (#376 off-road follow-on): the sedan is front-wheel drive, the sports car rear, the off-roader all; a plane has none to name.
+	for (const TPair<const TCHAR*, const TCHAR*>& Want : { TPair<const TCHAR*, const TCHAR*>(TEXT("sedan"), TEXT("front-wheel drive")),
+			 TPair<const TCHAR*, const TCHAR*>(TEXT("sports"), TEXT("rear-wheel drive")), TPair<const TCHAR*, const TCHAR*>(TEXT("offroad"), TEXT("all-wheel drive")),
+			 TPair<const TCHAR*, const TCHAR*>(TEXT("plane"), TEXT("")) })
+	{
+		const FMantleVehiclePreset* Preset = FMantleVehiclePresets::Find(Want.Key);
+		if (TestNotNull(*FString::Printf(TEXT("the %s preset"), Want.Key), Preset))
+		{
+			TestEqual(*FString::Printf(TEXT("the %s's drive"), Want.Key), FMantleVehiclePresets::DriveWords(Preset->DefaultDrive), FString(Want.Value));
+		}
+	}
 
 	// Road vehicles first, then what flies, then what floats.
 	const auto Rank = [](const FMantleVehiclePreset* Card)

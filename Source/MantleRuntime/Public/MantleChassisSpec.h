@@ -5,6 +5,7 @@
 #include "Misc/Optional.h"
 #include "MantleChassisDerive.h"
 #include "MantleVehicleChassisBuilder.h"
+#include "MantleVehicleDifferential.h"
 
 class FJsonObject;
 
@@ -341,6 +342,28 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	FMantleChassisHelicopter Helicopter;
 	/** A hovercraft's pads, fan, fin, skirt and damping (chassis.hovercraft); bSet is false for everything else. */
 	FMantleChassisHovercraft Hovercraft;
+
+	/** engine.engineBraking's scale from the creator's drive choice (ApplyDrive) for a document composed from the defaults: the type's driven wheels over
+	 *  the chosen ones, so the car slows the same lifting off. 1 for the type's own drive; a Derived chassis carries it in its handling instead. */
+	double DriveEngineBrakingScale = 1.0;
+	/** The creator's drive choice ApplyDrive last took (Type until one is); the builder saves it with the vehicle. */
+	EMantleVehicleDrive DriveChoice = EMantleVehicleDrive::Type;
+
+	/**
+	 * Whether a creator may pick the drive (front, rear or all-wheel drive) for this type: a wheeled type (no aircraft, helicopter or hovercraft block)
+	 * of two or more axles with two wheels on each.
+	 */
+	bool IsDriveOffered() const;
+	/** The type's own drive as a creator's choice would name it: Front, Rear or All from its axles' drive flags; Type when it is none of those or the
+	 *  drive isn't offered (IsDriveOffered). */
+	EMantleVehicleDrive DefaultDrive() const;
+	/**
+	 * The creator's drive choice (#376 off-road follow-on): Front, Rear or All rewrites the axles' drive flags (front = the first axle, the frontmost),
+	 * and scales engine braking (engine.engineBraking is per driven wheel) by the type's driven wheels over the chosen ones in the archetype, the
+	 * derived handling when there is one, and DriveEngineBrakingScale. Type changes nothing. False, with Spec unchanged, when the drive isn't offered
+	 * (IsDriveOffered) and Choice isn't Type.
+	 */
+	bool ApplyDrive(EMantleVehicleDrive Choice);
 
 	/** Whether axle Axle has one wheel, on the centerline: the whole layout's, or the axle's own. */
 	bool AxleIsCenterline(const int32 Axle) const { return bCenterline || Axles[Axle].bCenterline; }
