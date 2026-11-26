@@ -708,10 +708,25 @@ bool FMantleVehicleDocumentGroundHandlingTest::RunTest(const FString& Parameters
 		{
 			continue;
 		}
-		const bool bGround = !Spec.Aircraft.bSet && !Spec.Helicopter.bSet && !Spec.Hovercraft.bSet && Spec.WheelCount() > 2;
+		const bool bFlier = Spec.Aircraft.bSet || Spec.Helicopter.bSet || Spec.Hovercraft.bSet;
+		if (!bFlier && Spec.WheelCount() == 2 && Spec.Rider.bSet)
+		{
+			// A bike (#378): its own steering curve, and its tyres' own grip (no car split is written).
+			const TArray<FVector2D> WantBike = FMantleVehicleChassisDocument::TwoWheelerSteeringSpeedCurve();
+			if (TestEqual(*FString::Printf(TEXT("%s: the two-wheeler curve has every point"), *Selector), D.SteeringSpeedCurve.Num(), WantBike.Num()))
+			{
+				for (int32 Index = 0; Index < WantBike.Num(); ++Index)
+				{
+					TestEqual(*FString::Printf(TEXT("%s: two-wheeler curve point %d"), *Selector, Index), D.SteeringSpeedCurve[Index], WantBike[Index]);
+				}
+			}
+			TestFalse(*FString::Printf(TEXT("%s: no car rear grip split"), *Selector), D.bTireRearFriction);
+			continue;
+		}
+		const bool bGround = !bFlier && Spec.WheelCount() > 2;
 		if (!bGround)
 		{
-			// A bike keeps its tires' own, a plane's, a helicopter's and a hovercraft's are not a car's: neither key is written.
+			// A plane's, a helicopter's and a hovercraft's are not a car's: neither key is written.
 			TestTrue(*FString::Printf(TEXT("%s: no curve and no rear grip"), *Selector), D.SteeringSpeedCurve.IsEmpty() && !D.bTireRearFriction);
 			continue;
 		}

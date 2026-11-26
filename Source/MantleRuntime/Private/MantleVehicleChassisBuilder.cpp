@@ -226,12 +226,22 @@ bool FMantleVehicleChassisBuilder::LoadPresetText(const FString& PresetId, FStri
 	{
 		return MantleChassisBuilderPrivate::Refuse(OutError, FString::Printf(TEXT("'%s' is not a vehicle preset id"), *PresetId));
 	}
-	const FString Path = FPaths::Combine(PresetDirectory(), PresetId + TEXT(".json"));
-	if (!FFileHelper::LoadFileToString(OutText, *Path))
+	// "motorcycle+600": the motorcycle preset with its 600 engine merged over it (#378).
+	FString FileId;
+	FString Engine;
+	FMantleChassisSpec::SplitPresetId(PresetId, FileId, Engine);
+	const FString Path = FPaths::Combine(PresetDirectory(), FileId + TEXT(".json"));
+	FString FileText;
+	if (!FFileHelper::LoadFileToString(FileText, *Path))
 	{
 		return MantleChassisBuilderPrivate::Refuse(OutError, FString::Printf(TEXT("the vehicle preset file %s could not be read"), *Path));
 	}
-	return true;
+	if (Engine.IsEmpty())
+	{
+		OutText = MoveTemp(FileText);
+		return true;
+	}
+	return FMantleChassisSpec::ApplyEngine(FileText, Engine, OutText, OutError);
 }
 
 bool FMantleVehicleChassisBuilder::ReadReference(const FString& PresetJsonText, FMantleVehicleChassisReference& OutReference, FString& OutError)

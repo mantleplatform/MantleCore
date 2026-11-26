@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "motorcycle",
   "name": "Motorcycle",
-  "description": "A two-wheeled bike: motorcycles, scooters and dirt bikes. The rider leans into turns and the bike holds itself upright, so it steers by the front fork.",
-  "comment": "A vehicle preset (#728); see sedan.json for the format. A two-wheeler (#553): layout.centerline puts one wheel on each axle at Y 0 (bones wheel_f and wheel_r), and track is then only the fit's nominal width, kept equal to fit.trackWidth and the body's width, never used to place a wheel. The steered front wheel hangs under a fork bone (fork_f) that the front wheel's SteerBone yaws. seats.driver motorcycle plays the bike rider clip set; the seat sits on the centerline (Y 0), has no steeringWheel, and chassis.rider holds the rest of the rider: the handlebar grips (on the fork bone) and foot pegs (on the root bone) as [x, y, z] in the chassis frame with the left grip and peg on -Y, pelvisOffset, stopPelvisShift and kneeSplayDegrees as FMantleVehicleSeat's RiderPelvisOffset, RiderStopPelvisShift and RiderKneeSplayDegrees, rearTireFriction and rearBrakeTorque for the rear wheel (the document holds one of each, which the front wheel gets), and rotationControl, ChaosVehicles' arcade balance (FMantleVehicleRotationControl's keys, by the same names, torqueControl switching all of it on). Modeled on the tuned test bike with a 95 cm saddle, 140 cm wheelbase, and its numbers taken as they are in a frame with the ground at Z 0 and the wheelbase centered on X 0. The center of mass sits just above the wheel centers, inside the body box.",
+  "description": "A two-wheeled motorcycle. Pick its engine: 125, 300, 600 or 1000 cc sport, or an 1800 cc cruiser, each like a real bike. It leans into turns by itself and steers by the front fork; the rider is part of its weight.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format. A two-wheeler (#553): layout.centerline puts one wheel on each axle at Y 0 (bones wheel_f and wheel_r), and track is then only the fit's nominal width, kept equal to fit.trackWidth and the body's width, never used to place a wheel. The steered front wheel hangs under a fork bone (fork_f) that the front wheel's SteerBone yaws. seats.driver motorcycle plays the bike rider clip set; the seat sits on the centerline (Y 0), has no steeringWheel, and chassis.rider holds the rest of the rider: the handlebar grips (on the fork bone) and foot pegs (on the root bone) as [x, y, z] in the chassis frame with the left grip and peg on -Y, pelvisOffset, stopPelvisShift and kneeSplayDegrees as FMantleVehicleSeat's RiderPelvisOffset, RiderStopPelvisShift and RiderKneeSplayDegrees, and rotationControl, ChaosVehicles' arcade balance (FMantleVehicleRotationControl's keys, by the same names, torqueControl switching all of it on). Modeled on the tuned test bike with a 95 cm saddle, 140 cm wheelbase, and its numbers taken as they are in a frame with the ground at Z 0 and the wheelbase centered on X 0. The center of mass sits just above the wheel centers, inside the body box. #378: engines lists the engine sizes a creator picks from (the builder's Engine pick, and the selector motorcycle+<id>); each entry's defaults and chassis are merged over the preset's (a null removes a key), and the top-level defaults and chassis are the default engine's (defaultEngine). Masses include a 75 kg rider and the centre of mass is bike and rider together. Gear ratios hold the real primary reduction, and finalDrive is the real sprocket ratio times the 35 cm test wheel over the real tyre's radius.",
   "movementType": "wheeled",
   "publishable": true,
   "type": "motorcycle",
@@ -28,30 +28,46 @@
       "wheelWidth": 30,
       "centerline": true,
       "axles": [
-        { "steer": true, "drive": false },
-        { "steer": false, "drive": true, "handbrake": true }
+        {
+          "steer": true,
+          "drive": false
+        },
+        {
+          "steer": false,
+          "drive": true,
+          "handbrake": true
+        }
       ]
     },
-    "body": { "length": 180, "width": 40, "height": 45, "groundClearance": 35 },
-    "centerOfMass": [0, 0, 38],
+    "body": {
+      "length": 180,
+      "width": 40,
+      "height": 45,
+      "groundClearance": 35
+    },
+    "centerOfMass": [0, 0, 62],
     "seat": {
       "location": [-1.4, 0, 89.4]
     },
     "rider": {
-      "handlebar": { "left": [43.3, -23, 133.2], "right": [43.3, 23, 133.2] },
-      "footPegs": { "left": [-3, -19.9, 55.6], "right": [-3, 19.9, 55.6] },
+      "handlebar": {
+        "left": [43.3, -23, 133.2],
+        "right": [43.3, 23, 133.2]
+      },
+      "footPegs": {
+        "left": [-3, -19.9, 55.6],
+        "right": [-3, 19.9, 55.6]
+      },
       "pelvisOffset": [0, 0, 18.9],
       "stopPelvisShift": [0, 12, -24],
       "kneeSplayDegrees": 8,
-      "rearTireFriction": 8,
-      "rearBrakeTorque": 1220,
       "rotationControl": {
         "torqueControl": true,
         "torqueRotationDamping": 15,
         "targetRotation": true,
         "rollVsSpeed": true,
         "rollControlScaling": 1,
-        "rollMaxAngle": 35,
+        "rollMaxAngle": 50,
         "rotationStiffness": 100,
         "rotationDamping": 10,
         "maxAccel": 100,
@@ -65,23 +81,26 @@
     "cameraHeightPerHeight": 1.1
   },
   "defaults": {
-    "mass": 350,
-    "maxSpeed": 9722,
-    "dragCoefficient": 0.31,
-    "frontalArea": 1.72,
+    "mass": 265,
+    "maxSpeed": 8620,
+    "dragCoefficient": 0.55,
+    "frontalArea": 0.535,
     "engine": {
-      "maxTorque": 549,
-      "maxRPM": 7000,
-      "idleRPM": 900,
-      "torqueCurve": [[0, 0.5], [2000, 0.8], [4500, 1], [7000, 0.8]],
-      "tractionControl": true
+      "displacement": 599,
+      "maxTorque": 61.7,
+      "maxRPM": 16500,
+      "idleRPM": 1300,
+      "torqueCurve": [[0, 0.85], [8700, 0.85], [10500, 1], [14500, 0.93], [16500, 0.79]],
+      "tractionControl": true,
+      "engineBraking": 0.0039
     },
     "transmission": {
-      "gearRatios": [4.25, 2.52, 1.66, 1.22, 1.0],
-      "reverseRatio": 4.04,
-      "finalDrive": 2.81,
-      "changeUpRPM": 6000,
-      "changeDownRPM": 2000
+      "gearRatios": [5.355, 4.146, 3.456, 2.993, 2.666, 2.384],
+      "reverseRatio": 5.355,
+      "finalDrive": 3.126,
+      "changeUpRPM": 14500,
+      "changeDownRPM": 9000,
+      "shiftTime": 0.15
     },
     "suspension": {
       "maxRaise": 8.1,
@@ -95,13 +114,13 @@
       "ackermann": false
     },
     "brakes": {
-      "brakeTorque": 3662,
-      "handbrakeTorque": 1220,
+      "brakeTorque": 780,
+      "handbrakeTorque": 390,
       "abs": true,
-      "frontShare": 0.5
+      "frontShare": 0.75
     },
     "tires": {
-      "friction": 4
+      "friction": 1.8
     },
     "camera": {
       "armLength": 380,
@@ -112,17 +131,233 @@
     "mass": [150, 700],
     "maxSpeed": [2000, 10000],
     "dragCoefficient": [0.2, 0.6],
-    "engine/maxTorque": [100, 900],
-    "engine/maxRPM": [4000, 12000],
-    "engine/idleRPM": [600, 1200],
+    "frontalArea": [0.3, 1.5],
+    "engine/maxTorque": [10, 400],
+    "engine/maxRPM": [4000, 18000],
+    "engine/idleRPM": [600, 2000],
+    "engine/displacement": [50, 2500],
     "suspension/maxRaise": [3, 20],
     "suspension/maxDrop": [3, 20],
     "suspension/springRate": [100, 800],
     "suspension/damping": [0.2, 0.9],
     "steering/maxAngle": [20, 50],
-    "brakes/brakeTorque": [500, 6000],
+    "brakes/brakeTorque": [300, 6000],
     "brakes/frontShare": [0.3, 0.8],
-    "tires/friction": [1.5, 5],
+    "tires/friction": [0.8, 5],
+    "seat/rider/rotationControl/rollMaxAngle": [20, 55],
     "wheels/*/radius": [25, 45]
-  }
+  },
+  "defaultEngine": "600",
+  "engines": [
+    {
+      "id": "125",
+      "name": "125 cc sport",
+      "description": "Like a Yamaha YZF-R125 (2019-22).",
+      "defaults": {
+        "mass": 217,
+        "maxSpeed": 4060,
+        "dragCoefficient": 0.55,
+        "frontalArea": 0.608,
+        "engine": {
+          "displacement": 125,
+          "maxTorque": 12.4,
+          "maxRPM": 11000,
+          "idleRPM": 1400,
+          "torqueCurve": [[0, 0.85], [5400, 0.85], [8000, 1], [9000, 0.941], [11000, 0.8]],
+          "tractionControl": false,
+          "engineBraking": 0.0031
+        },
+        "transmission": {
+          "gearRatios": [8.618, 5.704, 4.149, 3.477, 2.911, 2.555],
+          "reverseRatio": 8.618,
+          "finalDrive": 4.193,
+          "changeUpRPM": 9000,
+          "changeDownRPM": 4800,
+          "shiftTime": 0.25
+        },
+        "brakes": {
+          "brakeTorque": 660,
+          "handbrakeTorque": 330,
+          "abs": true,
+          "frontShare": 0.75
+        }
+      },
+      "chassis": {
+        "centerOfMass": [0, 0, 60],
+        "rider": {
+          "rotationControl": {
+            "rollMaxAngle": 50
+          }
+        }
+      }
+    },
+    {
+      "id": "300",
+      "name": "300 cc sport",
+      "description": "Like a Yamaha YZF-R3 (2019+).",
+      "defaults": {
+        "mass": 244,
+        "maxSpeed": 5300,
+        "dragCoefficient": 0.55,
+        "frontalArea": 0.805,
+        "engine": {
+          "displacement": 321,
+          "maxTorque": 29.6,
+          "maxRPM": 12250,
+          "idleRPM": 1300,
+          "torqueCurve": [[0, 0.85], [6400, 0.85], [9000, 1], [10750, 0.93], [12250, 0.791]],
+          "tractionControl": false,
+          "engineBraking": 0.0016
+        },
+        "transmission": {
+          "gearRatios": [7.607, 5.24, 4.056, 3.381, 2.94, 2.593],
+          "reverseRatio": 7.607,
+          "finalDrive": 3.423,
+          "changeUpRPM": 10750,
+          "changeDownRPM": 5900,
+          "shiftTime": 0.25
+        },
+        "brakes": {
+          "brakeTorque": 740,
+          "handbrakeTorque": 370,
+          "abs": true,
+          "frontShare": 0.75
+        }
+      },
+      "chassis": {
+        "centerOfMass": [0, 0, 60],
+        "rider": {
+          "rotationControl": {
+            "rollMaxAngle": 50
+          }
+        }
+      }
+    },
+    {
+      "id": "600",
+      "name": "600 cc sport",
+      "description": "Like a Yamaha YZF-R6 (2017-20).",
+      "defaults": {
+        "mass": 265,
+        "maxSpeed": 8620,
+        "dragCoefficient": 0.55,
+        "frontalArea": 0.535,
+        "engine": {
+          "displacement": 599,
+          "maxTorque": 61.7,
+          "maxRPM": 16500,
+          "idleRPM": 1300,
+          "torqueCurve": [[0, 0.85], [8700, 0.85], [10500, 1], [14500, 0.93], [16500, 0.79]],
+          "tractionControl": true,
+          "engineBraking": 0.0039
+        },
+        "transmission": {
+          "gearRatios": [5.355, 4.146, 3.456, 2.993, 2.666, 2.384],
+          "reverseRatio": 5.355,
+          "finalDrive": 3.126,
+          "changeUpRPM": 14500,
+          "changeDownRPM": 9000,
+          "shiftTime": 0.15
+        },
+        "brakes": {
+          "brakeTorque": 780,
+          "handbrakeTorque": 390,
+          "abs": true,
+          "frontShare": 0.75
+        }
+      },
+      "chassis": {
+        "centerOfMass": [0, 0, 62],
+        "rider": {
+          "rotationControl": {
+            "rollMaxAngle": 50
+          }
+        }
+      }
+    },
+    {
+      "id": "1000",
+      "name": "1000 cc sport",
+      "description": "Like a Yamaha YZF-R1 (2015+).",
+      "defaults": {
+        "mass": 278,
+        "maxSpeed": 8310,
+        "dragCoefficient": 0.55,
+        "frontalArea": 0.582,
+        "engine": {
+          "displacement": 998,
+          "maxTorque": 113,
+          "maxRPM": 14500,
+          "idleRPM": 1250,
+          "torqueCurve": [[0, 0.85], [8100, 0.85], [11500, 1], [13500, 0.92], [14500, 0.782]],
+          "tractionControl": true,
+          "engineBraking": 0.0055
+        },
+        "transmission": {
+          "gearRatios": [4.248, 3.556, 3.01, 2.58, 2.257, 2.042],
+          "reverseRatio": 4.248,
+          "finalDrive": 2.803,
+          "changeUpRPM": 13500,
+          "changeDownRPM": 9000,
+          "shiftTime": 0.08
+        },
+        "brakes": {
+          "brakeTorque": 820,
+          "handbrakeTorque": 410,
+          "abs": true,
+          "frontShare": 0.75
+        }
+      },
+      "chassis": {
+        "centerOfMass": [0, 0, 62],
+        "rider": {
+          "rotationControl": {
+            "rollMaxAngle": 50
+          }
+        }
+      }
+    },
+    {
+      "id": "1800",
+      "name": "1800 cc cruiser",
+      "description": "Like a Harley-Davidson Street Glide Special 114 (2021-23).",
+      "defaults": {
+        "mass": 450,
+        "maxSpeed": 6100,
+        "dragCoefficient": 0.55,
+        "frontalArea": 1.182,
+        "engine": {
+          "displacement": 1868,
+          "maxTorque": 160,
+          "maxRPM": 5500,
+          "idleRPM": 850,
+          "torqueCurve": [[0, 0.85], [3200, 0.85], [3250, 1], [5250, 0.784], [5500, 0.667]],
+          "tractionControl": true,
+          "engineBraking": 0.0148
+        },
+        "transmission": {
+          "gearRatios": [4.515, 3.129, 2.324, 1.882, 1.603, 1.353],
+          "reverseRatio": 4.515,
+          "finalDrive": 2.268,
+          "changeUpRPM": 5250,
+          "changeDownRPM": 2900,
+          "shiftTime": 0.3
+        },
+        "brakes": {
+          "brakeTorque": 1580,
+          "handbrakeTorque": 790,
+          "abs": true,
+          "frontShare": 0.75
+        }
+      },
+      "chassis": {
+        "centerOfMass": [-4.2, 0, 55],
+        "rider": {
+          "rotationControl": {
+            "rollMaxAngle": 31
+          }
+        }
+      }
+    }
+  ]
 }

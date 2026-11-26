@@ -482,6 +482,8 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	bool bTractionControl = true;
 	/** engine.engineBraking: brake torque (Nm) per engine RPM on each driven wheel with the throttle released. Absent: 0. */
 	double EngineBraking = 0.0;
+	/** engine.displacement (#378): the engine's size in cc, as a motorcycle's engine pick sets it; read by sound and scripts, never by the driving. 0: not given. */
+	int32 Displacement = 0;
 
 	/** Forward gears, first gear first. */
 	TArray<float> GearRatios;
