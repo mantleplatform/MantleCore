@@ -1807,6 +1807,9 @@ class _VehiclesService:
     def get_part_stand_spot(self, vehicle: Entity, part: str, /) -> Optional[dict[str, Any]]:
         """Where someone stands to open one of the car's parts, where the car is now: position is on the ground beside the part, and yaw (degrees) the way they face it. In front of the hood, behind the trunk, a step out from a door. Use it to check that a player is at the part, or to walk an NPC there. Nil when the entity is not a car or the car does not have that part."""
         ...
+    def get_slide_assist(self, vehicle: Entity, /) -> Optional[float]:
+        """A hovercraft's slide assist scale (SetSlideAssist; 1 unless a script changed it), or nil for anything but a hovercraft."""
+        ...
     def get_speed(self, vehicle: Entity, /) -> float:
         """The car's speed in centimeters per second, as the simulation reports it. Errors if the entity is not a car or no longer exists."""
         ...
@@ -1935,6 +1938,9 @@ class _VehiclesService:
         ...
     def set_part_open(self, vehicle: Entity, part: str, open: bool, player: Optional[Player] = ..., /) -> bool:
         """Open or shut one of the car's parts: part is 'driverDoor', 'passengerDoor', 'rearLeftDoor', 'rearRightDoor', 'hood' or 'trunk'. Without a player the part swings there by itself (a remote, a script's own timing). With a player, their character walks round the car to the part's stand spot (GetPartStandSpot), faces it and lifts or pushes it with their hands, the part moving with them; that works for the trunk, the hood and the rear doors, and passing a player for a front door is an error (a front door swings as someone gets in or out, and shuts behind them). If the walk cannot be made or is cut short (the player is too far to walk there, is blocked, or walks off), the part still opens or shuts, by itself. Either way it stays, and every player sees it, also one who joins later. The newest call for a part wins: shutting it while a player is still on the way to open it stops them. Returns false when the entity is not a car, the car does not have that part (see GetOpenableParts), or the player is not on foot and alive; returns true at once, with nobody walking, when the part is already open or shut as asked. Example: Interaction.Interacted:Connect(function(car, player, part) if part == 'hood' or part == 'trunk' then Vehicles:SetPartOpen(car, part, not Vehicles:IsPartOpen(car, part), player) end end)"""
+        ...
+    def set_slide_assist(self, vehicle: Entity, scale: float, /) -> bool:
+        """How much a hovercraft's skirt holds its line in turns, as a scale on its own: 1 is the hovercraft as it was built, 0 lets it slide like a real hovercraft on ice, and up to 5 grips almost like a car (for an arcade level or a power-up). Clamped to 0..5; it stays until you set it again, and a new vehicle starts at 1. Returns false, and changes nothing, for anything but a hovercraft."""
         ...
     def set_underglow(self, vehicle: Entity, color: Optional[str] = ..., /) -> bool:
         """Neon underglow: color is '#RRGGBB', a glowing strip under the car and a soft glow on the ground beneath it (no real light, so it costs almost nothing). Nil turns it off. Every player sees the change. Returns false when the entity is not a car."""
