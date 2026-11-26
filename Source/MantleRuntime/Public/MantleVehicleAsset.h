@@ -458,6 +458,14 @@ struct FMantleVehicleLiveryGlowDesc
 	double Strength = 1.0;
 };
 
+/** A vehicle document's engine.induction (#444): what UMantleVehicleDefinition's EMantleVehicleInduction becomes (MantlePlaceVehicle). */
+enum class EMantleVehicleDescInduction : uint8
+{
+	None,
+	Turbo,
+	Supercharger
+};
+
 /**
  * A cooked vehicle's resolved document (MVH1's JSON, schema/vehicle.schema.json with every default
  * filled by the cook). Unreal units: cm, kg, Nm, degrees, cm/s. Nothing in it names an asset path.
@@ -493,6 +501,14 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	double BatteryCapacity = 0.0;
 	static constexpr double DefaultRegenBraking = 0.15;
 	static constexpr double DefaultBatteryCapacity = 60.0;
+	/** engine.induction (#444): "none", "turbo" or "supercharger". Absent: none. The torque curve is the engine at full boost. */
+	EMantleVehicleDescInduction Induction = EMantleVehicleDescInduction::None;
+	/** engine.maxBoost, psi: the boost at full throttle from spoolRPM up. Absent: 10. */
+	double MaxBoost = 10.0;
+	/** engine.spoolRPM: full boost from here up (above idleRPM, at most maxRPM). Absent (-1): 40% of maxRPM. */
+	int32 SpoolRPM = -1;
+	/** engine.spoolTime, s: a turbo's lag from no boost to full boost. Absent: 0.8. */
+	double SpoolTime = 0.8;
 
 	/** Forward gears, first gear first. */
 	TArray<float> GearRatios;
