@@ -14,7 +14,8 @@ class FJsonObject;
  * trucks the truck and the six-wheeler; a motorcycle has one wheel on each axle, on the centerline, and balances itself; a plane flies on a
  * wing, a tailplane and a fin (chassis.aircraft) and stands on tricycle gear, its nose wheel on the centerline; a helicopter is lifted and steered
  * by its main rotor (chassis.helicopter) and stands on two skids, each a pair of hidden wheels that are always braked; a hovercraft floats on four
- * pads (chassis.hovercraft), suspensions with no wheel at the layout's hidden wheel points, and is pushed by a fan.
+ * pads (chassis.hovercraft), suspensions with no wheel at the layout's hidden wheel points, and is pushed by a fan; a tracked vehicle (a tank, a
+ * bulldozer) runs on two tracks (chassis.tracked), each the row of road wheels on its side, and turns by running them at different speeds.
  */
 enum class EMantleChassisType : uint8
 {
@@ -24,6 +25,7 @@ enum class EMantleChassisType : uint8
 	Plane,
 	Helicopter,
 	Hovercraft,
+	Tracked,
 };
 
 /** One axle of a chassis's layout. */
@@ -191,6 +193,36 @@ struct MANTLERUNTIME_API FMantleChassisHovercraft
 };
 
 /**
+ * What a tracked preset adds to the chassis (schema/vehicle-preset.schema.json chassis.tracked): the hull is the chassis's body box and the layout's axles
+ * are its road-wheel pairs; this is its tracks and the drawn blocks on the hull. Model space, cm, cm/s. The tracks and blocks are drawn, never collided
+ * (only the hull is).
+ */
+struct MANTLERUNTIME_API FMantleChassisTracked
+{
+	/** The preset has a tracked block. */
+	bool bSet = false;
+	/** A track's pad width and one pad's length along the belt. */
+	double TrackWidth = 0.0;
+	double PadPitch = 0.0;
+	/** How fast each track runs, opposite ways, in a pivot at full steering: with the gauge, how fast it turns on the spot (2 x this / track). */
+	double PivotTrackSpeed = 0.0;
+	/** The track's sideways resistance over its grip (mu_t / mu). A ratio, so it does not scale. */
+	double LateralShare = 0.0;
+	/** The turret (bTurret): a box on the hull's top, TurretLength long about TurretX, TurretWidth wide, TurretHeight tall. */
+	bool bTurret = false;
+	double TurretX = 0.0;
+	double TurretLength = 0.0;
+	double TurretWidth = 0.0;
+	double TurretHeight = 0.0;
+	/** The blade (bBlade): a box standing on the ground in front, BladeThickness thick about BladeX, BladeWidth wide, BladeHeight tall. */
+	bool bBlade = false;
+	double BladeX = 0.0;
+	double BladeWidth = 0.0;
+	double BladeHeight = 0.0;
+	double BladeThickness = 0.0;
+};
+
+/**
  * A preset's own size: the dimensions its hand-tuned handling belongs to. FMantleChassisDerive multiplies that handling by how a chassis's
  * dimensions differ from these, so a chassis with these dimensions has exactly the preset's handling and a dimension edited on its own moves only
  * the numbers that depend on it. Set when the preset is read; Scaled and any edit of the chassis leave it alone. WheelWidth is kept with the rest
@@ -215,6 +247,8 @@ struct MANTLERUNTIME_API FMantleChassisSize
 	FMantleChassisHelicopter Helicopter;
 	/** The archetype's pads, fan and fin: a hovercraft's spring rate follows how much its pads come down against these, and its rudder its fin's planform. */
 	FMantleChassisHovercraft Hovercraft;
+	/** The archetype's tracks, turret and blade. */
+	FMantleChassisTracked Tracked;
 
 	/** A pair of wheels to an axle, or one for an axle on the centerline (the whole layout's, or the axle's own). */
 	int32 WheelCount() const
@@ -244,6 +278,12 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	/** The fewest and most axles a layout has. */
 	static constexpr int32 MinAxles = 2;
 	static constexpr int32 MaxAxles = 4;
+	/** A tracked layout's axles are its road-wheel pairs: 3 to 10 (FMantleVehicleLimits' road wheels per side). No other type has more than MaxAxles. */
+	static constexpr int32 MinTrackedAxles = 3;
+	static constexpr int32 MaxTrackedAxles = 10;
+
+	/** How far above a road wheel's top a tracked chassis's drawn track box reaches, cm at scale 1: the belt's thickness over the wheel and its top run. */
+	static constexpr double TrackAboveWheel = 10.0;
 
 	/** The smallest and largest uniform scale a selector (a preset id and a scale) names. Bounds on what a demo may ask a machine to build, not the size envelope. */
 	static constexpr double MinScale = 0.25;
@@ -341,6 +381,8 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	FMantleChassisHelicopter Helicopter;
 	/** A hovercraft's pads, fan, fin, skirt and damping (chassis.hovercraft); bSet is false for everything else. */
 	FMantleChassisHovercraft Hovercraft;
+	/** A tracked vehicle's tracks, turret and blade (chassis.tracked); bSet is false for everything else. */
+	FMantleChassisTracked Tracked;
 
 	/** Whether axle Axle has one wheel, on the centerline: the whole layout's, or the axle's own. */
 	bool AxleIsCenterline(const int32 Axle) const { return bCenterline || Axles[Axle].bCenterline; }
@@ -475,7 +517,17 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	FMantleChassisBlock FanPodBlock() const;
 	FMantleChassisBlock HoverFinBlock() const;
 
-	/** A type's name as a preset spells it ("car", "truck", "motorcycle", "plane", "helicopter", "hovercraft"), and the type a name spells. */
+	/**
+	 * A tracked vehicle's drawn blocks, the same frame, none of them collided (only the hull is). A track (the left, -Y, or the right) runs along its side's
+	 * road wheels from the rearmost one's back (its X less the wheel radius) to the front one's front, TrackWidth wide about the wheels' Y, from the ground up
+	 * to a wheel's top and TrackAboveWheel more (2 x radius + 10 cm at scale 1). The turret (Tracked.bTurret) stands on the hull's top about TurretX; the
+	 * blade (Tracked.bBlade) stands on the ground about BladeX, centered on Y. Each is empty (zero size) when the chassis has none.
+	 */
+	FMantleChassisBlock TrackBlock(bool bRight) const;
+	FMantleChassisBlock TurretBlock() const;
+	FMantleChassisBlock BladeBlock() const;
+
+	/** A type's name as a preset spells it ("car", "truck", "motorcycle", "plane", "helicopter", "hovercraft", "tracked"), and the type a name spells. */
 	static const TCHAR* TypeName(EMantleChassisType Kind);
 	static bool ParseType(const FString& Name, EMantleChassisType& OutType);
 
@@ -494,8 +546,9 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	static FString ComposeDocument(const FMantleChassisSpec& Spec, TArray<FString>* OutHeld = nullptr);
 
 	/**
-	 * Spec sized Factor times as large: the layout, body, seat, steering wheel, rider and (for a plane, a helicopter or a hovercraft) airframe, rotors,
-	 * cockpit, pads, fan, fin and skirt geometry scaled by Factor, then the handling
+	 * Spec sized Factor times as large: the layout, body, seat, steering wheel, rider and (for a plane, a helicopter, a hovercraft or a tracked vehicle)
+	 * airframe, rotors, cockpit, pads, fan, fin, skirt, track, turret and blade geometry scaled by Factor (a track's pivot speed too, so it turns on the spot
+	 * as fast: the gauge grows with it; its lateral share is a ratio and stays), then the handling
 	 * re-derived from the new dimensions (FMantleChassisDerive, every feel slider at 0), its center of mass the derived one. A Factor of 1
 	 * returns Spec itself, its hand-tuned handling untouched: a preset keeps its own numbers and only a resized chassis uses derived ones. A
 	 * A Factor that is not a finite number above 0 returns Spec too. The steering wheel's rim radius is held to the document's 10 to 30 cm.

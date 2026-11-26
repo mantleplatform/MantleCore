@@ -51,6 +51,47 @@ namespace MantleChassisSpecTestPrivate
 	{
 		static const TArray<FGoldenChassis> Table = {
 	{
+		// A tracked chassis's road wheels are drawn, seven a side on numbered bones: its body is the hull, the fourteen road wheels, the blade in front and
+		// the two tracks (a second section), its collision the hull alone. Its driver's seat has no steering wheel (a bulldozer is steered with levers).
+		TEXT("bulldozer"),
+		TEXT(R"MCS({"mass":22130,"maxSpeed":325,"dragCoefficient":1.0,"frontalArea":8,"engine":{"maxTorque":1050,"maxRPM":2000,"idleRPM":750,"torqueCurve":[[0,0.6],[750,0.75],[1400,1],[1850,0.79],[2000,0.7]],"tractionControl":false,"engineBraking":0.3},"transmission":{"gearRatios":[3.25,2.39,1.80,1.27,1.0],"reverseRatio":1.27,"finalDrive":7.75,"changeUpRPM":1800,"changeDownRPM":1100,"shiftTime":0.5},"suspension":{"maxRaise":8,"maxDrop":4,"springRate":2000,"springPreload":500,"damping":0.9},"steering":{"maxAngle":35,"ackermann":true},"brakes":{"brakeTorque":1210,"handbrakeTorque":2000,"abs":false},"tires":{"friction":1.6,"rollingResistance":0.04},"camera":{"armLength":900,"height":380},"schemaVersion":1,"wheels":[{"bone":"wheel_a1_l","steering":false,"driven":true,"handbrake":true,"radius":13,"width":70},{"bone":"wheel_a1_r","steering":false,"driven":true,"handbrake":true,"radius":13,"width":70},{"bone":"wheel_a2_l","steering":false,"driven":true,"handbrake":true,"radius":13,"width":70},{"bone":"wheel_a2_r","steering":false,"driven":true,"handbrake":true,"radius":13,"width":70},{"bone":"wheel_a3_l","steering":false,"driven":true,"handbrake":true,"radius":13,"width":70},{"bone":"wheel_a3_r","steering":false,"driven":true,"handbrake":true,"radius":13,"width":70},{"bone":"wheel_a4_l","steering":false,"driven":true,"handbrake":true,"radius":13,"width":70},{"bone":"wheel_a4_r","steering":false,"driven":true,"handbrake":true,"radius":13,"width":70},{"bone":"wheel_a5_l","steering":false,"driven":true,"handbrake":true,"radius":13,"width":70},{"bone":"wheel_a5_r","steering":false,"driven":true,"handbrake":true,"radius":13,"width":70},{"bone":"wheel_a6_l","steering":false,"driven":true,"handbrake":true,"radius":13,"width":70},{"bone":"wheel_a6_r","steering":false,"driven":true,"handbrake":true,"radius":13,"width":70},{"bone":"wheel_a7_l","steering":false,"driven":true,"handbrake":true,"radius":13,"width":70},{"bone":"wheel_a7_r","steering":false,"driven":true,"handbrake":true,"radius":13,"width":70}],"collision":[{"center":[0.0,0.0,140.0],"extent":[200.0,130.0,100.0]}],"centerOfMass":[25,0,90],"seat":{"location":[-50,-40,225]}})MCS"),
+		1132, 720,
+		{ -200.0, -165.0, 0.0 }, { 275.0, 165.0, 240.0 },
+		{
+			{ TEXT("root"), -1, { 0.0, 0.0, 0.0 } },
+			{ TEXT("wheel_a1_l"), 0, { 138.5, -100.0, 13.0 } },
+			{ TEXT("wheel_a1_r"), 0, { 138.5, 100.0, 13.0 } },
+			{ TEXT("wheel_a2_l"), 0, { 92.3333333, -100.0, 13.0 } },
+			{ TEXT("wheel_a2_r"), 0, { 92.3333333, 100.0, 13.0 } },
+			{ TEXT("wheel_a3_l"), 0, { 46.1666667, -100.0, 13.0 } },
+			{ TEXT("wheel_a3_r"), 0, { 46.1666667, 100.0, 13.0 } },
+			{ TEXT("wheel_a4_l"), 0, { 0.0, -100.0, 13.0 } },
+			{ TEXT("wheel_a4_r"), 0, { 0.0, 100.0, 13.0 } },
+			{ TEXT("wheel_a5_l"), 0, { -46.1666667, -100.0, 13.0 } },
+			{ TEXT("wheel_a5_r"), 0, { -46.1666667, 100.0, 13.0 } },
+			{ TEXT("wheel_a6_l"), 0, { -92.3333333, -100.0, 13.0 } },
+			{ TEXT("wheel_a6_r"), 0, { -92.3333333, 100.0, 13.0 } },
+			{ TEXT("wheel_a7_l"), 0, { -138.5, -100.0, 13.0 } },
+			{ TEXT("wheel_a7_r"), 0, { -138.5, 100.0, 13.0 } }
+		},
+		{
+			{ 138.5, -100.0, 13.0 },
+			{ 138.5, 100.0, 13.0 },
+			{ 92.3333333, -100.0, 13.0 },
+			{ 92.3333333, 100.0, 13.0 },
+			{ 46.1666667, -100.0, 13.0 },
+			{ 46.1666667, 100.0, 13.0 },
+			{ 0.0, -100.0, 13.0 },
+			{ 0.0, 100.0, 13.0 },
+			{ -46.1666667, -100.0, 13.0 },
+			{ -46.1666667, 100.0, 13.0 },
+			{ -92.3333333, -100.0, 13.0 },
+			{ -92.3333333, 100.0, 13.0 },
+			{ -138.5, -100.0, 13.0 },
+			{ -138.5, 100.0, 13.0 }
+		}
+	},
+	{
 		// A helicopter's wheels are not drawn: its body is sixteen boxes (the cabin, the mast, the boom, the fin, two skids, a leg at each skid end, two
 		// cross-tubes, and two blades on each rotor), its collision the cabin, the boom and the fin.
 		TEXT("helicopter"),
@@ -254,6 +295,46 @@ namespace MantleChassisSpecTestPrivate
 		}
 	},
 	{
+		// The tank: as the bulldozer, with a turret on the hull's top in place of a blade.
+		TEXT("tank"),
+		TEXT(R"MCS({"mass":55150,"maxSpeed":1889,"dragCoefficient":0.9,"frontalArea":9,"engine":{"maxTorque":4700,"maxRPM":2700,"idleRPM":700,"torqueCurve":[[0,0.5],[700,0.6],[1600,1],[1700,1],[2600,0.86],[2700,0.8]],"tractionControl":false,"engineBraking":0.5},"transmission":{"gearRatios":[4.3,2.6,1.6,1.0],"reverseRatio":2.2,"finalDrive":5.0,"changeUpRPM":2400,"changeDownRPM":1400,"shiftTime":0.5},"suspension":{"maxRaise":25,"maxDrop":15,"springRate":2500,"springPreload":750,"damping":0.8},"steering":{"maxAngle":35,"ackermann":true},"brakes":{"brakeTorque":8100,"handbrakeTorque":10000,"abs":false},"tires":{"friction":1.6,"rollingResistance":0.04},"camera":{"armLength":1300,"height":450},"schemaVersion":1,"wheels":[{"bone":"wheel_a1_l","steering":false,"driven":true,"handbrake":true,"radius":35,"width":60},{"bone":"wheel_a1_r","steering":false,"driven":true,"handbrake":true,"radius":35,"width":60},{"bone":"wheel_a2_l","steering":false,"driven":true,"handbrake":true,"radius":35,"width":60},{"bone":"wheel_a2_r","steering":false,"driven":true,"handbrake":true,"radius":35,"width":60},{"bone":"wheel_a3_l","steering":false,"driven":true,"handbrake":true,"radius":35,"width":60},{"bone":"wheel_a3_r","steering":false,"driven":true,"handbrake":true,"radius":35,"width":60},{"bone":"wheel_a4_l","steering":false,"driven":true,"handbrake":true,"radius":35,"width":60},{"bone":"wheel_a4_r","steering":false,"driven":true,"handbrake":true,"radius":35,"width":60},{"bone":"wheel_a5_l","steering":false,"driven":true,"handbrake":true,"radius":35,"width":60},{"bone":"wheel_a5_r","steering":false,"driven":true,"handbrake":true,"radius":35,"width":60},{"bone":"wheel_a6_l","steering":false,"driven":true,"handbrake":true,"radius":35,"width":60},{"bone":"wheel_a6_r","steering":false,"driven":true,"handbrake":true,"radius":35,"width":60},{"bone":"wheel_a7_l","steering":false,"driven":true,"handbrake":true,"radius":35,"width":60},{"bone":"wheel_a7_r","steering":false,"driven":true,"handbrake":true,"radius":35,"width":60}],"collision":[{"center":[0.0,0.0,109.0],"extent":[385.0,187.5,55.0]}],"centerOfMass":[-20,0,110],"seat":{"location":[250,-70,145]}})MCS"),
+		1132, 720,
+		{ -385.0, -187.5, 0.0 }, { 385.0, 187.5, 244.0 },
+		{
+			{ TEXT("root"), -1, { 0.0, 0.0, 0.0 } },
+			{ TEXT("wheel_a1_l"), 0, { 245.0, -155.0, 35.0 } },
+			{ TEXT("wheel_a1_r"), 0, { 245.0, 155.0, 35.0 } },
+			{ TEXT("wheel_a2_l"), 0, { 163.3333333, -155.0, 35.0 } },
+			{ TEXT("wheel_a2_r"), 0, { 163.3333333, 155.0, 35.0 } },
+			{ TEXT("wheel_a3_l"), 0, { 81.6666667, -155.0, 35.0 } },
+			{ TEXT("wheel_a3_r"), 0, { 81.6666667, 155.0, 35.0 } },
+			{ TEXT("wheel_a4_l"), 0, { 0.0, -155.0, 35.0 } },
+			{ TEXT("wheel_a4_r"), 0, { 0.0, 155.0, 35.0 } },
+			{ TEXT("wheel_a5_l"), 0, { -81.6666667, -155.0, 35.0 } },
+			{ TEXT("wheel_a5_r"), 0, { -81.6666667, 155.0, 35.0 } },
+			{ TEXT("wheel_a6_l"), 0, { -163.3333333, -155.0, 35.0 } },
+			{ TEXT("wheel_a6_r"), 0, { -163.3333333, 155.0, 35.0 } },
+			{ TEXT("wheel_a7_l"), 0, { -245.0, -155.0, 35.0 } },
+			{ TEXT("wheel_a7_r"), 0, { -245.0, 155.0, 35.0 } }
+		},
+		{
+			{ 245.0, -155.0, 35.0 },
+			{ 245.0, 155.0, 35.0 },
+			{ 163.3333333, -155.0, 35.0 },
+			{ 163.3333333, 155.0, 35.0 },
+			{ 81.6666667, -155.0, 35.0 },
+			{ 81.6666667, 155.0, 35.0 },
+			{ 0.0, -155.0, 35.0 },
+			{ 0.0, 155.0, 35.0 },
+			{ -81.6666667, -155.0, 35.0 },
+			{ -81.6666667, 155.0, 35.0 },
+			{ -163.3333333, -155.0, 35.0 },
+			{ -163.3333333, 155.0, 35.0 },
+			{ -245.0, -155.0, 35.0 },
+			{ -245.0, 155.0, 35.0 }
+		}
+	},
+	{
 		TEXT("truck"),
 		TEXT(R"MCS({"mass":4000,"maxSpeed":4861,"dragCoefficient":0.6,"frontalArea":5,"engine":{"maxTorque":576,"maxRPM":5000,"idleRPM":600,"torqueCurve":[[0,0.6],[1000,0.75],[2500,0.9],[3800,1],[4500,0.962],[5000,0.85]],"tractionControl":true,"engineBraking":0.25},"transmission":{"gearRatios":[4.027,2.364,1.532,1.152,0.852,0.667],"reverseRatio":3.064,"finalDrive":4.459,"changeUpRPM":4500,"changeDownRPM":1200,"shiftTime":0.5},"suspension":{"maxRaise":15,"maxDrop":15,"springRate":800,"springPreload":200,"damping":0.75},"steering":{"maxAngle":35,"ackermann":true},"brakes":{"brakeTorque":8600,"handbrakeTorque":8000,"abs":true,"frontShare":0.65},"tires":{"friction":1.47},"camera":{"armLength":750,"height":280},"schemaVersion":1,"wheels":[{"bone":"wheel_fl","steering":true,"driven":false,"handbrake":false,"radius":42,"width":28},{"bone":"wheel_fr","steering":true,"driven":false,"handbrake":false,"radius":42,"width":28},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":true,"radius":42,"width":28},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":true,"radius":42,"width":28}],"collision":[{"center":[0.0,0.0,96.0],"extent":[320.0,102.5,48.0]}],"centerOfMass":[7,0,61],"seat":{"location":[73.2,-42,130],"steeringWheel":{"location":[120,-42,133],"rotation":[-20.0,0.0,0.0],"radius":21}},"passengerSeat":{"location":[73.2,42,130]}})MCS"),
 		320, 204,
@@ -362,7 +443,7 @@ namespace MantleChassisSpecTestPrivate
 		{
 			return Value;
 		}
-		for (const TCHAR* Key : { TEXT("movementType"), TEXT("flight"), TEXT("helicopter"), TEXT("hover") })
+		for (const TCHAR* Key : { TEXT("movementType"), TEXT("flight"), TEXT("helicopter"), TEXT("hover"), TEXT("tracked") })
 		{
 			Doc->RemoveField(Key);
 		}
@@ -604,7 +685,16 @@ bool FMantleChassisScaledMakesValidAssetsTest::RunTest(const FString& Parameters
 			// A body box with a half-extent past limits.json's 1000 cm (the six-wheeler at 2.5) is the reader's to refuse; the size envelope is not
 			// enforced earlier, so it must be refused in words and not half built. A plane's boxes (its fuselage,
 			// wing, tailplane and fin) are held inside the document's +-1000 cm instead, since a wing of 14.5 m is a wide plane at 1.4 times its size.
-			const bool bFits = Preset.Aircraft.bSet || 0.5 * Scale * FMath::Max3(Preset.Length, Preset.Width, Preset.Height) <= 1000.0;
+			// The wheels are geometry too, never held: a tracked chassis's small, wide road wheels leave limits.json's wheels/*/radius (5 to 150 cm) and
+			// width (2 to 100 cm) at the selectors' ends (the bulldozer's 13 cm wheels at 0.25, its 70 cm wide ones past 1.43), and are refused the same way.
+			double WheelRadiusMin = 0.0;
+			double WheelRadiusMax = 0.0;
+			double WheelWidthMin = 0.0;
+			double WheelWidthMax = 0.0;
+			FMantleVehicleLimits::GetRange(TEXT("wheels/*/radius"), WheelRadiusMin, WheelRadiusMax);
+			FMantleVehicleLimits::GetRange(TEXT("wheels/*/width"), WheelWidthMin, WheelWidthMax);
+			const bool bWheelsFit = Spec.WheelRadius >= WheelRadiusMin && Spec.WheelRadius <= WheelRadiusMax && Spec.WheelWidth >= WheelWidthMin && Spec.WheelWidth <= WheelWidthMax;
+			const bool bFits = (Preset.Aircraft.bSet || 0.5 * Scale * FMath::Max3(Preset.Length, Preset.Width, Preset.Height) <= 1000.0) && bWheelsFit;
 			const bool bMade = FMantleVehicleChassisBuilder::MakeAsset(Spec, Asset, Error);
 			if (!bFits)
 			{

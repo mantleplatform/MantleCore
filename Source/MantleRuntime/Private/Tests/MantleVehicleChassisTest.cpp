@@ -70,6 +70,27 @@ bool FMantleVehicleChassisPresetsMakeAssetsTest::RunTest(const FString& Paramete
 			TestTrue(*FString::Printf(TEXT("%s: the body validates (%s)"), *Id, *HeliWhy), Asset.Body.Validate(HeliWhy));
 			continue;
 		}
+		// A tracked vehicle has its own tests too (Mantle.Vehicle.Chassis.Tracked*): here it is only a valid asset, with a road wheel each side of its three
+		// to ten axles, on bones, none steered and every one driven and braked, a body that validates, a center of mass, its hull as collision, and its
+		// driver in a car's seat with no steering wheel (it is steered with levers) and no passenger.
+		if (Spec.Tracked.bSet)
+		{
+			TestTrue(*FString::Printf(TEXT("%s: three to ten axles"), *Id), Spec.Axles.Num() >= 3 && Spec.Axles.Num() <= 10);
+			TestEqual(*FString::Printf(TEXT("%s: a road wheel each side of every axle"), *Id), Desc.Wheels.Num(), 2 * Spec.Axles.Num());
+			TestEqual(*FString::Printf(TEXT("%s: and a position each"), *Id), Asset.WheelPositions.Num(), Desc.Wheels.Num());
+			TestEqual(*FString::Printf(TEXT("%s: a root and a bone per road wheel"), *Id), Asset.Body.Bones.Num(), Desc.Wheels.Num() + 1);
+			TestEqual(*FString::Printf(TEXT("%s: one collision box"), *Id), Desc.Collision.Num(), 1);
+			TestTrue(*FString::Printf(TEXT("%s: it has a center of mass"), *Id), Desc.bCenterOfMass);
+			TestTrue(*FString::Printf(TEXT("%s: no road wheel steers, and every one is driven and braked"), *Id), !Desc.Wheels.ContainsByPredicate([](const FMantleVehicleWheelDesc& Wheel)
+			{
+				return Wheel.bSteering || !Wheel.bDriven || !Wheel.bHandbrake;
+			}));
+			TestTrue(*FString::Printf(TEXT("%s: the driver sits on the left in a car's seat with no steering wheel, and no passenger"), *Id),
+				Desc.SeatLocation.Y < 0.0 && Desc.SeatKind == EMantleVehicleSeatKind::Car && !Desc.bSteeringWheel && !Desc.bPassengerSeat);
+			FString TrackedWhy;
+			TestTrue(*FString::Printf(TEXT("%s: the body validates (%s)"), *Id, *TrackedWhy), Asset.Body.Validate(TrackedWhy));
+			continue;
+		}
 		FMantleVehicleChassisReference Reference;
 		if (TestTrue(*FString::Printf(TEXT("%s: the chassis reads (%s)"), *Id, *Error), FMantleVehicleChassisBuilder::ReadReference(Text, Reference, Error)))
 		{

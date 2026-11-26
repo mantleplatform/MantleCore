@@ -127,6 +127,9 @@ struct MANTLERUNTIME_API FMantleChassisTrim
  *   a hovercraft's fan, pads and rudder   the fan's push thrust0 x (m / m0); each pad's spring rate0 x (m / m0) x (n0 / n) x (d0 / d), d a pad's travel
  *                   less the hover height (how far it comes down at rest, at least 1 cm), so the hull rests at its own hover height; the rudder's
  *                   area area0 x (height x chord) / (height0 x chord0)
+ *   a tracked vehicle   its road wheels are its wheels, so the rules above take them as any wheels (n is every road wheel). Its tracks' width, pad
+ *                   length and pivot speed are the chassis's geometry, which FMantleChassisSpec::Scaled scales with the rest (the pivot speed with the
+ *                   gauge, so it turns on the spot as fast at any size); its lateral share is a ratio and stays. None is a handling number here.
  * What no rule moves is the archetype's own: the drag coefficient, the spring damping and the tire friction (the friction by the grip slider), the
  * torque curve, gear ratios and rpm limits. A ratio is held to 0.001 to 1000 so a dimension that is zero or not a number gives a held number and not
  * a NaN. Every handling number is held inside the document's absolute ranges (limits.json), and each hold is listed in the result's

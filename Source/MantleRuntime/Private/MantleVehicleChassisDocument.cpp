@@ -211,6 +211,29 @@ namespace MantleVehicleChassisDocumentPrivate
 		return Out;
 	}
 
+	/** A tracked vehicle's block, every number written; the rollers only when it has some (a chassis has none: its road wheels are all it draws). */
+	TSharedRef<FJsonObject> TrackedJson(const FMantleVehicleTrackedDesc& T)
+	{
+		const TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
+		Out->SetField(TEXT("pivotTrackSpeed"), Number(T.PivotTrackSpeed));
+		Out->SetField(TEXT("lateralShare"), Number(T.LateralShare));
+		Out->SetField(TEXT("trackWidth"), Number(T.TrackWidth));
+		Out->SetField(TEXT("padPitch"), Number(T.PadPitch));
+		if (T.Rollers.Num() > 0)
+		{
+			TArray<TSharedPtr<FJsonValue>> Rollers;
+			for (const FMantleVehicleTrackRollerDesc& Roller : T.Rollers)
+			{
+				const TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+				Entry->SetStringField(TEXT("bone"), Roller.Bone.ToString());
+				Entry->SetField(TEXT("radius"), Number(Roller.Radius));
+				Rollers.Add(ObjectValue(Entry));
+			}
+			Out->SetArrayField(TEXT("rollers"), Rollers);
+		}
+		return Out;
+	}
+
 	TSharedRef<FJsonObject> RiderJson(const FMantleVehicleRiderDesc& R)
 	{
 		const TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
@@ -475,6 +498,21 @@ namespace MantleVehicleChassisDocumentPrivate
 		H.Damping.MaxSkirtBrakeAccel = Craft.MaxSkirtBrakeAccel;
 	}
 
+	/**
+	 * A tracked vehicle's tracks: the preset's (a resized chassis's scaled) width, pad length, pivot speed and lateral share. Its road wheels are the
+	 * document's wheels, the layout's; it has no rollers, since the chassis draws only its road wheels.
+	 */
+	void DeriveTracked(const FMantleChassisSpec& Spec, FMantleVehicleDesc& D)
+	{
+		const FMantleChassisTracked& Tracks = Spec.Tracked;
+		D.MovementType = EMantleVehicleMovementKind::Tracked;
+		FMantleVehicleTrackedDesc& T = D.Tracked;
+		T.PivotTrackSpeed = Tracks.PivotTrackSpeed;
+		T.LateralShare = Tracks.LateralShare;
+		T.TrackWidth = Tracks.TrackWidth;
+		T.PadPitch = Tracks.PadPitch;
+	}
+
 	/** The seat extras (kind, exit distance, rider) of Desc, and the boom, put on Document's seat and camera. */
 	void WriteSeatAndCamera(const FMantleVehicleDesc& Desc, FJsonObject& Document)
 	{
@@ -676,6 +714,18 @@ namespace MantleVehicleChassisDocumentPrivate
 			Hold(TEXT("hover/damping/maxSkirtBrakeAccel"), H.Damping.MaxSkirtBrakeAccel);
 			Hold(TEXT("hover/angularDamping"), H.AngularDamping);
 		}
+		if (D.MovementType == EMantleVehicleMovementKind::Tracked)
+		{
+			FMantleVehicleTrackedDesc& T = D.Tracked;
+			Hold(TEXT("tracked/pivotTrackSpeed"), T.PivotTrackSpeed);
+			Hold(TEXT("tracked/lateralShare"), T.LateralShare);
+			Hold(TEXT("tracked/trackWidth"), T.TrackWidth);
+			Hold(TEXT("tracked/padPitch"), T.PadPitch);
+			for (FMantleVehicleTrackRollerDesc& Roller : T.Rollers)
+			{
+				Hold(TEXT("tracked/rollers/*/radius"), Roller.Radius);
+			}
+		}
 	}
 
 	/** What a document path is, for a creator: the first row whose prefix the path starts with. */
@@ -714,6 +764,10 @@ namespace MantleVehicleChassisDocumentPrivate
 		{ TEXT("hover/thruster"), TEXT("The hover fan") },
 		{ TEXT("hover/rudder"), TEXT("The hovercraft's rudder") },
 		{ TEXT("hover"), TEXT("A hovercraft setting") },
+		{ TEXT("tracked/pivotTrackSpeed"), TEXT("How fast the tracks run in a turn on the spot") },
+		{ TEXT("tracked/trackWidth"), TEXT("The tracks' width") },
+		{ TEXT("tracked/padPitch"), TEXT("A track pad's length") },
+		{ TEXT("tracked"), TEXT("A tracked-vehicle setting") },
 	};
 
 	/**
@@ -763,6 +817,8 @@ const TCHAR* FMantleVehicleChassisDocument::MovementName(const EMantleVehicleMov
 		return TEXT("helicopter");
 	case EMantleVehicleMovementKind::Hover:
 		return TEXT("hover");
+	case EMantleVehicleMovementKind::Tracked:
+		return TEXT("tracked");
 	default:
 		return TEXT("wheeled");
 	}
@@ -805,6 +861,7 @@ void FMantleVehicleChassisDocument::Derive(const FMantleChassisSpec& Spec, FMant
 	InOutDesc.Flight = FMantleVehicleFlightDesc();
 	InOutDesc.Helicopter = FMantleVehicleHelicopterDesc();
 	InOutDesc.Hover = FMantleVehicleHoverDesc();
+	InOutDesc.Tracked = FMantleVehicleTrackedDesc();
 	InOutDesc.SeatKind = SeatKindOf(Spec.DriverSeat);
 	InOutDesc.PassengerSeatKind = EMantleVehicleSeatKind::Car;
 	InOutDesc.bSeatExitSideDistance = false;
@@ -828,6 +885,10 @@ void FMantleVehicleChassisDocument::Derive(const FMantleChassisSpec& Spec, FMant
 	{
 		DeriveHovercraft(Spec, Handling, InOutDesc);
 	}
+	if (Spec.Tracked.bSet)
+	{
+		DeriveTracked(Spec, InOutDesc);
+	}
 	HoldToRanges(InOutDesc, OutHeld);
 }
 
@@ -849,6 +910,9 @@ void FMantleVehicleChassisDocument::Write(const FMantleVehicleDesc& Desc, FJsonO
 		break;
 	case EMantleVehicleMovementKind::Hover:
 		Document.SetObjectField(TEXT("hover"), HoverJson(Desc.Hover));
+		break;
+	case EMantleVehicleMovementKind::Tracked:
+		Document.SetObjectField(TEXT("tracked"), TrackedJson(Desc.Tracked));
 		break;
 	default:
 		break;
@@ -876,7 +940,8 @@ void FMantleVehicleChassisDocument::ComposeGroundHandling(const FMantleChassisSp
 {
 	using namespace MantleVehicleChassisDocumentPrivate;
 
-	if (Spec.Aircraft.bSet || Spec.Helicopter.bSet || Spec.Hovercraft.bSet || Spec.WheelCount() <= 2)
+	// A tracked vehicle steers no wheel and grips alike on every road wheel (its tracks turn it), so neither the curve nor a front and rear grip is its.
+	if (Spec.Aircraft.bSet || Spec.Helicopter.bSet || Spec.Hovercraft.bSet || Spec.Tracked.bSet || Spec.WheelCount() <= 2)
 	{
 		return;
 	}
@@ -942,7 +1007,7 @@ FString FMantleVehicleChassisDocument::MovementBlocksJson(const FMantleChassisSp
 	const TSharedRef<FJsonObject> Scratch = MakeShared<FJsonObject>();
 	Compose(Spec, *Scratch);
 	const TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
-	for (const TCHAR* Block : { TEXT("flight"), TEXT("helicopter"), TEXT("hover") })
+	for (const TCHAR* Block : { TEXT("flight"), TEXT("helicopter"), TEXT("hover"), TEXT("tracked") })
 	{
 		const TSharedPtr<FJsonObject>* Found = nullptr;
 		if (Scratch->TryGetObjectField(Block, Found) && Found && Found->IsValid())
@@ -1053,7 +1118,7 @@ bool FMantleVehicleChassisDocument::MergeSource(const UMantleVehicleSource& Sour
 			return Refuse(FString::Printf(TEXT("the vehicle's movement blocks hold %s, which is not an object"), *Key));
 		}
 		if (Key.Equals(TEXT("flight"), ESearchCase::CaseSensitive) || Key.Equals(TEXT("helicopter"), ESearchCase::CaseSensitive)
-			|| Key.Equals(TEXT("hover"), ESearchCase::CaseSensitive))
+			|| Key.Equals(TEXT("hover"), ESearchCase::CaseSensitive) || Key.Equals(TEXT("tracked"), ESearchCase::CaseSensitive))
 		{
 			Document.SetObjectField(Key, Value);
 			continue;
@@ -1070,7 +1135,7 @@ bool FMantleVehicleChassisDocument::MergeSource(const UMantleVehicleSource& Sour
 		}
 		else
 		{
-			return Refuse(FString::Printf(TEXT("the vehicle's movement blocks hold %s; a source sets flight, helicopter, hover, seat or camera there (the type and the kinds are its own fields)"), *Key));
+			return Refuse(FString::Printf(TEXT("the vehicle's movement blocks hold %s; a source sets flight, helicopter, hover, tracked, seat or camera there (the type and the kinds are its own fields)"), *Key));
 		}
 		const TSharedPtr<FJsonObject>* Target = nullptr;
 		if (!Document.TryGetObjectField(Key, Target) || !Target || !Target->IsValid())

@@ -344,14 +344,15 @@ TArray<const FMantleVehiclePreset*> FMantleVehiclePresets::Publishable()
 			Out.Add(&Preset);
 		}
 	}
-	// Road vehicles first, then what flies, then what floats; within a movement type the order stays by id.
+	// Road vehicles first, then tracked ones (#448), then what flies, then what floats; within a movement type the order stays by id.
 	const auto Rank = [](const FString& MovementType)
 	{
 		if (MovementType == TEXT("wheeled")) { return 0; }
-		if (MovementType == TEXT("plane")) { return 1; }
-		if (MovementType == TEXT("helicopter")) { return 2; }
-		if (MovementType == TEXT("hover")) { return 3; }
-		return 4;
+		if (MovementType == TEXT("tracked")) { return 1; }
+		if (MovementType == TEXT("plane")) { return 2; }
+		if (MovementType == TEXT("helicopter")) { return 3; }
+		if (MovementType == TEXT("hover")) { return 4; }
+		return 5;
 	};
 	Out.StableSort([&Rank](const FMantleVehiclePreset& A, const FMantleVehiclePreset& B) { return Rank(A.MovementType) < Rank(B.MovementType); });
 	return Out;
