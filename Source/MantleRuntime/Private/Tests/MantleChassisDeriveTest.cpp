@@ -559,7 +559,9 @@ bool FMantleChassisDeriveScalingLawsTest::RunTest(const FString& Parameters)
 			const bool bBrakesHeld = H.Clamped.ContainsByPredicate([](const FString& Entry) { return Entry.StartsWith(TEXT("brakes/brakeTorque ")); });
 			TestTrue(*FString::Printf(TEXT("%s: the brakes give the same deceleration, torque S^4"), *Label),
 				bBrakesHeld ? (H.BrakeTorque == 20000.0 && Own.BrakeTorque * S * S * S * S > 20000.0) : ScalesRounded(H.BrakeTorque, Own.BrakeTorque, S * S * S * S));
-			TestTrue(*FString::Printf(TEXT("%s: engine braking gives the same lift-off deceleration, S^4"), *Label), ScalesRounded(H.EngineBraking, Own.EngineBraking, S * S * S * S));
+			// The engine turns 1 / min(1, S) faster at a given speed (the final drive below), so it brakes S^4 x min(1, S) for the same deceleration.
+			TestTrue(*FString::Printf(TEXT("%s: engine braking gives the same lift-off deceleration, S^4 x min(1, S)"), *Label),
+				ScalesRounded(H.EngineBraking, Own.EngineBraking, S * S * S * S * FMath::Min(1.0, S)));
 			// The lock is the archetype's own angle, so a uniform scale leaves it alone (and the turning circle, which follows the wheelbase, grows with the size).
 			TestEqual(*FString::Printf(TEXT("%s: the steering lock is an angle, the same"), *Label), H.MaxSteerAngle, Own.MaxSteerAngle);
 			TestTrue(*FString::Printf(TEXT("%s: the archetype's tire and drag are kept"), *Label), H.TireFriction == Own.TireFriction && H.DragCoefficient == Own.DragCoefficient);
