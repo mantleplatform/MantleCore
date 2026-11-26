@@ -979,11 +979,11 @@ namespace MantleVehicleBuilderPrivate
 // Named, not anonymous: unity builds merge this file with others.
 namespace MantleVehicleBuilderPrivate
 {
-	/** The take-off run a plane or a jet needs, in centimeters: each preset's roll on #379's flight model (light plane and jet about 290 m, warbird about
-	 *  350 m) times 1.3. */
-	constexpr double JetRunCm = 37500.0;
-	constexpr double PlaneRunCm = 37500.0;
-	constexpr double WarbirdRunCm = 46000.0;
+	/** The take-off run a plane or a jet needs, in centimeters: each preset's roll in #379's flight probe (light plane 314 m, warbird 406 m, jet 270 m
+	 *  on its afterburner) times 1.3. */
+	constexpr double JetRunCm = 35000.0;
+	constexpr double PlaneRunCm = 41000.0;
+	constexpr double WarbirdRunCm = 53000.0;
 
 	/** How far ahead of the camera the search for a flat stretch goes, and how often it looks. */
 	constexpr double FlatSearchReachCm = 40000.0;
