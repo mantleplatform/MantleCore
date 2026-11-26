@@ -114,8 +114,8 @@
       "ackermann": false
     },
     "brakes": {
-      "brakeTorque": 435,
-      "handbrakeTorque": 220,
+      "brakeTorque": 370,
+      "handbrakeTorque": 185,
       "abs": true,
       "frontShare": 0.75
     },
@@ -176,8 +176,8 @@
           "shiftTime": 0.25
         },
         "brakes": {
-          "brakeTorque": 370,
-          "handbrakeTorque": 185,
+          "brakeTorque": 310,
+          "handbrakeTorque": 155,
           "abs": true,
           "frontShare": 0.75
         },
@@ -225,8 +225,8 @@
           "shiftTime": 0.25
         },
         "brakes": {
-          "brakeTorque": 410,
-          "handbrakeTorque": 205,
+          "brakeTorque": 355,
+          "handbrakeTorque": 180,
           "abs": true,
           "frontShare": 0.75
         },
@@ -274,8 +274,8 @@
           "shiftTime": 0.15
         },
         "brakes": {
-          "brakeTorque": 435,
-          "handbrakeTorque": 220,
+          "brakeTorque": 370,
+          "handbrakeTorque": 185,
           "abs": true,
           "frontShare": 0.75
         },
@@ -323,8 +323,8 @@
           "shiftTime": 0.08
         },
         "brakes": {
-          "brakeTorque": 475,
-          "handbrakeTorque": 240,
+          "brakeTorque": 405,
+          "handbrakeTorque": 200,
           "abs": true,
           "frontShare": 0.75
         },
@@ -372,8 +372,8 @@
           "shiftTime": 0.3
         },
         "brakes": {
-          "brakeTorque": 820,
-          "handbrakeTorque": 410,
+          "brakeTorque": 630,
+          "handbrakeTorque": 315,
           "abs": true,
           "frontShare": 0.75
         },
