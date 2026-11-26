@@ -12,7 +12,7 @@
     "passenger": "car"
   },
   "fit": {
-    "wheelRadius": 15,
+    "wheelRadius": 20,
     "trackWidth": 180,
     "minScale": 0.7,
     "maxScale": 1.5
@@ -25,7 +25,7 @@
     "layout": {
       "wheelbase": 400,
       "track": 180,
-      "wheelRadius": 15,
+      "wheelRadius": 20,
       "wheelWidth": 10,
       "axles": [
         { "steer": true, "drive": false },

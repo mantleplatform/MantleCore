@@ -238,8 +238,8 @@ bool FMantleChassisDeriveExactAtArchetypeTest::RunTest(const FString& Parameters
 			TestEqual(*FString::Printf(TEXT("%s: the derived document is the preset's"), *Id), FirstDifference(DerivedInDocument, InDocument), FString());
 		}
 	}
-	// One bit per type (EMantleChassisType's order): car, truck, motorcycle, plane, helicopter and hovercraft.
-	TestEqual(TEXT("the presets are cars, trucks, a motorcycle, planes, a helicopter and a hovercraft"), TypesSeen, 63);
+	// One bit per type (EMantleChassisType's order): car, truck, motorcycle, plane, helicopter, hovercraft and boat (no jet ski preset yet).
+	TestEqual(TEXT("the presets are cars, trucks, a motorcycle, planes, a helicopter, a hovercraft and a boat"), TypesSeen, 127);
 	return true;
 }
 

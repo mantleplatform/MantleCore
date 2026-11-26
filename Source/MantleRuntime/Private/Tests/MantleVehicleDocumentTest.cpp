@@ -495,8 +495,8 @@ bool FMantleVehicleDocumentGoldenTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleDocumentTestPrivate;
 	const TArray<FString> Selectors = MantleVehicleDocumentTestPrivate::Selectors();
-	// The twelve presets at scale 1 and at 0.7.
-	TestEqual(TEXT("twelve presets, two sizes each"), Selectors.Num(), 24);
+	// The thirteen presets at scale 1 and at 0.7.
+	TestEqual(TEXT("thirteen presets, two sizes each"), Selectors.Num(), 26);
 	for (const FString& Selector : Selectors)
 	{
 		FMantleChassisSpec Spec;
