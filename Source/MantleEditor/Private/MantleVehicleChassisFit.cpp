@@ -211,6 +211,16 @@ FMantleChassisPlacement FMantleVehicleChassisFit::Place(const FMantleVehicleChas
 	{
 		Out.PassengerSeat = Stretch.PointToModel(Chassis.PassengerSeat());
 	}
+	// #449: the extra seats go where the body went, as the seat does; the way each faces, its pose and its door are the chassis's.
+	for (const FMantleChassisExtraSeat& Extra : Chassis.ExtraSeats)
+	{
+		FMantleChassisExtraSeat& Placed = Out.ExtraSeats.Add_GetRef(Extra);
+		Placed.Location = Stretch.PointToModel(Extra.Location);
+		if (Extra.bHold)
+		{
+			Placed.Hold = Stretch.PointToModel(Extra.Hold);
+		}
+	}
 	return Out;
 }
 
@@ -407,10 +417,39 @@ void FMantleVehicleChassisFit::Apply(const FMantleChassisPlacement& Placement, U
 	}
 	Tuning.DriverContacts = FMantleVehicleConverter::GuessSeatContacts(Tuning, /*bPassenger*/ false);
 	Tuning.PassengerContacts = Placement.bPassenger ? FMantleVehicleConverter::GuessSeatContacts(Tuning, /*bPassenger*/ true) : FMantleVehicleSourceSeatContacts();
+
+	// #449: the extra seats, the chassis's own as the other two are. Each keeps the door the chassis gives it for now: the vehicle's doors come after this, and
+	// KeepSeatDoors makes a seat by a door the model did not get an open one. A stand spot keeps its hand grip; a sit seat has none.
+	Tuning.ExtraSeats.Reset();
+	for (const FMantleChassisExtraSeat& Placed : Placement.ExtraSeats)
+	{
+		FMantleVehicleSourceSeat& Extra = Tuning.ExtraSeats.AddDefaulted_GetRef();
+		Extra.Location = Placed.Location;
+		Extra.Yaw = static_cast<float>(FRotator::NormalizeAxis(Placed.Yaw));
+		Extra.Pose = Placed.Pose == TEXT("stand") ? EMantleVehicleSourceSeatPose::Stand : EMantleVehicleSourceSeatPose::Sit;
+		FMantleVehicleConverter::ParseSeatDoor(Placed.Door, Extra.Door);
+		Extra.bHold = Extra.Pose == EMantleVehicleSourceSeatPose::Stand && Placed.bHold;
+		Extra.Hold = Extra.bHold ? Placed.Hold : FVector::ZeroVector;
+		Extra.Contacts = FMantleVehicleConverter::GuessExtraSeatContacts(Tuning, Extra);
+	}
 	if (bFirstBoxOnly)
 	{
 		Tuning.Collision = MoveTemp(AllBoxes);
 	}
+}
+
+int32 FMantleVehicleChassisFit::KeepSeatDoors(FMantleVehicleSourceTuning& Tuning)
+{
+	int32 Opened = 0;
+	for (FMantleVehicleSourceSeat& Extra : Tuning.ExtraSeats)
+	{
+		if (!FMantleVehicleConverter::HasSeatDoor(Tuning, Extra.Door))
+		{
+			Extra.Door = EMantleVehicleSourceSeatDoor::None;
+			++Opened;
+		}
+	}
+	return Opened;
 }
 
 TArray<FString> FMantleVehicleChassisFit::StretchNotes(const FMantleChassisStretch& Stretch)

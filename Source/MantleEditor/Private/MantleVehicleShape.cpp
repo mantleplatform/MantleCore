@@ -451,6 +451,19 @@ FMantleChassisSpec FMantleVehicleShape::Reshape(const FMantleChassisSpec& Archet
 	Out.Rider.RightGrip += RiderShift;
 	Out.Rider.LeftPeg += RiderShift;
 	Out.Rider.RightPeg += RiderShift;
+	// The extra seats (#449) go where the body went, as the seat does, and a stand spot's hand grip with its spot.
+	const auto Moved = [&Archetype, &Dimensions, Along, Across](const FVector& At)
+	{
+		return FVector(At.X * Along, At.Y * Across, At.Z + (Dimensions.GroundClearance - Archetype.Clearance));
+	};
+	for (FMantleChassisExtraSeat& Extra : Out.ExtraSeats)
+	{
+		Extra.Location = Moved(Extra.Location);
+		if (Extra.bHold)
+		{
+			Extra.Hold = Moved(Extra.Hold);
+		}
+	}
 
 	// The handling follows the sizes, and the center of mass is the derived one, as for a uniform resize (FMantleChassisSpec::Scaled). The
 	// rider's rear brake and tire keep their share of the front's, whatever the derivation made of the front's.
@@ -798,6 +811,7 @@ void FMantleVehicleShapeSession::Start(const FMantleChassisSpec& InArchetype, co
 	Size = 1.0;
 	Feel = FMantleChassisFeel();
 	bPassenger = Archetype.bPassenger;
+	ExtraSeats = Archetype.ExtraSeats;
 	HeldNotes.Reset();
 	bStarted = true;
 	Refresh();
@@ -835,6 +849,7 @@ bool FMantleVehicleShapeSession::Reset()
 	Size = 1.0;
 	Feel = FMantleChassisFeel();
 	bPassenger = Archetype.bPassenger;
+	ExtraSeats = Archetype.ExtraSeats;
 	HeldNotes.Reset();
 	Refresh();
 	return bWasShaped;
@@ -843,11 +858,12 @@ bool FMantleVehicleShapeSession::Reset()
 bool FMantleVehicleShapeSession::IsShaped() const
 {
 	const bool bFeelMoved = FeelMoved();
+	const bool bSeatsMoved = bPassenger != Archetype.bPassenger || ExtraSeatsText(ExtraSeats) != ExtraSeatsText(Archetype.ExtraSeats);
 	if (UsesSize())
 	{
-		return FMath::Abs(Size - 1.0) > MantleVehicleShapePrivate::SameSize || bFeelMoved || bPassenger != Archetype.bPassenger;
+		return FMath::Abs(Size - 1.0) > MantleVehicleShapePrivate::SameSize || bFeelMoved || bSeatsMoved;
 	}
-	return FMantleVehicleShape::IsShaped(Archetype, Dimensions) || bFeelMoved || bPassenger != Archetype.bPassenger;
+	return FMantleVehicleShape::IsShaped(Archetype, Dimensions) || bFeelMoved || bSeatsMoved;
 }
 
 bool FMantleVehicleShapeSession::SetSize(const double Wanted)
@@ -956,9 +972,78 @@ bool FMantleVehicleShapeSession::SetPassenger(const bool bWanted)
 	return true;
 }
 
+bool FMantleVehicleShapeSession::SetExtraSeats(const TArray<FMantleChassisExtraSeat>& Seats)
+{
+	if (!CanHaveExtraSeats())
+	{
+		return false;
+	}
+	TArray<FMantleChassisExtraSeat> Next;
+	for (const FMantleChassisExtraSeat& Seat : Seats)
+	{
+		if (Next.Num() >= FMantleVehicleLimits::MaxExtraSeats)
+		{
+			break;
+		}
+		FMantleChassisExtraSeat& Kept = Next.Add_GetRef(Seat);
+		Kept.Location = FromShaped(Seat.Location);
+		Kept.Hold = Seat.bHold ? FromShaped(Seat.Hold) : Seat.Hold;
+	}
+	if (ExtraSeatsText(Next) == ExtraSeatsText(ExtraSeats))
+	{
+		return false;
+	}
+	ExtraSeats = MoveTemp(Next);
+	Refresh();
+	return true;
+}
+
+FVector FMantleVehicleShapeSession::ToShaped(const FVector& At) const
+{
+	if (UsesSize())
+	{
+		return At * Size;
+	}
+	if (!FMantleVehicleShape::IsShaped(Archetype, Dimensions))
+	{
+		return At;
+	}
+	// As Reshape moves the driver's seat: along with the wheelbase, across with the body's width, up with the ground clearance.
+	const double Along = Archetype.Wheelbase > 0.0 ? Dimensions.Wheelbase / Archetype.Wheelbase : 1.0;
+	const double Across = Archetype.Width > 0.0 ? Dimensions.BodyWidth / Archetype.Width : 1.0;
+	return FVector(At.X * Along, At.Y * Across, At.Z + (Dimensions.GroundClearance - Archetype.Clearance));
+}
+
+FVector FMantleVehicleShapeSession::FromShaped(const FVector& At) const
+{
+	if (UsesSize())
+	{
+		return Size > 0.0 ? At / Size : At;
+	}
+	if (!FMantleVehicleShape::IsShaped(Archetype, Dimensions))
+	{
+		return At;
+	}
+	const double Along = Archetype.Wheelbase > 0.0 && Dimensions.Wheelbase > 0.0 ? Dimensions.Wheelbase / Archetype.Wheelbase : 1.0;
+	const double Across = Archetype.Width > 0.0 && Dimensions.BodyWidth > 0.0 ? Dimensions.BodyWidth / Archetype.Width : 1.0;
+	return FVector(At.X / Along, At.Y / Across, At.Z - (Dimensions.GroundClearance - Archetype.Clearance));
+}
+
+FString FMantleVehicleShapeSession::ExtraSeatsText(const TArray<FMantleChassisExtraSeat>& Seats)
+{
+	FString Out;
+	for (const FMantleChassisExtraSeat& Seat : Seats)
+	{
+		Out += FString::Printf(TEXT("%.3f,%.3f,%.3f,%.3f,%s,%s,%d,%.3f,%.3f,%.3f;"), Seat.Location.X, Seat.Location.Y, Seat.Location.Z, Seat.Yaw, *Seat.Pose, *Seat.Door,
+			Seat.bHold ? 1 : 0, Seat.Hold.X, Seat.Hold.Y, Seat.Hold.Z);
+	}
+	return Out;
+}
+
 FString FMantleVehicleShapeSession::Signature() const
 {
-	return FString::Printf(TEXT("%s|%.4f|%.4f,%.4f,%.4f,%.4f|%d"), *Dimensions.Signature(), Size, Feel.Grip, Feel.Power, Feel.Stiffness, Feel.TopSpeed, bPassenger ? 1 : 0);
+	return FString::Printf(TEXT("%s|%.4f|%.4f,%.4f,%.4f,%.4f|%d|%s"), *Dimensions.Signature(), Size, Feel.Grip, Feel.Power, Feel.Stiffness, Feel.TopSpeed, bPassenger ? 1 : 0,
+		*ExtraSeatsText(ExtraSeats));
 }
 
 void FMantleVehicleShapeSession::Refresh()
@@ -974,6 +1059,16 @@ void FMantleVehicleShapeSession::Refresh()
 		Shaped = FMantleVehicleShape::Reshape(Archetype, Dimensions);
 	}
 	Shaped.bPassenger = bPassenger;
+	// The extra seats (#449) go where the body went, as the driver's seat does.
+	Shaped.ExtraSeats = ExtraSeats;
+	for (FMantleChassisExtraSeat& Seat : Shaped.ExtraSeats)
+	{
+		Seat.Location = ToShaped(Seat.Location);
+		if (Seat.bHold)
+		{
+			Seat.Hold = ToShaped(Seat.Hold);
+		}
+	}
 	if (FeelMoved())
 	{
 		// The feel is one more thing the handling is derived from. A chassis still at its own sizes has no derived handling yet (it is the hand-tuned preset), so this

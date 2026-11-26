@@ -6,6 +6,7 @@
 #include "MantleVehicleFit.h"
 
 class UMantleVehicleSource;
+struct FMantleVehicleSourceTuning;
 
 /** Where a creator's model has its wheels, in the model's own units (#728 step 2). The only thing the builder reads from the model's body. */
 struct FMantleChassisLayout
@@ -76,6 +77,8 @@ struct FMantleChassisPlacement
 	double SteeringWheelPitch = 0.0;
 	bool bPassenger = false;
 	FVector PassengerSeat = FVector::ZeroVector;
+	/** The chassis's extra seats (#449), each where it is and its hand grip stretched like the seat, the rest (yaw, pose, door) as the chassis has them. */
+	TArray<FMantleChassisExtraSeat> ExtraSeats;
 };
 
 /**
@@ -136,7 +139,8 @@ struct MANTLEEDITOR_API FMantleVehicleChassisFit
 
 	/**
 	 * Writes Placement into Source: the tub's collision box, then its body boxes (none unless the builder fitted some), the center of mass (overridden, so the cook uses it), the driver's
-	 * seat with its steering wheel, and the passenger seat (or none), and a first guess of each seat's contact points. Marks Source
+	 * seat with its steering wheel, and the passenger seat (or none), the extra seats (#449: a stand spot keeps its hand grip; each keeps the door the
+	 * chassis gives it, which KeepSeatDoors clears once the vehicle's own doors are known), and a first guess of each seat's contact points. Marks Source
 	 * for undo first. Does not touch the wheels, body, parts, doors or the other tuning.
 	 *
 	 * MaxBoxes is how many boxes in all the document gets: the tub and MaxBodyBoxes more for a car fitted to its wheels. A creator's model built on a chassis (#821)
@@ -144,6 +148,13 @@ struct MANTLEEDITOR_API FMantleVehicleChassisFit
 	 * guessed beside that first box only, since a wing or a tail box is not where a pilot gets out.
 	 */
 	static void Apply(const FMantleChassisPlacement& Placement, UMantleVehicleSource& Source, int32 MaxBoxes = MaxBodyBoxes + 1);
+
+	/**
+	 * The extra seats' doors once the vehicle's doors are known (#449): an extra seat by a door the vehicle does not have (FMantleVehicleConverter::HasSeatDoor;
+	 * a model whose doors were not found, or a vehicle that hides its riders) becomes an open seat. A chassis's seat keeps its door only when the model gets
+	 * that door's hinge. Returns how many seats changed.
+	 */
+	static int32 KeepSeatDoors(FMantleVehicleSourceTuning& Tuning);
 
 	/** Plain-words lines for the creator: what stretched and by how much, and what was held to its limit. Empty when nothing stretched. */
 	static TArray<FString> StretchNotes(const FMantleChassisStretch& Stretch);

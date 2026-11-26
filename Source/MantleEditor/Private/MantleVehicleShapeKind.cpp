@@ -10,6 +10,18 @@ namespace MantleVehicleShapeKindPrivate
 {
 	/** Where a seated driver's hips go from the seat location: 4.3 cm ahead of it and 34 cm under it (FMantleVehicleConverter::GuessSeatContacts). */
 	const FVector HipsFromSeat(4.3, 0.0, -34.0);
+
+	/** Figure's capsules, turned by Yaw about the figure's own origin and moved to Origin, added to Out. */
+	void AddFigure(TArray<FMantleGhostCapsule>& Out, const TArray<FMantleGhostCapsule>& Figure, const FVector& Origin, const double Yaw)
+	{
+		const FRotator Facing(0.0, Yaw, 0.0);
+		for (const FMantleGhostCapsule& Capsule : Figure)
+		{
+			FMantleGhostCapsule& Placed = Out.Add_GetRef(Capsule);
+			Placed.Start = Origin + Facing.RotateVector(Capsule.Start);
+			Placed.End = Origin + Facing.RotateVector(Capsule.End);
+		}
+	}
 }
 
 TArray<FMantleGhostCapsule> FMantleVehicleShapeKind::GhostPose(const TArray<FMantleBuilderPoint>& Points) const
@@ -22,7 +34,38 @@ TArray<FMantleGhostCapsule> FMantleVehicleShapeKind::GhostPose(const TArray<FMan
 		Capsule.Start += SeatSurface;
 		Capsule.End += SeatSurface;
 	}
+
+	// The extra seats (#449): the same seated figure on each sit seat, turned the way it faces, and the standing figure on each stand spot, its feet on the spot. Where a
+	// seat is being dragged, the figure follows its point.
+	const TArray<FMantleGhostCapsule> Seated = FMantleBodyMeasurements::SeatedGhost();
+	const TArray<FMantleGhostCapsule> Standing = FMantleBodyMeasurements::StandingGhost();
+	for (int32 Index = 0; Index < Spec.ExtraSeats.Num(); ++Index)
+	{
+		const FMantleChassisExtraSeat& Seat = Spec.ExtraSeats[Index];
+		FVector Location = Seat.Location;
+		double Yaw = Seat.Yaw;
+		if (const FMantleBuilderPoint* Point = MantleBuilderPoints::Find(Points, SeatRole(Index)))
+		{
+			Location = Point->Transform.GetLocation();
+			Yaw = Point->Transform.Rotator().Yaw;
+		}
+		if (Seat.Pose == TEXT("stand"))
+		{
+			MantleVehicleShapeKindPrivate::AddFigure(Ghost, Standing, Location, Yaw);
+		}
+		else
+		{
+			const FVector Surface = Location + FRotator(0.0, Yaw, 0.0).RotateVector(MantleVehicleShapeKindPrivate::HipsFromSeat)
+				- FVector(0.0, 0.0, FMantleBodyMeasurements::SeatedHipHeightCm());
+			MantleVehicleShapeKindPrivate::AddFigure(Ghost, Seated, Surface, Yaw);
+		}
+	}
 	return Ghost;
+}
+
+FName FMantleVehicleShapeKind::SeatRole(const int32 Index)
+{
+	return FName(*FString::Printf(TEXT("ExtraSeat%d"), Index + 1));
 }
 
 FName FMantleVehicleShapeKind::BeamRole(const int32 Index)
@@ -42,6 +85,17 @@ TArray<FMantleBuilderPointRole> FMantleVehicleShapeKind::GetRoles() const
 		Role.Shape = EMantleBuilderPointShape::Arrow;
 		Role.bRequired = false;
 		Role.bRotates = true;
+	}
+	for (int32 Index = 0; bSeatPoints && Index < Spec.ExtraSeats.Num(); ++Index)
+	{
+		FMantleBuilderPointRole& Role = Roles.AddDefaulted_GetRef();
+		Role.Role = SeatRole(Index);
+		Role.Label = FText::Format(LOCTEXT("SeatLabel", "Extra seat {0}"), FText::AsNumber(Index + 1));
+		Role.Help = LOCTEXT("SeatHelp", "Where someone sits or stands. Put it on a seat (or the floor, for a place to stand) and turn it the way they face.");
+		Role.Shape = EMantleBuilderPointShape::Seat;
+		Role.bRequired = false;
+		Role.bRotates = true;
+		Role.bYawOnly = true;
 	}
 	return Roles;
 }
@@ -87,6 +141,10 @@ FMantleBuilderOverlay FMantleVehicleShapeKind::Overlay(const TArray<FMantleBuild
 
 FText FMantleVehicleShapeKind::Hint() const
 {
+	if (bSeatPoints && Spec.ExtraSeats.Num() > 0)
+	{
+		return LOCTEXT("HintSeats", "Click a yellow arrow (a headlight beam) or an orange box (an extra seat), then drag the handles to move it, or turn it to aim the beam or to face the seat. Colored dots are the lights Mantle found: white headlights, red rear lights, gray reverse lights, amber signals. Right-drag to turn the view, scroll to zoom.");
+	}
 	if (BeamCount > 0)
 	{
 		return LOCTEXT("HintBeams", "Click a yellow arrow (a headlight beam), then drag the handles to move it or turn it to aim. Colored dots are the lights Mantle found: white headlights, red rear lights, gray reverse lights, amber signals. Right-drag to turn the view, scroll to zoom.");

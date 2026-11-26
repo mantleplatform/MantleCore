@@ -450,6 +450,8 @@ void SMantleVehicleBuilder::PickPreset(const FString& PresetId, const FText& Nam
 	// A plane, helicopter or hovercraft is sized by one Size held to the preset's own fit range.
 	const FMantleVehiclePreset* Picked = FMantleVehiclePresets::Find(PresetId);
 	Shape.Start(Loaded, Picked ? Picked->FitMinScale : 0.0, Picked ? Picked->FitMaxScale : 0.0);
+	// The new type's extra seats start as its preset has them, none hidden and none with an aim arc of its own.
+	SeatChoices.Reset();
 	bPreviewDirty = false;
 
 	// A different type is a different vehicle: what was made for the last one stays in the project, and this window stops pointing at it.
@@ -926,6 +928,7 @@ void SMantleVehicleBuilder::ReadModel(const TOptional<bool> Twin)
 			{
 				const FMantleVehiclePreset* PresetPicked = FMantleVehiclePresets::Find(SelectedPresetId);
 				Shape.Start(bTwinEngine ? FMantleVehicleChassisSkin::AsTwin(Base) : Base, PresetPicked ? PresetPicked->FitMinScale : 0.0, PresetPicked ? PresetPicked->FitMaxScale : 0.0);
+				SeatChoices.Reset();
 				ShapeChanged();
 			}
 		}
@@ -1309,6 +1312,33 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeSeatsAndPaintStep()
 			]
 	];
 
+	// #449: the seats after the driver's and the passenger's, a row each, as the paint and the lights are listed below.
+	if (Shape.CanHaveExtraSeats())
+	{
+		Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 4)
+		[
+			SNew(STextBlock)
+				.Font(FAppStyle::GetFontStyle("BoldFont"))
+				.Text(LOCTEXT("MoreSeatsTitle", "More seats"))
+		];
+		Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 4)
+		[
+			SNew(STextBlock)
+				.AutoWrapText(true)
+				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+				.Text(LOCTEXT("MoreSeatsHelp", "Seats besides the driver's and the passenger's: back seats, a bus's rows, a place to stand and hold on. Each has a figure and an orange box in the picture: click the box, then drag to move it or turn it the way the person faces. Pick the door each is got into through, or no door for an open seat."))
+		];
+		Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 12)
+		[
+			SAssignNew(SeatRowsBox, SVerticalBox)
+		];
+		RebuildSeatRows();
+	}
+	else
+	{
+		SeatRowsBox.Reset();
+	}
+
 	Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 4)
 	[
 		SNew(STextBlock)
@@ -1631,6 +1661,22 @@ void SMantleVehicleBuilder::ApplyChoices(UMantleVehicleSource& Source)
 	{
 		ApplyLiveries(Source);
 	}
+	// #449: the extra seats' hidden ticks and aim arcs, seat by seat. Where each seat is, whether it is sat or stood in and its door came with the build, from the frame.
+	SeatChoices.SetNum(Shape.GetExtraSeats().Num());
+	for (int32 Index = 0; Index < SeatChoices.Num() && Index < Source.Tuning.ExtraSeats.Num(); ++Index)
+	{
+		FMantleVehicleSourceSeat& Extra = Source.Tuning.ExtraSeats[Index];
+		const FSeatChoice& Choice = SeatChoices[Index];
+		const FMantleVehicleSourceWeaponArc& Arc = Extra.WeaponArc;
+		const bool bSameArc = Arc.bEnabled == Choice.Arc.bEnabled && Arc.YawMin == Choice.Arc.YawMin && Arc.YawMax == Choice.Arc.YawMax
+			&& Arc.PitchMin == Choice.Arc.PitchMin && Arc.PitchMax == Choice.Arc.PitchMax;
+		if (Extra.bHidden != Choice.bHidden || !bSameArc)
+		{
+			Source.Modify();
+			Extra.bHidden = Choice.bHidden;
+			Extra.WeaponArc = Choice.Arc;
+		}
+	}
 }
 
 TSharedRef<SWidget> SMantleVehicleBuilder::MakeLightRow(const EMantleLightKind Kind)
@@ -1756,6 +1802,8 @@ void SMantleVehicleBuilder::PushLightsToPicture()
 	const TSharedPtr<SMantleBuilderViewport> Viewport = PreviewViewport.Pin();
 	TArray<FMantleBuilderOverlayMarker> Markers;
 	TArray<FMantleBuilderPoint> Points;
+	int32 BeamCount = 0;
+	bool bSeatPoints = false;
 	if (bPictureLights && Preview.bOk && Preview.Body.LODs.Num() > 0)
 	{
 		// A dot in the light's color on each light section, at the middle of its triangles.
@@ -1801,8 +1849,22 @@ void SMantleVehicleBuilder::PushLightsToPicture()
 			Point.Guess = Point.Transform;
 			Point.Source = EMantleBuilderPointSource::Creator;
 		}
+		BeamCount = Points.Num();
+		// The extra seats (#449), an orange box each to drag and turn, where the window's frame has them. A model fitted on its own wheels gets the type's seats,
+		// shown by their figures but not moved here.
+		bSeatPoints = bUseSkin;
+		for (int32 Index = 0; bSeatPoints && Index < Preview.Spec.ExtraSeats.Num(); ++Index)
+		{
+			const FMantleChassisExtraSeat& Seat = Preview.Spec.ExtraSeats[Index];
+			FMantleBuilderPoint& Point = Points.AddDefaulted_GetRef();
+			Point.Role = FMantleVehicleShapeKind::SeatRole(Index);
+			Point.Transform = FTransform(FRotator(0.0, Seat.Yaw, 0.0), Seat.Location);
+			Point.Guess = Point.Transform;
+			Point.Source = EMantleBuilderPointSource::Creator;
+		}
 	}
-	PreviewKind->SetLights(Points.Num(), Markers);
+	PreviewKind->SetLights(BeamCount, Markers);
+	PreviewKind->SetSeatPoints(bSeatPoints);
 	if (Viewport.IsValid())
 	{
 		Viewport->SetPoints(Points);
@@ -1818,6 +1880,8 @@ void SMantleVehicleBuilder::OnPicturePointsChanged()
 		return;
 	}
 	bool bChanged = false;
+	TArray<FMantleChassisExtraSeat> Seats = Shape.GetExtraSeats();
+	bool bSeatsMoved = false;
 	for (const FMantleBuilderPoint& Point : Viewport->GetPoints())
 	{
 		for (int32 Index = 0; Index < Lights.Beams.Num(); ++Index)
@@ -1829,10 +1893,26 @@ void SMantleVehicleBuilder::OnPicturePointsChanged()
 				bChanged = true;
 			}
 		}
+		// An extra seat (#449): where it is and the way it faces; a stand spot's hand grip moves with it.
+		for (int32 Index = 0; bUseSkin && Index < Seats.Num(); ++Index)
+		{
+			if (Point.Role == FMantleVehicleShapeKind::SeatRole(Index))
+			{
+				const FVector Moved = Point.Transform.GetLocation() - Seats[Index].Location;
+				Seats[Index].Location += Moved;
+				Seats[Index].Hold += Seats[Index].bHold ? Moved : FVector::ZeroVector;
+				Seats[Index].Yaw = FRotator::NormalizeAxis(Point.Transform.Rotator().Yaw);
+				bSeatsMoved = true;
+			}
+		}
 	}
 	if (bChanged)
 	{
 		LightsChanged();
+	}
+	if (bSeatsMoved && Shape.SetExtraSeats(Seats))
+	{
+		SeatsChanged(/*bRows*/ false);
 	}
 }
 

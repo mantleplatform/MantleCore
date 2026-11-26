@@ -167,8 +167,36 @@ private:
 	/** What a row's layer is called in the window. */
 	static FText PaintPickLabel(uint8 Pick);
 	void SetHideRiders(bool bOn);
-	/** Writes the paint ticks, the lights and the "no inside" choice into a built vehicle. */
+	/** Writes the paint ticks, the lights, the "no inside" choice and the extra seats' hidden ticks and aim arcs into a built vehicle. */
 	void ApplyChoices(UMantleVehicleSource& Source);
+
+	// Extra seats (#449), in the seats and paint step: where each is and its sit or stand and door are the frame's (Shape), and go into the build with it.
+	/** What a seat's row sets that the frame does not carry, written into the built vehicle (ApplyChoices). */
+	struct FSeatChoice
+	{
+		bool bHidden = false;
+		FMantleVehicleSourceWeaponArc Arc;
+	};
+	/** The seats' rows, made again after an add, a copy or a delete. */
+	void RebuildSeatRows();
+	/** Replaces the extra seats (in the picture's space) and the rows' choices beside them, kept in step. */
+	void SetSeats(const TArray<FMantleChassisExtraSeat>& Seats, TArray<FSeatChoice> Choices);
+	/** Add a seat: one row behind the last seat (or the driver), with its door. */
+	FReply OnAddSeat();
+	/** Add a row of N seats, Spacing apart across the vehicle, one row behind the last. */
+	FReply OnAddSeatRow();
+	void CopySeat(int32 Index);
+	void RemoveSeat(int32 Index);
+	void SetSeatStand(int32 Index, bool bStand);
+	void SetSeatDoor(int32 Index, const FString& Door);
+	/** A row's hidden tick or aim arc changed: a built vehicle takes it at once. */
+	void SeatChoiceChanged();
+	/** The extra seats moved or changed: a vehicle built before is not this one's, and the picture's figures and points follow (the model is not made again). */
+	void SeatsChanged(bool bRows);
+	/** The doors a seat's list offers ("" for none, then the document's names): the doors this vehicle gets in the Doors step, none while it hides its riders. */
+	TArray<FString> SeatDoorChoices() const;
+	/** What a seat's door is called in the window. */
+	static FText SeatDoorLabel(const FString& Door);
 
 	// Doors, hood and trunk.
 	/** Picks the model's bone for a part that opens (an unset name: it does not open); what was built is of the old choice. */
@@ -339,6 +367,12 @@ private:
 	bool bLightsEdited = false;
 	/** The picture shows the lights (the seats and paint step): the beams to drag and the light markers. */
 	bool bPictureLights = false;
+	/** The extra seats' rows' choices, one for each of Shape's extra seats, in order. */
+	TArray<FSeatChoice> SeatChoices;
+	TSharedPtr<SVerticalBox> SeatRowsBox;
+	/** Add a row of: how many seats across, and how far apart (cm). */
+	int32 SeatRowCount = 3;
+	float SeatRowSpacing = 50.f;
 
 	// Liveries.
 	TArray<FLiveryChoice> LiveryChoices;

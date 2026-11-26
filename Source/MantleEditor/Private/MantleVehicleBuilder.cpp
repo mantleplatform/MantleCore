@@ -89,6 +89,23 @@ namespace MantleVehicleBuilderPrivate
 	}
 
 	/**
+	 * The extra seats' doors once the vehicle's own doors are known (#449, FMantleVehicleChassisFit::KeepSeatDoors): a seat by a door the vehicle did not get is an
+	 * open seat, and the notes say so once. True when a seat changed.
+	 */
+	bool KeepSeatDoors(UMantleVehicleSource& Source, TArray<FString>& OutNotes)
+	{
+		if (!Source.Tuning.ExtraSeats.ContainsByPredicate([&Source](const FMantleVehicleSourceSeat& Extra) { return !FMantleVehicleConverter::HasSeatDoor(Source.Tuning, Extra.Door); }))
+		{
+			return false;
+		}
+		Source.Modify();
+		const int32 Opened = FMantleVehicleChassisFit::KeepSeatDoors(Source.Tuning);
+		OutNotes.AddUnique(FString::Printf(TEXT("%d extra %s by a door this vehicle doesn't open, so %s open: people get in and out without a door."), Opened,
+			Opened == 1 ? TEXT("seat was") : TEXT("seats were"), Opened == 1 ? TEXT("it is") : TEXT("they are")));
+		return true;
+	}
+
+	/**
 	 * Gives Source the chosen type. A new vehicle has no type yet, so it takes the type's defaults. One built from this same type
 	 * before is the creator's to tune: pressing the button again keeps their edits, and picking a different type starts again from
 	 * that type's defaults. The vehicle only remembers the type once its defaults were applied, so a refused apply leaves it as it was.
@@ -494,8 +511,9 @@ void FMantleVehicleBuilder::SetHiddenRiders(UMantleVehicleSource& Source, const 
 	FMantleVehicleSourceTuning& T = Source.Tuning;
 	if (bHide)
 	{
-		// No inside, no swinging doors (the converter's rule): every door is shut, the hood and trunk keep theirs.
+		// No inside, no swinging doors (the converter's rule): every door is shut, the hood and trunk keep theirs, and the extra seats are open ones (#449).
 		T.bHasDriverDoor = T.bHasPassengerDoor = T.bRearLeftDoor = T.bRearRightDoor = false;
+		FMantleVehicleChassisFit::KeepSeatDoors(T);
 	}
 	else if (USkeletalMesh* Body = Source.Body.LoadSynchronous())
 	{
@@ -542,6 +560,11 @@ namespace MantleVehicleBuilderPrivate
 			if (Result.bOk && Result.Source && Args.Num() > 2 && Args[2].Equals(TEXT("hidden"), ESearchCase::IgnoreCase))
 			{
 				FMantleVehicleBuilder::SetHiddenRiders(*Result.Source, Mesh, true);
+				Result.bSaved = FMantleVehicleBuilder::SaveVehicle(*Result.Source, Result.SaveProblem);
+			}
+			else if (Result.bOk && Result.Source && MantleVehicleBuilderPrivate::KeepSeatDoors(*Result.Source, Result.Notes))
+			{
+				// The doors are the conversion's: an extra seat by one it did not find is an open seat (#449).
 				Result.bSaved = FMantleVehicleBuilder::SaveVehicle(*Result.Source, Result.SaveProblem);
 			}
 			UE_LOG(LogTemp, Display, TEXT("MANTLE_VEHICLE_BUILD ok=%d saved=%d vehicle=%s size=%.3f hidden=%d model=%s"), Result.bOk ? 1 : 0, Result.bSaved ? 1 : 0,
@@ -1854,7 +1877,9 @@ void FMantleVehicleBuilder::ApplyOwnHinges(FMantleVehicleBuildResult& Built, con
 	}
 	// The steering wheel's bone, from the bones' names, after the hinges so a door's bone is never taken for it.
 	const bool bWheelBone = ApplySteeringWheelBone(Read, *Source, Built.Notes);
-	if ((Found.Num() > 0 || bCleared || bHide || bWheelBone) && Built.bSaved)
+	// The extra seats (#449) keep the chassis's doors only where this vehicle's doors now open.
+	const bool bSeatDoors = MantleVehicleBuilderPrivate::KeepSeatDoors(*Source, Built.Notes);
+	if ((Found.Num() > 0 || bCleared || bHide || bWheelBone || bSeatDoors) && Built.bSaved)
 	{
 		Built.bSaved = SaveVehicle(*Source, Built.SaveProblem);
 	}
@@ -2212,6 +2237,8 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 		SetHiddenRiders(*Out.Source, nullptr, true);
 	}
 	ApplyHinges(*Out.Source, Skinned.Hinges, Out.Notes);
+	// The extra seats (#449) keep the chassis's doors only where the model's doors now open.
+	MantleVehicleBuilderPrivate::KeepSeatDoors(*Out.Source, Out.Notes);
 	// Its hubs and brakes (a caliper skinned to hub_lf or B_FLBrake) follow their wheel's steering and travel, each on a bone of its own (Skin gave it one).
 	ApplyHubs(*Out.Source, Skinned.Hubs, Out.Notes);
 	// The steering wheel has a bone of its own in the body too, with its place measured from its vertices.

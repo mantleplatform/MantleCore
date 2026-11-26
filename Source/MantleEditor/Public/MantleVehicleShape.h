@@ -200,7 +200,7 @@ struct MANTLEEDITOR_API FMantleVehicleShape
 
 	/**
 	 * The spec for these sizes (held already: Edit keeps them so). Unshaped sizes give the archetype itself, its hand-tuned handling untouched.
-	 * Otherwise a copy with the sizes set, the seat moved the way the body moved (along with the wheelbase, across with the body's width, up
+	 * Otherwise a copy with the sizes set, the seat (and the extra seats, #449) moved the way the body moved (along with the wheelbase, across with the body's width, up
 	 * with the ground clearance), the steering wheel and a rider's grips and pegs carried with the seat, the handling derived and the center of
 	 * mass the derived one.
 	 */
@@ -318,6 +318,15 @@ public:
 	bool GetPassenger() const { return Shaped.bPassenger; }
 	bool SetPassenger(bool bWanted);
 
+	/**
+	 * The seats beyond the driver's and the passenger's (#449), in the shaped vehicle's space (GetShaped().ExtraSeats): the preset's to start with. They are kept
+	 * in the archetype's space, so they move with the body when a size changes, as the driver's seat does. A rider's machine has none (CanHaveExtraSeats).
+	 */
+	bool CanHaveExtraSeats() const { return bStarted && Archetype.DriverSeat != TEXT("motorcycle"); }
+	const TArray<FMantleChassisExtraSeat>& GetExtraSeats() const { return Shaped.ExtraSeats; }
+	/** Replaces them with Seats, given in the shaped vehicle's space (the picture's), at most FMantleVehicleLimits::MaxExtraSeats. True when they changed. */
+	bool SetExtraSeats(const TArray<FMantleChassisExtraSeat>& Seats);
+
 	/** Everything that makes the vehicle what it is, as text: the sizes, the Size, the feel and the seat. Two equal signatures make the same vehicle. */
 	FString Signature() const;
 
@@ -340,6 +349,11 @@ private:
 	double* FeelField(EMantleVehicleFeel Which);
 	/** True when any feel slider is off its middle. */
 	bool FeelMoved() const;
+	/** A point of the archetype's space where the shaped vehicle has it (the seat's move, FMantleVehicleShape::Reshape, or the Size), and back. */
+	FVector ToShaped(const FVector& At) const;
+	FVector FromShaped(const FVector& At) const;
+	/** The extra seats as text, for the signature and to tell whether they changed. */
+	static FString ExtraSeatsText(const TArray<FMantleChassisExtraSeat>& Seats);
 
 	bool bStarted = false;
 	FMantleChassisSpec Archetype;
@@ -350,6 +364,8 @@ private:
 	double MaxSize = FMantleChassisSpec::MaxScale;
 	FMantleChassisFeel Feel;
 	bool bPassenger = false;
+	/** The extra seats, in the archetype's space. */
+	TArray<FMantleChassisExtraSeat> ExtraSeats;
 	FMantleChassisSpec Shaped;
 	TArray<FText> HeldNotes;
 	FText Summary;

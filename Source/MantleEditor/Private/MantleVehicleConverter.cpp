@@ -3761,62 +3761,138 @@ bool FMantleVehicleConverter::ReadBody(const UMantleVehicleSource& Source, FMant
 	return true;
 }
 
+// Named, not anonymous: MantleEditor builds as a unity build.
+namespace MantleVehicleConverterPrivate
+{
+	/**
+	 * A seat's first contact points (GuessSeatContacts): its pelvis and feet (bSeated) about Seat, turned by Yaw; its hands on the steering wheel (Wheel), on the lap
+	 * (Fixed) or none; and an exit each side, the seat's own first (the right first for a seat on the center line when bRightFirst, else the left).
+	 */
+	FMantleVehicleSourceSeatContacts VehicleGuessContacts(const FMantleVehicleSourceTuning& Tuning, const FVector& Seat, const double Yaw, const bool bRightFirst,
+		const EMantleVehicleHandsKind Hands, const bool bSeated)
+	{
+		double Min = -1000.0;
+		double Max = 1000.0;
+		FMantleVehicleLimits::GetRange(TEXT("seat/location/*"), Min, Max);
+		const auto Held = [Min, Max](const FVector& At)
+		{
+			return FVector(FMath::Clamp(At.X, Min, Max), FMath::Clamp(At.Y, Min, Max), FMath::Clamp(At.Z, Min, Max));
+		};
+		// A seat facing some other way (an extra seat, #449) has its body turned with it; the driver's and the passenger's face ahead and are left exactly as they were.
+		const FRotator Facing(0.0, Yaw, 0.0);
+		const auto Turned = [Yaw, &Facing](const FVector& Offset) { return Yaw == 0.0 ? Offset : Facing.RotateVector(Offset); };
+		// The seat's own side: the side of the center line it sits on, else the driver's left (-Y) and the passenger's right.
+		const double Side = Seat.Y < 0.0 ? -1.0 : (Seat.Y > 0.0 ? 1.0 : (bRightFirst ? 1.0 : -1.0));
+
+		FMantleVehicleSourceSeatContacts Out;
+		if (bSeated)
+		{
+			Out.bPelvis = true;
+			Out.Pelvis.Location = Held(Seat + Turned(VehicleGuessPelvis));
+			if (Yaw != 0.0)
+			{
+				Out.Pelvis.Rotation = Facing;
+			}
+			if (Hands == EMantleVehicleHandsKind::Wheel)
+			{
+				// Ten and two on the rim, in the hub's frame (X along the column, Y to the right, Z to the top of the rim), turned as the hub.
+				Out.Hands = EMantleVehicleHandsKind::Wheel;
+				const FTransform Hub(Tuning.SteeringWheelRotation, Tuning.SteeringWheelLocation);
+				const double Angle = FMath::DegreesToRadians(VehicleGuessRimDegrees);
+				const double Radius = Tuning.SteeringWheelRadius;
+				Out.LeftHand.Location = Held(Hub.TransformPosition(FVector(0.0, -FMath::Sin(Angle) * Radius, FMath::Cos(Angle) * Radius)));
+				Out.RightHand.Location = Held(Hub.TransformPosition(FVector(0.0, FMath::Sin(Angle) * Radius, FMath::Cos(Angle) * Radius)));
+				Out.LeftHand.Rotation = Tuning.SteeringWheelRotation.GetNormalized();
+				Out.RightHand.Rotation = Out.LeftHand.Rotation;
+			}
+			else if (Hands == EMantleVehicleHandsKind::Fixed)
+			{
+				Out.Hands = EMantleVehicleHandsKind::Fixed;
+				Out.LeftHand.Location = Held(Out.Pelvis.Location + Turned(FVector(VehicleGuessLap.X, -VehicleGuessLap.Y, VehicleGuessLap.Z)));
+				Out.RightHand.Location = Held(Out.Pelvis.Location + Turned(VehicleGuessLap));
+			}
+			Out.bFeet = true;
+			Out.LeftFoot.Location = Held(Seat + Turned(FVector(VehicleGuessFoot.X, -VehicleGuessFoot.Y, VehicleGuessFoot.Z)));
+			Out.RightFoot.Location = Held(Seat + Turned(VehicleGuessFoot));
+			if (Yaw != 0.0)
+			{
+				Out.LeftFoot.Rotation = Facing;
+				Out.RightFoot.Rotation = Facing;
+			}
+		}
+
+		// An exit on each side, the seat's own first, as far out as the client's exit spot (past the collision's side), on the
+		// collision's floor (the runtime settles it on the ground it finds).
+		double HalfWidth = 0.0;
+		double Floor = Seat.Z + VehicleGuessFoot.Z;
+		for (int32 Index = 0; Index < Tuning.Collision.Num(); ++Index)
+		{
+			const FMantleVehicleSourceBox& Box = Tuning.Collision[Index];
+			HalfWidth = FMath::Max(HalfWidth, FMath::Abs(Box.Center.Y) + Box.Extent.Y);
+			Floor = Index == 0 ? Box.Center.Z - Box.Extent.Z : FMath::Min(Floor, Box.Center.Z - Box.Extent.Z);
+		}
+		const double Reach = FMath::Max(VehicleGuessExitMin, HalfWidth + VehicleGuessExitClear);
+		for (const double ExitSide : { Side, -Side })
+		{
+			FMantleVehicleSourceExit& Exit = Out.Exits.AddDefaulted_GetRef();
+			Exit.Location = Held(FVector(Seat.X, ExitSide * Reach, Floor));
+		}
+		return Out;
+	}
+}
+
 FMantleVehicleSourceSeatContacts FMantleVehicleConverter::GuessSeatContacts(const FMantleVehicleSourceTuning& Tuning, const bool bPassenger)
 {
 	using namespace MantleVehicleConverterPrivate;
-	double Min = -1000.0;
-	double Max = 1000.0;
-	FMantleVehicleLimits::GetRange(TEXT("seat/location/*"), Min, Max);
-	const auto Held = [Min, Max](const FVector& At)
-	{
-		return FVector(FMath::Clamp(At.X, Min, Max), FMath::Clamp(At.Y, Min, Max), FMath::Clamp(At.Z, Min, Max));
-	};
 	const FVector Seat = bPassenger ? Tuning.PassengerSeatLocation : Tuning.SeatLocation;
-	// The seat's own side: the side of the center line it sits on, else the driver's left (-Y) and the passenger's right.
-	const double Side = Seat.Y < 0.0 ? -1.0 : (Seat.Y > 0.0 ? 1.0 : (bPassenger ? 1.0 : -1.0));
+	const EMantleVehicleHandsKind Hands = !bPassenger && Tuning.bSteeringWheel ? EMantleVehicleHandsKind::Wheel : EMantleVehicleHandsKind::Fixed;
+	return VehicleGuessContacts(Tuning, Seat, 0.0, /*bRightFirst*/ bPassenger, Hands, /*bSeated*/ true);
+}
 
-	FMantleVehicleSourceSeatContacts Out;
-	Out.bPelvis = true;
-	Out.Pelvis.Location = Held(Seat + VehicleGuessPelvis);
-	if (!bPassenger && Tuning.bSteeringWheel)
-	{
-		// Ten and two on the rim, in the hub's frame (X along the column, Y to the right, Z to the top of the rim), turned as the hub.
-		Out.Hands = EMantleVehicleHandsKind::Wheel;
-		const FTransform Hub(Tuning.SteeringWheelRotation, Tuning.SteeringWheelLocation);
-		const double Angle = FMath::DegreesToRadians(VehicleGuessRimDegrees);
-		const double Radius = Tuning.SteeringWheelRadius;
-		Out.LeftHand.Location = Held(Hub.TransformPosition(FVector(0.0, -FMath::Sin(Angle) * Radius, FMath::Cos(Angle) * Radius)));
-		Out.RightHand.Location = Held(Hub.TransformPosition(FVector(0.0, FMath::Sin(Angle) * Radius, FMath::Cos(Angle) * Radius)));
-		Out.LeftHand.Rotation = Tuning.SteeringWheelRotation.GetNormalized();
-		Out.RightHand.Rotation = Out.LeftHand.Rotation;
-	}
-	else
-	{
-		Out.Hands = EMantleVehicleHandsKind::Fixed;
-		Out.LeftHand.Location = Held(Out.Pelvis.Location + FVector(VehicleGuessLap.X, -VehicleGuessLap.Y, VehicleGuessLap.Z));
-		Out.RightHand.Location = Held(Out.Pelvis.Location + VehicleGuessLap);
-	}
-	Out.bFeet = true;
-	Out.LeftFoot.Location = Held(Seat + FVector(VehicleGuessFoot.X, -VehicleGuessFoot.Y, VehicleGuessFoot.Z));
-	Out.RightFoot.Location = Held(Seat + VehicleGuessFoot);
+FMantleVehicleSourceSeatContacts FMantleVehicleConverter::GuessExtraSeatContacts(const FMantleVehicleSourceTuning& Tuning, const FMantleVehicleSourceSeat& Seat)
+{
+	using namespace MantleVehicleConverterPrivate;
+	return VehicleGuessContacts(Tuning, Seat.Location, Seat.Yaw, /*bRightFirst*/ true, EMantleVehicleHandsKind::None,
+		/*bSeated*/ Seat.Pose == EMantleVehicleSourceSeatPose::Sit);
+}
 
-	// An exit on each side, the seat's own first, as far out as the client's exit spot (past the collision's side), on the
-	// collision's floor (the runtime settles it on the ground it finds).
-	double HalfWidth = 0.0;
-	double Floor = Seat.Z + VehicleGuessFoot.Z;
-	for (int32 Index = 0; Index < Tuning.Collision.Num(); ++Index)
+const TCHAR* FMantleVehicleConverter::SeatDoorDocumentName(const EMantleVehicleSourceSeatDoor Door)
+{
+	switch (Door)
 	{
-		const FMantleVehicleSourceBox& Box = Tuning.Collision[Index];
-		HalfWidth = FMath::Max(HalfWidth, FMath::Abs(Box.Center.Y) + Box.Extent.Y);
-		Floor = Index == 0 ? Box.Center.Z - Box.Extent.Z : FMath::Min(Floor, Box.Center.Z - Box.Extent.Z);
+	case EMantleVehicleSourceSeatDoor::DriverDoor: return TEXT("driverDoor");
+	case EMantleVehicleSourceSeatDoor::PassengerDoor: return TEXT("passengerDoor");
+	case EMantleVehicleSourceSeatDoor::RearLeftDoor: return TEXT("rearLeftDoor");
+	case EMantleVehicleSourceSeatDoor::RearRightDoor: return TEXT("rearRightDoor");
+	default: return TEXT("");
 	}
-	const double Reach = FMath::Max(VehicleGuessExitMin, HalfWidth + VehicleGuessExitClear);
-	for (const double ExitSide : { Side, -Side })
+}
+
+bool FMantleVehicleConverter::ParseSeatDoor(const FString& Name, EMantleVehicleSourceSeatDoor& OutDoor)
+{
+	OutDoor = EMantleVehicleSourceSeatDoor::None;
+	for (const EMantleVehicleSourceSeatDoor Door : { EMantleVehicleSourceSeatDoor::DriverDoor, EMantleVehicleSourceSeatDoor::PassengerDoor,
+		EMantleVehicleSourceSeatDoor::RearLeftDoor, EMantleVehicleSourceSeatDoor::RearRightDoor })
 	{
-		FMantleVehicleSourceExit& Exit = Out.Exits.AddDefaulted_GetRef();
-		Exit.Location = Held(FVector(Seat.X, ExitSide * Reach, Floor));
+		if (Name.Equals(SeatDoorDocumentName(Door), ESearchCase::CaseSensitive))
+		{
+			OutDoor = Door;
+			return true;
+		}
 	}
-	return Out;
+	return Name.IsEmpty();
+}
+
+bool FMantleVehicleConverter::HasSeatDoor(const FMantleVehicleSourceTuning& Tuning, const EMantleVehicleSourceSeatDoor Door)
+{
+	switch (Door)
+	{
+	case EMantleVehicleSourceSeatDoor::DriverDoor: return Tuning.bSeatLocation && Tuning.bHasDriverDoor;
+	case EMantleVehicleSourceSeatDoor::PassengerDoor: return Tuning.bPassengerSeat && Tuning.bHasPassengerDoor;
+	case EMantleVehicleSourceSeatDoor::RearLeftDoor: return Tuning.bRearLeftDoor;
+	case EMantleVehicleSourceSeatDoor::RearRightDoor: return Tuning.bRearRightDoor;
+	default: return true;
+	}
 }
 
 const UMantleVehicleSource* FMantleVehicleConverter::MakeExportView(const UMantleVehicleSource& Source)
@@ -3881,6 +3957,13 @@ const UMantleVehicleSource* FMantleVehicleConverter::MakeExportView(const UMantl
 	T.RearRightDoorStand = Longer(T.RearRightDoorStand);
 	Seat(T.DriverContacts);
 	Seat(T.PassengerContacts);
+	// #449: the extra seats as the passenger's, and a stand spot's hand grip with them.
+	for (FMantleVehicleSourceSeat& Extra : T.ExtraSeats)
+	{
+		Extra.Location = Longer(Extra.Location);
+		Extra.Hold = Longer(Extra.Hold);
+		Seat(Extra.Contacts);
+	}
 	for (FMantleVehicleSourceBox& Box : T.Collision)
 	{
 		Box.Center = Longer(Box.Center);
@@ -4090,6 +4173,51 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 			Passenger->SetBoolField(TEXT("hidden"), true);
 		}
 		Doc->SetObjectField(TEXT("passengerSeat"), Passenger);
+	}
+	// #449: the seats after those two, in order (their order is their seat numbers, 2 onwards). No key at all without any, so every other document is the one it
+	// always was. Never hands (only the driver and the front passenger hold anything), and a stand spot stands on its own feet: its exits and its hand grip only.
+	if (T.ExtraSeats.Num() > 0)
+	{
+		TArray<TSharedPtr<FJsonValue>> Extras;
+		for (const FMantleVehicleSourceSeat& Extra : T.ExtraSeats)
+		{
+			const bool bStand = Extra.Pose == EMantleVehicleSourceSeatPose::Stand;
+			TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+			Entry->SetField(TEXT("location"), VehicleTriple(Extra.Location));
+			Entry->SetField(TEXT("yaw"), VehicleNumber(FRotator::NormalizeAxis(Extra.Yaw)));
+			Entry->SetStringField(TEXT("pose"), bStand ? TEXT("stand") : TEXT("sit"));
+			if (Extra.Door != EMantleVehicleSourceSeatDoor::None)
+			{
+				Entry->SetStringField(TEXT("door"), SeatDoorDocumentName(Extra.Door));
+			}
+			if (Extra.WeaponArc.bEnabled)
+			{
+				TSharedRef<FJsonObject> Arc = MakeShared<FJsonObject>();
+				Arc->SetField(TEXT("yawMin"), VehicleNumber(Extra.WeaponArc.YawMin));
+				Arc->SetField(TEXT("yawMax"), VehicleNumber(Extra.WeaponArc.YawMax));
+				Arc->SetField(TEXT("pitchMin"), VehicleNumber(Extra.WeaponArc.PitchMin));
+				Arc->SetField(TEXT("pitchMax"), VehicleNumber(Extra.WeaponArc.PitchMax));
+				Entry->SetObjectField(TEXT("weaponArc"), Arc);
+			}
+			if (Extra.bHidden)
+			{
+				Entry->SetBoolField(TEXT("hidden"), true);
+			}
+			FMantleVehicleSourceSeatContacts Contacts = Extra.Contacts;
+			Contacts.Hands = EMantleVehicleHandsKind::None;
+			if (bStand)
+			{
+				Contacts.bPelvis = false;
+				Contacts.bFeet = false;
+			}
+			WriteVehicleSeatContacts(Entry, Contacts);
+			if (bStand && Extra.bHold)
+			{
+				Entry->SetField(TEXT("hold"), VehicleTriple(Extra.Hold));
+			}
+			Extras.Add(MakeShared<FJsonValueObject>(Entry));
+		}
+		Doc->SetArrayField(TEXT("extraSeats"), Extras);
 	}
 	if (T.bTrunk)
 	{
@@ -4896,6 +5024,76 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 	{
 		CheckContacts(TEXT("Passenger"), TEXT("passengerSeat"), T.PassengerSeatLocation, T.PassengerContacts, false);
 	}
+	// #449: the extra seats, as the cook holds them. Never more than the document holds (every seat number, 0 to 127, fits a byte), never on a rider's
+	// machine; each one's numbers to their ranges, its door one this vehicle has, its aim arc a real one and its contact points as the passenger's. What the
+	// document would leave out (hands, a stand spot's pelvis or feet) is said here, not dropped without a word.
+	if (T.ExtraSeats.Num() > FMantleVehicleLimits::MaxExtraSeats)
+	{
+		AddError(FString::Printf(TEXT("has %d extra seats; a vehicle has at most %d besides the driver's and the passenger's."), T.ExtraSeats.Num(),
+			FMantleVehicleLimits::MaxExtraSeats),
+			FString::Printf(TEXT("Remove seats from Extra Seats until there are %d or fewer."), FMantleVehicleLimits::MaxExtraSeats));
+	}
+	if (T.ExtraSeats.Num() > 0 && Source->DriverSeatKind == EMantleVehicleSeatKind::Motorcycle)
+	{
+		AddError(TEXT("has extra seats, but it is ridden like a motorcycle, which carries only its rider and a pillion."), TEXT("Clear Extra Seats."));
+	}
+	for (int32 Index = 0; Index < T.ExtraSeats.Num(); ++Index)
+	{
+		const FMantleVehicleSourceSeat& Extra = T.ExtraSeats[Index];
+		const FString Name = FString::Printf(TEXT("Extra Seat %d"), Index + 1);
+		const bool bStand = Extra.Pose == EMantleVehicleSourceSeatPose::Stand;
+		for (int32 Axis = 0; Axis < 3; ++Axis)
+		{
+			VehicleCheckRange(Subject, Name + TEXT(" Location"), TEXT("extraSeats/*/location/*"), Extra.Location[Axis], OutIssues);
+		}
+		VehicleCheckRange(Subject, Name + TEXT(" Yaw"), TEXT("extraSeats/*/yaw"), FRotator::NormalizeAxis(Extra.Yaw), OutIssues);
+		if (bStand && Extra.bHold)
+		{
+			for (int32 Axis = 0; Axis < 3; ++Axis)
+			{
+				VehicleCheckRange(Subject, Name + TEXT(" Hold"), TEXT("extraSeats/*/hold/*"), Extra.Hold[Axis], OutIssues);
+			}
+		}
+		if (!FMantleVehicleConverter::HasSeatDoor(T, Extra.Door))
+		{
+			const TCHAR* const Door = Extra.Door == EMantleVehicleSourceSeatDoor::DriverDoor ? TEXT("driver door")
+				: Extra.Door == EMantleVehicleSourceSeatDoor::PassengerDoor ? TEXT("passenger door")
+				: Extra.Door == EMantleVehicleSourceSeatDoor::RearLeftDoor ? TEXT("rear left door") : TEXT("rear right door");
+			AddError(FString::Printf(TEXT("has %s got into through the %s, which this vehicle doesn't have."), *Name, Door),
+				FString::Printf(TEXT("Set %s's Door to a door this vehicle has, or to None for an open seat."), *Name));
+		}
+		if (Extra.WeaponArc.bEnabled)
+		{
+			const FMantleVehicleSourceWeaponArc& Arc = Extra.WeaponArc;
+			VehicleCheckRange(Subject, Name + TEXT(" Firearm Aim Arc Yaw Min"), TEXT("extraSeats/*/weaponArc/yawMin"), Arc.YawMin, OutIssues);
+			VehicleCheckRange(Subject, Name + TEXT(" Firearm Aim Arc Yaw Max"), TEXT("extraSeats/*/weaponArc/yawMax"), Arc.YawMax, OutIssues);
+			VehicleCheckRange(Subject, Name + TEXT(" Firearm Aim Arc Pitch Min"), TEXT("extraSeats/*/weaponArc/pitchMin"), Arc.PitchMin, OutIssues);
+			VehicleCheckRange(Subject, Name + TEXT(" Firearm Aim Arc Pitch Max"), TEXT("extraSeats/*/weaponArc/pitchMax"), Arc.PitchMax, OutIssues);
+			if (Arc.YawMin >= Arc.YawMax || Arc.PitchMin >= Arc.PitchMax)
+			{
+				AddError(FString::Printf(TEXT("has a firearm aim arc on %s whose minimums are not below its maximums."), *Name),
+					FString::Printf(TEXT("Set %s's Yaw Min below its Yaw Max and its Pitch Min below its Pitch Max."), *Name));
+			}
+		}
+		FMantleVehicleSourceSeatContacts Checked = Extra.Contacts;
+		if (Checked.Hands != EMantleVehicleHandsKind::None)
+		{
+			AddError(FString::Printf(TEXT("has hands set for %s; only the driver and the front passenger hold anything."), *Name),
+				FString::Printf(TEXT("Set %s's Hands to None."), *Name));
+			Checked.Hands = EMantleVehicleHandsKind::None;
+		}
+		if (bStand && (Checked.bPelvis || Checked.bFeet))
+		{
+			AddError(FString::Printf(TEXT("has a pelvis or feet for %s, a stand spot, where someone stands on their own feet."), *Name),
+				FString::Printf(TEXT("Untick %s's Pelvis and Feet, or make it a sit seat."), *Name));
+			Checked.bPelvis = false;
+			Checked.bFeet = false;
+		}
+		if (Checked.HasAny())
+		{
+			CheckContacts(*Name, TEXT("extraSeats/*"), Extra.Location, Checked, false);
+		}
+	}
 	VehicleCheckRange(Subject, TEXT("Camera Arm Length"), TEXT("camera/armLength"), T.CameraArmLength, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Camera Height"), TEXT("camera/height"), T.CameraHeight, OutIssues);
 	if (T.Collision.Num() > FMantleVehicleLimits::MaxCollisionBoxes)
@@ -5417,6 +5615,24 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 			{
 				AddError(FString::Printf(TEXT("has the %s's %s on bone %s, which its body does not have."), bPassenger ? TEXT("Passenger") : TEXT("Driver"),
 					Entry.Key, *Entry.Value->Bone.ToString()),
+					TEXT("Set the point's Bone to the body's bone it is on, or clear it for the vehicle's own space."));
+			}
+		}
+	}
+	// #449: the extra seats' too (a sit seat's pelvis and feet; they never have hands, and a stand spot neither).
+	for (int32 Index = 0; Index < T.ExtraSeats.Num(); ++Index)
+	{
+		const FMantleVehicleSourceSeatContacts& Contacts = T.ExtraSeats[Index].Contacts;
+		const bool bSeated = T.ExtraSeats[Index].Pose == EMantleVehicleSourceSeatPose::Sit;
+		const TPair<const TCHAR*, const FMantleVehicleSourceContact*> Points[] = {
+			{ TEXT("Pelvis"), bSeated && Contacts.bPelvis ? &Contacts.Pelvis : nullptr },
+			{ TEXT("Left Foot"), bSeated && Contacts.bFeet ? &Contacts.LeftFoot : nullptr },
+			{ TEXT("Right Foot"), bSeated && Contacts.bFeet ? &Contacts.RightFoot : nullptr } };
+		for (const TPair<const TCHAR*, const FMantleVehicleSourceContact*>& Entry : Points)
+		{
+			if (Entry.Value && !Entry.Value->Bone.IsNone() && FMantleVehicleConverter::JointIndex(Body, Entry.Value->Bone) == INDEX_NONE)
+			{
+				AddError(FString::Printf(TEXT("has Extra Seat %d's %s on bone %s, which its body does not have."), Index + 1, Entry.Key, *Entry.Value->Bone.ToString()),
 					TEXT("Set the point's Bone to the body's bone it is on, or clear it for the vehicle's own space."));
 			}
 		}

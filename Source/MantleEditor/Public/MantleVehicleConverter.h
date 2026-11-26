@@ -512,6 +512,25 @@ public:
 	static FMantleVehicleSourceSeatContacts GuessSeatContacts(const FMantleVehicleSourceTuning& Tuning, bool bPassenger);
 
 	/**
+	 * #449: the same first guess for one of the extra seats, turned the way it faces (its Yaw), with no hands (only the driver and the front passenger hold
+	 * anything). A sit seat gets its pelvis, feet and exits; a stand spot, where someone stands on their own feet, its exits only. An exit goes on the seat's
+	 * own side first, and on the right first for a seat on the center line.
+	 */
+	static FMantleVehicleSourceSeatContacts GuessExtraSeatContacts(const FMantleVehicleSourceTuning& Tuning, const FMantleVehicleSourceSeat& Seat);
+
+	/** The name the vehicle document writes for an extra seat's door (#449): "driverDoor", "passengerDoor", "rearLeftDoor", "rearRightDoor"; "" for None. */
+	static const TCHAR* SeatDoorDocumentName(EMantleVehicleSourceSeatDoor Door);
+
+	/** The door a document name says ("" is None); false when it is none of them, with OutDoor None. */
+	static bool ParseSeatDoor(const FString& Name, EMantleVehicleSourceSeatDoor& OutDoor);
+
+	/**
+	 * Whether the vehicle has Door for an extra seat to be got into through (#449), as the cook holds it: the driver's door needs Has Driver Door, the
+	 * passenger's a passenger seat with its door, a rear door that door. None (an open seat) is always there.
+	 */
+	static bool HasSeatDoor(const FMantleVehicleSourceTuning& Tuning, EMantleVehicleSourceSeatDoor Door);
+
+	/**
 	 * The vehicle document for Source: schema/vehicle.schema.json, keys in the schema's order, numbers rounded, only
 	 * what the creator set away from "measure it" (a wheel's radius and width, the seat, the shift points, the
 	 * collision). SectionMaterialIds maps a body section (glTF material name) to its uploaded material.
