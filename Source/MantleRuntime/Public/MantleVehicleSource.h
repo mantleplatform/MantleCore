@@ -348,9 +348,10 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chassis", meta = (ClampMin = "50", ClampMax = "20000", Units = "kg"))
 	float Mass = 1500.f;
 
-	/** Top speed, cm/s. */
+	/** The speed the car is limited to, in cm/s: it can't drive faster than this (its drive fades out just below it). A preset sets its real
+	 *  car's; with none, 12000 (432 km/h), past any car's reach, so a car made without a preset isn't limited. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chassis", meta = (ClampMin = "100", ClampMax = "12000"))
-	float MaxSpeed = 4000.f;
+	float MaxSpeed = 12000.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chassis")
 	bool bOverrideCenterOfMass = false;
