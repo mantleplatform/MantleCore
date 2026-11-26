@@ -111,7 +111,7 @@ namespace MantleChassisSpecTestPrivate
 		TEXT("supercar"),
 		TEXT(R"MCS({"mass":1553,"maxSpeed":9028,"dragCoefficient":0.39,"frontalArea":1.9,"engine":{"maxTorque":600,"maxRPM":8500,"idleRPM":1000,"torqueCurve":[[0,0.5],[1000,0.6],[3000,0.8],[6500,1],[8000,0.937],[8500,0.85]],"tractionControl":true,"engineBraking":0.021},"transmission":{"gearRatios":[3.13,2.43,1.88,1.5,1.21,0.98,0.79],"reverseRatio":2.9,"finalDrive":4.11,"changeUpRPM":8000,"changeDownRPM":3000,"shiftTime":0.1},"suspension":{"maxRaise":8,"maxDrop":10,"springRate":289,"springPreload":80,"damping":0.63},"steering":{"maxAngle":35,"ackermann":true},"brakes":{"brakeTorque":7600,"handbrakeTorque":7000,"abs":true,"frontShare":0.65},"tires":{"friction":1.7},"camera":{"armLength":400,"height":130},"schemaVersion":1,"wheels":[{"bone":"wheel_fl","steering":true,"driven":true,"handbrake":false,"radius":34,"width":30},{"bone":"wheel_fr","steering":true,"driven":true,"handbrake":false,"radius":34,"width":30},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":true,"radius":34,"width":30},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":true,"radius":34,"width":30}],"collision":[{"center":[0.0,0.0,37.0],"extent":[226.0,96.5,26.0]}],"centerOfMass":[-18,0,38],"seat":{"location":[-10,-38,50],"steeringWheel":{"location":[36.8,-38,53],"rotation":[-20.0,0.0,0.0],"radius":17}},"passengerSeat":{"location":[-10,38,50]}})MCS"),
 		320, 204,
-		{ -226.0, -98.0, 0.0 }, { 226.0, 98.0, 63.0 },
+		{ -226.0, -98.0, 0.0 }, { 226.0, 98.0, 68.0 },
 		{
 			{ TEXT("root"), -1, { 0.0, 0.0, 0.0 } },
 			{ TEXT("wheel_fl"), 0, { 131.0, -83.0, 34.0 } },

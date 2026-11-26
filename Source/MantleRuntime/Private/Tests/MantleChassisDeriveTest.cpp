@@ -169,12 +169,12 @@ namespace MantleChassisDeriveTestPrivate
 			H.CenterOfMass = FVector(Parts[0], Parts[1], Parts[2]);
 			// Engine braking is left out of a document that has none.
 			Number(Json, TEXT("engine"), TEXT("engineBraking"), H.EngineBraking);
-			// A ground car's document holds its preset's one friction as the front's and the rear's (6/7 and 8/7 of it, so their mean is the preset's).
+			// A ground car's document holds its preset's one friction as the front's (6/7 of it) and the rear's (8/7, or the preset's own rearFriction scaled), so the front gives it back.
 			const TSharedPtr<FJsonObject>* Tires = nullptr;
 			double RearFriction = 0.0;
 			if (Json->TryGetObjectField(TEXT("tires"), Tires) && Tires && Tires->IsValid() && (*Tires)->TryGetNumberField(TEXT("rearFriction"), RearFriction))
 			{
-				H.TireFriction = FMath::RoundToDouble(0.5 * (H.TireFriction + RearFriction) * 1.0e9) / 1.0e9;
+				H.TireFriction = FMath::RoundToDouble(H.TireFriction * 7.0 / 6.0 * 1.0e9) / 1.0e9;
 			}
 			Out = H;
 		}
