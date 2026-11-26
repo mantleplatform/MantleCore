@@ -3,7 +3,7 @@
   "id": "bulldozer",
   "name": "Bulldozer",
   "description": "A medium crawler dozer with a blade on the front: slow, very heavy for its size, sure-footed on mud and sand, and it turns on the spot. A and D run one track faster than the other; standing still they turn the tracks opposite ways and it pivots. The blade is a drawn block and does not lift.",
-  "comment": "A vehicle preset (#728, #448): see sedan.json for the format, and tank.json for the tracked movement type (each side's road wheels share one belt, all driven and braked by the handbrake, none steered; it steers by track speed and pivots on the spot). Reference: the current Cat D6 with its SU blade. Sourced (Cat product page and the D6 / D6 XE spec sheet): operating weight 22,130 kg; net power 161 kW (215 hp) from the Cat C9.3B; five speeds of 3.6, 4.9, 6.5, 9.2 and 11.7 km/h forward, so maxSpeed 325 cm/s (11.7 km/h) is the governor; ground pressure 7.1 psi (49 kPa, 0.50 kg/cm^2; 5.9 to 7.9 by shoe and blade). Estimates: peak torque 1,050 Nm at 1,400 rpm on a lugging curve; gearRatios 3.25, 2.39, 1.80, 1.27 and 1.0 are the spec sheet's speed steps (11.7 over each gear's speed), and finalDrive 7.75 puts 5th near the governor at 1,850 rpm on 13 cm rollers; reverse 1.27 (the spec's reverse runs about as fast as forward); 7 track rollers a side of 13 cm radius, 70 cm wide, the first to the last 277 cm apart (layout.wheelbase), with little travel (a rigid undercarriage); shoe width 76 cm and gauge 200 cm (layout.track), so the contact area matches the 49 kPa; pivotTrackSpeed 52 cm/s turns it 360 degrees in about 12 s (2 x 52 / 200 rad/s, an estimate); lateralShare 0.8 (steel tracks on firm ground, U. Maryland ENAE 788X after Wong, Theory of Ground Vehicles); padPitch 20 cm. Checks (validate.py prints them): contact length l = 277 + 13 = 290 cm, l / gauge = 1.45, x lateralShare 0.8 = 1.16, below the 2 it must stay under to pivot; ground pressure 22,130 / (2 x 76 x 290) = 0.50 kg/cm^2, Cat's 49 kPa. brakeTorque 1,210 Nm on each of 14 rollers stops it from its crawl in a body length (estimate); handbrake 2,000 Nm holds it parked. No ABS and no traction control, as on the real machine (a creator may switch them on). tires.rollingResistance 0.04: a track loses far more than a tyre to its pins and rollers (#448, shared with #447). The blade (330 cm wide, 120 high, 30 thick, its middle at x 260) stands on the ground ahead of the hull, drawn only; the hull collides. Centre of mass 25 cm ahead of the middle (the blade's weight) and 90 cm up. Tuning after the probe (#448) may move the engine, brake and friction numbers.",
+  "comment": "A vehicle preset (#728, #448): see sedan.json for the format, and tank.json for the tracked movement type (each side's road wheels share one belt, all driven and braked by the handbrake, none steered; it steers by track speed and pivots on the spot). Reference: the current Cat D6 with its SU blade. Sourced (Cat product page and the D6 / D6 XE spec sheet): operating weight 22,130 kg; net power 161 kW (215 hp) from the Cat C9.3B; five speeds of 3.6, 4.9, 6.5, 9.2 and 11.7 km/h forward, so maxSpeed 325 cm/s (11.7 km/h) is the governor; ground pressure 7.1 psi (49 kPa, 0.50 kg/cm^2; 5.9 to 7.9 by shoe and blade). Estimates: peak torque 1,050 Nm at 1,400 rpm on a lugging curve; gearRatios 3.25, 2.39, 1.80, 1.27 and 1.0 are the spec sheet's speed steps (11.7 over each gear's speed), and finalDrive 7.75 puts 5th near the governor at 1,850 rpm on 13 cm rollers; reverse 1.27 (the spec's reverse runs about as fast as forward); 7 track rollers a side of 13 cm radius, 70 cm wide, the first to the last 277 cm apart (layout.wheelbase), with little travel (a rigid undercarriage); shoe width 76 cm and gauge 200 cm (layout.track), so the contact area matches the 49 kPa; pivotTrackSpeed 52 cm/s turns it 360 degrees in about 12 s (2 x 52 / 200 rad/s, an estimate); lateralShare 0.8 (steel tracks on firm ground, U. Maryland ENAE 788X after Wong, Theory of Ground Vehicles); padPitch 20 cm. Checks (validate.py prints them): contact length l = 277 + 13 = 290 cm, l / gauge = 1.45, x lateralShare 0.8 = 1.16, below the 2 it must stay under to pivot; ground pressure 22,130 / (2 x 76 x 290) = 0.50 kg/cm^2, Cat's 49 kPa. brakeTorque 1,210 Nm on each of 14 rollers stops it from its crawl in a body length (estimate); handbrake 2,000 Nm holds it parked. No ABS and no traction control, as on the real machine (a creator may switch them on). tires.rollingResistance 0.04: a track loses far more than a tyre to its pins and rollers (#448, shared with #447). tires.friction 1.18 is the track's grip multiplier (1.6 x 0.735: the tyre load is the true load since #376 step 9). Suspension: near-rigid, riding at about 2.4 Hz (estimate: the real undercarriage has only its equalizer bar and the track's give); the 4 cm it sags at rest taken from the 5 cm droop, and damping 4.1 gives a damping ratio near 0.28 for the 1.6 t each roller carries (#376 step 9's ride bars). The blade (330 cm wide, 120 high, 30 thick, its middle at x 260) stands on the ground ahead of the hull, drawn only; the hull collides. Centre of mass 25 cm ahead of the middle (the blade's weight) and 90 cm up. Tuning after the probe (#448) may move the engine, brake and friction numbers.",
   "movementType": "tracked",
   "publishable": true,
   "type": "tracked",
@@ -78,10 +78,10 @@
     },
     "suspension": {
       "maxRaise": 8,
-      "maxDrop": 4,
+      "maxDrop": 5,
       "springRate": 2000,
       "springPreload": 500,
-      "damping": 0.9
+      "damping": 4.1
     },
     "brakes": {
       "brakeTorque": 1210,
@@ -89,7 +89,7 @@
       "abs": false
     },
     "tires": {
-      "friction": 1.6,
+      "friction": 1.18,
       "rollingResistance": 0.04
     },
     "camera": {
@@ -116,7 +116,7 @@
     "suspension/maxDrop": [3, 10],
     "suspension/springRate": [800, 4000],
     "suspension/springPreload": [0, 1500],
-    "suspension/damping": [0.5, 1],
+    "suspension/damping": [2, 5],
     "brakes/brakeTorque": [600, 4000],
     "brakes/handbrakeTorque": [1000, 6000],
     "tires/friction": [1, 2.5],
