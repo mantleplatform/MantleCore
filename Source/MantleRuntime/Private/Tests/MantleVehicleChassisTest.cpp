@@ -157,11 +157,13 @@ bool FMantleVehicleChassisPresetsMakeAssetsTest::RunTest(const FString& Paramete
 		TestEqual(*FString::Printf(TEXT("%s: one collision box (a tractor's cab and frame: two)"), *Id), Desc.Collision.Num(), Spec.HasTractorFrame() ? 2 : 1);
 		TestTrue(*FString::Printf(TEXT("%s: it has a center of mass"), *Id), Desc.bCenterOfMass);
 		// A rider straddles a bike (on the centerline) or a quad (the ATV's wheels in pairs, #376 step 9d): on the centerline, no wheel, no passenger.
+		// A jet ski's rider (#15) holds a handlebar that is its steering wheel, turning about the column, and takes a pillion behind.
 		if (Reference.bCenterline || Reference.Rider.bSet)
 		{
+			const bool bJetSki = Spec.Type == EMantleChassisType::JetSki;
 			TestTrue(*FString::Printf(TEXT("%s: the rider sits on the centerline"), *Id), FMath::IsNearlyZero(Desc.SeatLocation.Y));
-			TestFalse(*FString::Printf(TEXT("%s: a rider has handlebars, not a steering wheel"), *Id), Desc.bSteeringWheel);
-			TestFalse(*FString::Printf(TEXT("%s: and no passenger"), *Id), Desc.bPassengerSeat);
+			TestEqual(*FString::Printf(TEXT("%s: a rider has handlebars, not a steering wheel (a jet ski's handlebar is one)"), *Id), Desc.bSteeringWheel, bJetSki);
+			TestEqual(*FString::Printf(TEXT("%s: and no passenger (a jet ski's sits behind the rider)"), *Id), Desc.bPassengerSeat, bJetSki);
 			continue;
 		}
 		// A trailer (#446) keeps the document's driver seat (the hovercraft precedent: its movement type ignores it) and has no passenger.
