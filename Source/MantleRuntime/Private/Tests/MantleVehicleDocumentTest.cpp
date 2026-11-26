@@ -1117,7 +1117,7 @@ bool FMantleVehicleDocumentRefusalsTest::RunTest(const FString& Parameters)
 	Refuses(TEXT("a helicopter with no helicopter block"), TEXT("helicopter"), TEXT("needs a helicopter block"), [](FJsonObject& Doc) { Doc.RemoveField(TEXT("helicopter")); });
 	Refuses(TEXT("a hovercraft with no hover block"), TEXT("hovercraft"), TEXT("needs a hover block"), [](FJsonObject& Doc) { Doc.RemoveField(TEXT("hover")); });
 	Refuses(TEXT("a boat with no boat block"), TEXT("boat"), TEXT("needs a boat block"), [](FJsonObject& Doc) { Doc.RemoveField(TEXT("boat")); });
-	Refuses(TEXT("an unknown movement type"), TEXT("plane"), TEXT("must be one of wheeled, plane, helicopter, hover, tracked, boat"), [](FJsonObject& Doc) { Doc.SetStringField(TEXT("movementType"), TEXT("submarine")); });
+	Refuses(TEXT("an unknown movement type"), TEXT("plane"), TEXT("must be one of wheeled, plane, helicopter, hover, boat, trailer, tracked"), [](FJsonObject& Doc) { Doc.SetStringField(TEXT("movementType"), TEXT("submarine")); });
 	Refuses(TEXT("a boat's drive of no kind it knows"), TEXT("boat"), TEXT("must be one of propeller, jet"), [](FJsonObject& Doc)
 		{ Doc.GetObjectField(TEXT("boat"))->GetObjectField(TEXT("propulsion"))->SetStringField(TEXT("kind"), TEXT("paddle")); });
 	Refuses(TEXT("a jet with a prop walk"), TEXT("boat"), TEXT("a jet has none"), [](FJsonObject& Doc)
