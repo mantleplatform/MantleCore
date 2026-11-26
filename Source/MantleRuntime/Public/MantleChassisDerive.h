@@ -20,6 +20,8 @@ struct MANTLERUNTIME_API FMantleChassisHandling
 	/** Chassis frame, cm. */
 	FVector CenterOfMass = FVector::ZeroVector;
 	double MaxTorque = 0.0;
+	/** engine.peakPower, kW: an electric motor's (#445). 0 for a combustion engine, and the document then leaves it out. */
+	double PeakPower = 0.0;
 	double FinalDrive = 0.0;
 	double MaxRaise = 0.0;
 	double MaxDrop = 0.0;

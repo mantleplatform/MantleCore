@@ -308,6 +308,26 @@ namespace MantleChassisSpecTestPrivate
 		}
 	},
 	{
+		// #445: the Electric preset, a rear-drive saloon with a motor (no idle, torque curve or engine braking; one gear, no shift points).
+		TEXT("electric"),
+		TEXT(R"MCS({"mass":1765,"maxSpeed":5588,"dragCoefficient":0.219,"frontalArea":2.22,"engine":{"drive":"electric","maxTorque":377,"maxRPM":18447,"peakPower":213,"regenBraking":0.2,"batteryCapacity":70,"tractionControl":true},"transmission":{"gearRatios":[1.0],"finalDrive":8.92},"suspension":{"maxRaise":10,"maxDrop":16,"springRate":171,"springPreload":50,"damping":0.57},"steering":{"maxAngle":40,"ackermann":true},"brakes":{"brakeTorque":4900,"handbrakeTorque":6000,"abs":true,"frontShare":0.65},"tires":{"friction":1.33},"camera":{"armLength":420,"height":160},"schemaVersion":1,"wheels":[{"bone":"wheel_fl","steering":true,"driven":false,"handbrake":false,"radius":33,"width":24},{"bone":"wheel_fr","steering":true,"driven":false,"handbrake":false,"radius":33,"width":24},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":true,"radius":33,"width":24},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":true,"radius":33,"width":24}],"collision":[{"center":[0.0,0.0,55.0],"extent":[236.0,92.5,35.0]}],"centerOfMass":[-9,0,42],"seat":{"location":[0,-36,76],"steeringWheel":{"location":[46.8,-36,79],"rotation":[-20.0,0.0,0.0],"radius":19}},"passengerSeat":{"location":[0,36,76]}})MCS"),
+		320, 204,
+		{ -236.0, -92.5, 0.0 }, { 236.0, 92.5, 90.0 },
+		{
+			{ TEXT("root"), -1, { 0.0, 0.0, 0.0 } },
+			{ TEXT("wheel_fl"), 0, { 144.0, -79.0, 33.0 } },
+			{ TEXT("wheel_fr"), 0, { 144.0, 79.0, 33.0 } },
+			{ TEXT("wheel_rl"), 0, { -144.0, -79.0, 33.0 } },
+			{ TEXT("wheel_rr"), 0, { -144.0, 79.0, 33.0 } }
+		},
+		{
+			{ 144.0, -79.0, 33.0 },
+			{ 144.0, 79.0, 33.0 },
+			{ -144.0, -79.0, 33.0 },
+			{ -144.0, 79.0, 33.0 }
+		}
+	},
+	{
 		TEXT("bus"),
 		TEXT(R"MCS({"mass":12587,"maxSpeed":2917,"dragCoefficient":0.65,"frontalArea":7.5,"engine":{"maxTorque":1356,"maxRPM":2200,"idleRPM":650,"torqueCurve":[[0,0.6],[800,0.8],[1400,1],[2000,0.866],[2200,0.75]],"tractionControl":true,"engineBraking":2.1},"transmission":{"gearRatios":[3.51,1.91,1.43,1.0,0.74,0.64],"reverseRatio":4.8,"finalDrive":4.88,"changeUpRPM":2000,"changeDownRPM":1100,"shiftTime":0.5},"suspension":{"maxRaise":15,"maxDrop":18,"springRate":1000,"springPreload":300,"damping":3.9},"steering":{"maxAngle":46,"ackermann":true},"brakes":{"brakeTorque":7400,"handbrakeTorque":16000,"abs":true,"frontShare":0.3},"tires":{"friction":1.16},"camera":{"armLength":1235,"height":310},"schemaVersion":1,"wheels":[{"bone":"wheel_fl","steering":true,"driven":false,"handbrake":false,"radius":50,"width":31},{"bone":"wheel_fr","steering":true,"driven":false,"handbrake":false,"radius":50,"width":31},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":true,"radius":50,"width":31},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":true,"radius":50,"width":31}],"collision":[{"center":[0.0,0.0,92.5],"extent":[612.0,129.5,67.5]}],"centerOfMass":[-108,0,105],"seat":{"location":[470,-80,120],"steeringWheel":{"location":[515,-80,128],"rotation":[-20.0,0.0,0.0],"radius":25}},"passengerSeat":{"location":[470,80,120]}})MCS"),
 		320, 204,

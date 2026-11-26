@@ -367,47 +367,67 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chassis", meta = (ClampMin = "0", ClampMax = "20"))
 	float FrontalArea = 2.2f;
 
+	/** An electric motor (engine.drive "electric", #445) instead of a combustion engine: full pull from a standstill up to Peak Power / Max Torque,
+	 *  then constant power to Max RPM; no idle or torque curve; one gear (the first Gear Ratio, no shift points); lift-off regenerative braking and a
+	 *  battery that a script-enabled fuel tank stands for. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine")
+	bool bElectric = false;
+
+	/** Nm at the curve's peak; an electric motor's peak torque. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "10", ClampMax = "5000"))
 	float MaxTorque = 400.f;
 
+	/** The engine's redline; an electric motor's top speed. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "1000", ClampMax = "20000"))
 	int32 MaxRPM = 6000;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "300", ClampMax = "5000"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "300", ClampMax = "5000", EditCondition = "!bElectric"))
 	int32 IdleRPM = 900;
 
 	/** (rpm, fraction of Max Torque) points, rpm rising, 2 to 16. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (EditCondition = "!bElectric"))
 	TArray<FVector2D> TorqueCurve = { FVector2D(0.0, 0.6), FVector2D(3000.0, 1.0), FVector2D(6000.0, 0.8) };
+
+	/** kW: an electric motor's peak power (engine.peakPower). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "10", ClampMax = "1500", EditCondition = "bElectric"))
+	float PeakPower = 200.f;
+
+	/** g: how hard an electric car slows its driven wheels with the throttle released (engine.regenBraking), fading out below 15 km/h. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "0", ClampMax = "0.3", EditCondition = "bElectric"))
+	float RegenBraking = 0.15f;
+
+	/** kWh: an electric car's usable battery (engine.batteryCapacity). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "1", ClampMax = "200", EditCondition = "bElectric"))
+	float BatteryCapacity = 60.f;
 
 	/** Traction control (engine.tractionControl): a driven wheel never pushes harder than its tyre's grip, so it does not spin up under power. Part of the car; scripts don't change it. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine")
 	bool bTractionControl = true;
 
 	/** Engine braking with the throttle released (engine.engineBraking): brake torque, Nm, per engine RPM on each driven wheel. 0: none. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "0", ClampMax = "5"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "0", ClampMax = "5", EditCondition = "!bElectric"))
 	float EngineBraking = 0.f;
 
 	/** Forward gears, first gear first, 1 to 8. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission")
 	TArray<float> GearRatios = { 3.2f, 2.1f, 1.4f, 1.0f };
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0.1", ClampMax = "10"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0.1", ClampMax = "10", EditCondition = "!bElectric"))
 	float ReverseRatio = 3.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0.1", ClampMax = "10"))
 	float FinalDrive = 3.5f;
 
 	/** 0: 85% of Max RPM. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0", ClampMax = "20000"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0", ClampMax = "20000", EditCondition = "!bElectric"))
 	int32 ChangeUpRPM = 0;
 
 	/** 0: 40% of Max RPM. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0", ClampMax = "20000"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0", ClampMax = "20000", EditCondition = "!bElectric"))
 	int32 ChangeDownRPM = 0;
 
 	/** Seconds each gear change takes (transmission.shiftTime), with no drive while it shifts. 0.5 is Epic's default. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0.05", ClampMax = "2"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0.05", ClampMax = "2", EditCondition = "!bElectric"))
 	float ShiftTime = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Suspension", meta = (ClampMin = "0", ClampMax = "50", Units = "cm"))

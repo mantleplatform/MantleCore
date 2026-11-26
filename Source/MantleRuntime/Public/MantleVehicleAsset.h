@@ -482,6 +482,17 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	bool bTractionControl = true;
 	/** engine.engineBraking: brake torque (Nm) per engine RPM on each driven wheel with the throttle released. Absent: 0. */
 	double EngineBraking = 0.0;
+	/** engine.drive "electric" (#445): an electric motor. MaxTorque is its peak torque and MaxRPM its top speed; it has no idle and no torque curve
+	 *  (IdleRPM 0, TorqueCurve empty), and one gear. Absent or "combustion": false. */
+	bool bElectric = false;
+	/** engine.peakPower, kW (electric only). */
+	double PeakPower = 0.0;
+	/** engine.regenBraking, g of lift-off deceleration (electric only). Absent on an electric car: DefaultRegenBraking. */
+	double RegenBraking = 0.0;
+	/** engine.batteryCapacity, kWh (electric only). Absent on an electric car: DefaultBatteryCapacity. */
+	double BatteryCapacity = 0.0;
+	static constexpr double DefaultRegenBraking = 0.15;
+	static constexpr double DefaultBatteryCapacity = 60.0;
 
 	/** Forward gears, first gear first. */
 	TArray<float> GearRatios;

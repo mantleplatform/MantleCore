@@ -51,6 +51,9 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("engine/torqueCurve/*/0"), 0.0, 20000.0 },
 		{ TEXT("engine/torqueCurve/*/1"), 0.0, 1.0 },
 		{ TEXT("engine/engineBraking"), 0.0, 5.0 },
+		{ TEXT("engine/peakPower"), 10.0, 1500.0 },
+		{ TEXT("engine/regenBraking"), 0.0, 0.3 },
+		{ TEXT("engine/batteryCapacity"), 1.0, 200.0 },
 		{ TEXT("transmission/gearRatios/*"), 0.1, 10.0 },
 		{ TEXT("transmission/reverseRatio"), 0.1, 10.0 },
 		{ TEXT("transmission/finalDrive"), 0.1, 10.0 },
@@ -549,6 +552,10 @@ namespace MantleVehicleAssetPrivate
 			{
 				return P.Fail(FString::Printf(TEXT("/engine/torqueCurve/%d/0"), Index), TEXT("does not rise, or passes maxRPM"));
 			}
+		}
+		if (D.bElectric && D.GearRatios.Num() != 1)
+		{
+			return P.Fail(TEXT("/transmission/gearRatios"), FString::Printf(TEXT("has %d gears; an electric motor has one fixed reduction"), D.GearRatios.Num()));
 		}
 		if (D.ChangeUpRPM > D.MaxRPM || D.ChangeDownRPM >= D.ChangeUpRPM)
 		{
@@ -2274,9 +2281,45 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	}
 
 	TSharedPtr<FJsonObject> Engine;
-	if (P.Ok() && P.Object(Root, TEXT(""), TEXT("engine"), Engine)
-		&& P.Keys(Engine, TEXT("/engine"), { TEXT("maxTorque"), TEXT("maxRPM"), TEXT("idleRPM"), TEXT("torqueCurve"), TEXT("tractionControl"), TEXT("engineBraking") },
-			{ TEXT("maxTorque"), TEXT("maxRPM"), TEXT("idleRPM"), TEXT("torqueCurve") }))
+	// An electric motor (engine.drive "electric", #445) has peak power, regen and a battery instead of an idle and a torque curve.
+	FString Drive;
+	if (P.Ok() && P.Object(Root, TEXT(""), TEXT("engine"), Engine) && Engine->TryGetStringField(TEXT("drive"), Drive))
+	{
+		if (Drive == TEXT("electric"))
+		{
+			D.bElectric = true;
+		}
+		else if (Drive != TEXT("combustion"))
+		{
+			P.Fail(TEXT("/engine/drive"), FString::Printf(TEXT("is \"%s\", not \"combustion\" or \"electric\""), *Drive));
+		}
+	}
+	if (P.Ok() && Engine.IsValid() && D.bElectric
+		&& P.Keys(Engine, TEXT("/engine"), { TEXT("drive"), TEXT("maxTorque"), TEXT("maxRPM"), TEXT("peakPower"), TEXT("regenBraking"), TEXT("batteryCapacity"),
+			TEXT("tractionControl") }, { TEXT("maxTorque"), TEXT("maxRPM"), TEXT("peakPower") }))
+	{
+		P.Number(Engine, TEXT("/engine"), TEXT("maxTorque"), TEXT("engine/maxTorque"), D.MaxTorque);
+		P.Int(Engine, TEXT("/engine"), TEXT("maxRPM"), TEXT("engine/maxRPM"), D.MaxRPM);
+		P.Number(Engine, TEXT("/engine"), TEXT("peakPower"), TEXT("engine/peakPower"), D.PeakPower);
+		D.IdleRPM = 0;
+		D.RegenBraking = FMantleVehicleDesc::DefaultRegenBraking;
+		D.BatteryCapacity = FMantleVehicleDesc::DefaultBatteryCapacity;
+		if (P.Ok())
+		{
+			P.OptNumber(Engine, TEXT("/engine"), TEXT("regenBraking"), TEXT("engine/regenBraking"), D.RegenBraking);
+		}
+		if (P.Ok())
+		{
+			P.OptNumber(Engine, TEXT("/engine"), TEXT("batteryCapacity"), TEXT("engine/batteryCapacity"), D.BatteryCapacity);
+		}
+		if (P.Ok() && Engine->HasField(TEXT("tractionControl")))
+		{
+			P.Bool(Engine, TEXT("/engine"), TEXT("tractionControl"), D.bTractionControl);
+		}
+	}
+	else if (P.Ok() && Engine.IsValid() && !D.bElectric
+		&& P.Keys(Engine, TEXT("/engine"), { TEXT("drive"), TEXT("maxTorque"), TEXT("maxRPM"), TEXT("idleRPM"), TEXT("torqueCurve"), TEXT("tractionControl"),
+			TEXT("engineBraking") }, { TEXT("maxTorque"), TEXT("maxRPM"), TEXT("idleRPM"), TEXT("torqueCurve") }))
 	{
 		P.Number(Engine, TEXT("/engine"), TEXT("maxTorque"), TEXT("engine/maxTorque"), D.MaxTorque);
 		P.Int(Engine, TEXT("/engine"), TEXT("maxRPM"), TEXT("engine/maxRPM"), D.MaxRPM);
@@ -2310,7 +2353,25 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	}
 
 	TSharedPtr<FJsonObject> Transmission;
-	if (P.Ok() && P.Object(Root, TEXT(""), TEXT("transmission"), Transmission)
+	// An electric car's (#445) one fixed reduction: its gear ratio and final drive only. Reverse turns the motor backwards through the same ratio, and it
+	// never shifts, so the change points are its top speed and none.
+	if (P.Ok() && D.bElectric && P.Object(Root, TEXT(""), TEXT("transmission"), Transmission)
+		&& P.Keys(Transmission, TEXT("/transmission"), { TEXT("gearRatios"), TEXT("finalDrive") }, { TEXT("gearRatios"), TEXT("finalDrive") }))
+	{
+		const TArray<TSharedPtr<FJsonValue>>* Gears = nullptr;
+		double Ratio = 0.0;
+		if (P.Array(Transmission->TryGetField(TEXT("gearRatios")), TEXT("/transmission/gearRatios"), 1, 1, Gears)
+			&& P.NumberValue((*Gears)[0], TEXT("/transmission/gearRatios/0"), TEXT("transmission/gearRatios/*"), false, Ratio))
+		{
+			D.GearRatios.Add(static_cast<float>(Ratio));
+			D.ReverseRatio = Ratio;
+		}
+		P.Number(Transmission, TEXT("/transmission"), TEXT("finalDrive"), TEXT("transmission/finalDrive"), D.FinalDrive);
+		D.ChangeUpRPM = D.MaxRPM;
+		D.ChangeDownRPM = 0;
+		D.ShiftTime = 0.0;
+	}
+	else if (P.Ok() && !D.bElectric && P.Object(Root, TEXT(""), TEXT("transmission"), Transmission)
 		&& P.Keys(Transmission, TEXT("/transmission"),
 			{ TEXT("gearRatios"), TEXT("reverseRatio"), TEXT("finalDrive"), TEXT("changeUpRPM"), TEXT("changeDownRPM"), TEXT("shiftTime") },
 			{ TEXT("gearRatios"), TEXT("reverseRatio"), TEXT("finalDrive"), TEXT("changeUpRPM"), TEXT("changeDownRPM") }))

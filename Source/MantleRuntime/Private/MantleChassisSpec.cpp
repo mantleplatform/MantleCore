@@ -399,6 +399,7 @@ namespace MantleChassisSpecPrivate
 			{ TEXT("dragCoefficient"), &FMantleChassisHandling::DragCoefficient, DefaultDragCoefficient, false },
 			{ TEXT("frontalArea"), &FMantleChassisHandling::FrontalArea, DefaultFrontalArea, false },
 			{ TEXT("engine/maxTorque"), &FMantleChassisHandling::MaxTorque, 0.0, true },
+			{ TEXT("engine/peakPower"), &FMantleChassisHandling::PeakPower, 0.0, false },
 			{ TEXT("transmission/finalDrive"), &FMantleChassisHandling::FinalDrive, 0.0, true },
 			{ TEXT("suspension/maxRaise"), &FMantleChassisHandling::MaxRaise, DefaultMaxRaise, false },
 			{ TEXT("suspension/maxDrop"), &FMantleChassisHandling::MaxDrop, DefaultMaxDrop, false },
@@ -475,6 +476,11 @@ namespace MantleChassisSpecPrivate
 		Doc->SetNumberField(TEXT("frontalArea"), Handling.FrontalArea);
 		const TSharedPtr<FJsonObject> Engine = ChildObject(Doc, TEXT("engine"));
 		Engine->SetNumberField(TEXT("maxTorque"), Handling.MaxTorque);
+		// An electric motor's peak power (#445) follows its torque; a combustion preset has none and keeps the field out.
+		if (Handling.PeakPower > 0.0 || Engine->HasField(TEXT("peakPower")))
+		{
+			Engine->SetNumberField(TEXT("peakPower"), Handling.PeakPower);
+		}
 		// A preset without engine braking keeps the field out of its document (absent is none).
 		if (Handling.EngineBraking > 0.0 || Engine->HasField(TEXT("engineBraking")))
 		{

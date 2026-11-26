@@ -35,6 +35,7 @@ namespace MantleChassisDerivePrivate
 		constexpr const TCHAR* MaxSpeed = TEXT("maxSpeed");
 		constexpr const TCHAR* FrontalArea = TEXT("frontalArea");
 		constexpr const TCHAR* MaxTorque = TEXT("engine/maxTorque");
+		constexpr const TCHAR* PeakPower = TEXT("engine/peakPower");
 		constexpr const TCHAR* FinalDrive = TEXT("transmission/finalDrive");
 		constexpr const TCHAR* MaxRaise = TEXT("suspension/maxRaise");
 		constexpr const TCHAR* MaxDrop = TEXT("suspension/maxDrop");
@@ -68,7 +69,7 @@ namespace MantleChassisDerivePrivate
 	const TCHAR* const LimitedPathTable[] = {
 		DocPath::Mass, DocPath::MaxSpeed, DocPath::FrontalArea, DocPath::MaxTorque, DocPath::FinalDrive, DocPath::MaxRaise, DocPath::MaxDrop,
 		DocPath::SpringRate, DocPath::SpringPreload, DocPath::MaxSteerAngle, DocPath::BrakeTorque, DocPath::HandbrakeTorque, DocPath::TireFriction,
-		DocPath::CameraArmLength, DocPath::CameraHeight, DocPath::EngineBraking, DocPath::Damping,
+		DocPath::CameraArmLength, DocPath::CameraHeight, DocPath::EngineBraking, DocPath::Damping, DocPath::PeakPower,
 	};
 
 	/** Whether a rule's answer differs from what it was held to by more than the floating-point noise of working it out (a result at a bound must not look held). */
@@ -171,7 +172,7 @@ namespace MantleChassisDerivePrivate
 	void RoundHandling(FMantleChassisHandling& H)
 	{
 		for (double* Number : { &H.Mass, &H.MaxSpeed, &H.DragCoefficient, &H.FrontalArea, &H.MaxTorque, &H.FinalDrive, &H.MaxRaise, &H.MaxDrop, &H.SpringRate,
-				 &H.SpringPreload, &H.SpringDamping, &H.MaxSteerAngle, &H.BrakeTorque, &H.HandbrakeTorque, &H.EngineBraking, &H.TireFriction, &H.CameraArmLength, &H.CameraHeight,
+				 &H.SpringPreload, &H.SpringDamping, &H.MaxSteerAngle, &H.BrakeTorque, &H.HandbrakeTorque, &H.EngineBraking, &H.PeakPower, &H.TireFriction, &H.CameraArmLength, &H.CameraHeight,
 				 &H.WingAreaM2, &H.TailplaneAreaM2, &H.FinAreaM2, &H.EngineThrustNewtons, &H.RotorThrustNewtons, &H.HoverThrustNewtons, &H.PadSpringRate,
 				 &H.HoverFinAreaM2 })
 		{
@@ -268,6 +269,8 @@ FMantleChassisHandling FMantleChassisDerive::Derive(const FMantleChassisSpec& Sp
 
 	// Engine: the archetype's power-to-weight, so the torque at the curve's peak follows the mass.
 	H.MaxTorque = Limited(H.Clamped, DocPath::MaxTorque, Arch.MaxTorque * MassRatio * (1.0 + Reach * Power));
+	// An electric motor's peak power (#445) by the same rule, so its base speed (power over torque) is the archetype's. 0 (combustion): left out.
+	H.PeakPower = Arch.PeakPower > 0.0 ? Limited(H.Clamped, DocPath::PeakPower, Arch.PeakPower * MassRatio * (1.0 + Reach * Power)) : 0.0;
 
 	// Top speed and gearing: the archetype's top speed, less in proportion to a smaller wheel; the final drive makes the top gear turn the same share of
 	// the redline at that speed: the wheel's size over the speed.

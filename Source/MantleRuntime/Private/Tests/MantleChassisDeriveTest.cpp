@@ -447,7 +447,7 @@ bool FMantleChassisDeriveIsDeterministicTest::RunTest(const FString& Parameters)
 	// however often, in whatever order, and from however many separate reads of the preset.
 	const FString Selectors[] = { TEXT("sedan@0.7"), TEXT("sedan@1.6"), TEXT("sports@0.5"), TEXT("pickup@1.3"), TEXT("truck@0.7"), TEXT("sixwheeler@1.3"), TEXT("van@0.5"),
 		TEXT("limousine@1.6"), TEXT("motorcycle@0.7"), TEXT("motorcycle@1.3"), TEXT("plane@0.7"), TEXT("plane@1.3"), TEXT("plane@2.5"), TEXT("muscle@0.7"), TEXT("drift@1.3"),
-		TEXT("compact@0.7"), TEXT("supercar@1.3"), TEXT("offroad@1.3"), TEXT("bus@0.8"), TEXT("atv@1.3") };
+		TEXT("compact@0.7"), TEXT("supercar@1.3"), TEXT("offroad@1.3"), TEXT("bus@0.8"), TEXT("atv@1.3"), TEXT("electric@0.8") };
 	for (const FString& Selector : Selectors)
 	{
 		FMantleChassisSpec A;
@@ -777,7 +777,7 @@ bool FMantleChassisDeriveHoldsAreVisibleTest::RunTest(const FString& Parameters)
 	using namespace MantleChassisDeriveTestPrivate;
 	// Every path Derive holds a result to is one the document has a range for: a path the document did not know would hold nothing, silently.
 	const TArray<FString> Paths = FMantleChassisDerive::LimitedPaths();
-	TestEqual(TEXT("Derive holds seventeen numbers"), Paths.Num(), 17);
+	TestEqual(TEXT("Derive holds eighteen numbers"), Paths.Num(), 18);
 	for (const FString& Path : Paths)
 	{
 		double Min = 0.0;
