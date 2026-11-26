@@ -28,7 +28,7 @@
       "wheelRadius": 37,
       "wheelWidth": 26,
       "axles": [
-        { "steer": true, "drive": true },
+        { "steer": true, "drive": false },
         { "steer": false, "drive": true, "handbrake": true }
       ]
     },
