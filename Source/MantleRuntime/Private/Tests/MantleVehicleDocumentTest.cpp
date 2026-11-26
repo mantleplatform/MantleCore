@@ -730,7 +730,8 @@ bool FMantleVehicleDocumentGroundHandlingTest::RunTest(const FString& Parameters
 			D.bTireRearFriction && FMath::IsNearlyEqual(D.TireRearFriction, WantRear, 1.0e-9));
 		if (bOwnRear)
 		{
-			TestTrue(*FString::Printf(TEXT("%s: its rear grips less than its front"), *Selector), D.TireRearFriction < D.TireFriction);
+			TestTrue(*FString::Printf(TEXT("%s: its rear grips no more than its front, less than the cars' 8/7"), *Selector),
+				D.TireRearFriction <= D.TireFriction + 1.0e-9 && D.TireRearFriction < Friction * 8.0 / 7.0);
 		}
 		if (TestEqual(*FString::Printf(TEXT("%s: the steering curve has every point"), *Selector), D.SteeringSpeedCurve.Num(), WantCurve.Num()))
 		{
