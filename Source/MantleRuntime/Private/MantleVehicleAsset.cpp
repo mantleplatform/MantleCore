@@ -2531,7 +2531,7 @@ namespace MantleVehicleAssetPrivate
 		}
 		if (D.bPedal && D.MovementType != EMantleVehicleMovementKind::Wheeled)
 		{
-			return P.Fail(TEXT("/pedal"), TEXT("is for a wheeled vehicle a rider pedals; a plane, helicopter or hovercraft has none"));
+			return P.Fail(TEXT("/pedal"), TEXT("is for a wheeled vehicle a rider pedals; no other movement type has one"));
 		}
 		if (D.MovementType == EMantleVehicleMovementKind::Helicopter && D.Helicopter.bPilotGrips && !CheckGrips(TEXT("/helicopter/pilotGrips"), D.Helicopter.PilotGrips))
 		{
