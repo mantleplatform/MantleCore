@@ -3,6 +3,7 @@
 
 #include "MantleChassisDerive.h"
 #include "MantleVehicleChassisBuilder.h"
+#include "MantleVehicleChassisDocument.h"
 #include "Misc/AutomationTest.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -83,7 +84,7 @@ bool FMantleChassisHovercraftSpecTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the pod is inside the hull's height"), Pod.Min.Z >= Hull.Min.Z && Pod.Max.Z <= Hull.Max.Z);
 	TestTrue(TEXT("the fan pushes from the pod's middle"), NearCm(Hover.FanLocation(), 0.5 * (Pod.Min + Pod.Max)));
 	const double ThrustShare = Craft.FanThrustNewtons / (Hover.Archetype.Mass * Gravity);
-	TestTrue(*FString::Printf(TEXT("the fan pushes %.3f of the weight"), ThrustShare), ThrustShare >= 0.2 && ThrustShare <= 0.5);
+	TestTrue(*FString::Printf(TEXT("the fan pushes %.3f of the weight"), ThrustShare), ThrustShare >= 0.1 && ThrustShare <= 0.5);
 	const FMantleChassisBlock Fin = Hover.HoverFinBlock();
 	TestTrue(TEXT("the fin stands on the hull's top, on its length"), Fin.Min.Z == Hull.Max.Z && Fin.Min.X >= Hull.Min.X && Fin.Max.X <= Hull.Max.X);
 	TestTrue(TEXT("behind the seat"), Fin.Max.X < Hover.Seat.X);
@@ -180,12 +181,12 @@ bool FMantleChassisHovercraftPartsTest::RunTest(const FString& Parameters)
 	TestTrue(*FString::Printf(TEXT("and says so (%s)"), *Error), Error.Contains(TEXT("hovercraft")));
 	Cut = Text.Replace(TEXT("\"type\": \"hovercraft\""), TEXT("\"type\": \"car\""));
 	TestFalse(TEXT("a car with a hovercraft block is refused"), FMantleChassisSpec::Parse(Cut, Spec, Error));
-	Cut = Text.Replace(TEXT("\"springRate\": 33.1"), TEXT("\"springRates\": 33.1"));
+	Cut = Text.Replace(TEXT("\"springRate\": 22.07"), TEXT("\"springRates\": 22.07"));
 	TestFalse(TEXT("pads with no spring are refused"), FMantleChassisSpec::Parse(Cut, Spec, Error));
 	TestTrue(*FString::Printf(TEXT("and says which (%s)"), *Error), Error.Contains(TEXT("pads.springRate")));
-	Cut = Text.Replace(TEXT("\"thrust\": 2000"), TEXT("\"thrusts\": 2000"));
+	Cut = Text.Replace(TEXT("\"thrust\": 800"), TEXT("\"thrusts\": 800"));
 	TestFalse(TEXT("a fan with no push is refused"), FMantleChassisSpec::Parse(Cut, Spec, Error));
-	Cut = Text.Replace(TEXT("\"reverseShare\": 0.5"), TEXT("\"reverseShare\": 1.5"));
+	Cut = Text.Replace(TEXT("\"reverseShare\": 0.6"), TEXT("\"reverseShare\": 1.5"));
 	TestFalse(TEXT("reverse vanes stronger than the fan are refused"), FMantleChassisSpec::Parse(Cut, Spec, Error));
 	EMantleChassisType Type = EMantleChassisType::Car;
 	TestTrue(TEXT("the type name reads back"), FMantleChassisSpec::ParseType(TEXT("hovercraft"), Type) && Type == EMantleChassisType::Hovercraft
@@ -236,6 +237,44 @@ bool FMantleChassisHovercraftScaledTest::RunTest(const FString& Parameters)
 		TestTrue(*FString::Printf(TEXT("x%g: the fan's pod stays at the hull's rear end"), Factor), FMath::IsNearlyEqual(Sized.FanPodBlock().Max.X, Sized.BodyBlock().Min.X, 1.0e-6));
 		TestEqual(*FString::Printf(TEXT("x%g: the damping is accelerations, which do not scale"), Factor), Sized.Hovercraft.MaxLateralAccel, Own.MaxLateralAccel);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleChassisHovercraftFeelTest,
+	"Mantle.Vehicle.Chassis.HovercraftGripAndPower",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleChassisHovercraftFeelTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleChassisHovercraftTestPrivate;
+	// #381: the builder's Power pushes the fan harder or softer by its 30 percent, and its Grip runs the slide dampers in two halves: none at
+	// all (a true hovercraft), the preset's real hovercraft in the middle, and the car-like hold every hovercraft had before at grippy.
+	FMantleChassisSpec Hover;
+	if (!LoadHovercraft(*this, Hover))
+	{
+		return false;
+	}
+	const FMantleChassisHandling Own = FMantleChassisDerive::Derive(Hover);
+	TestTrue(TEXT("its own: the preset's push and no grip change"), FMath::IsNearlyEqual(Own.HoverThrustNewtons, Hover.Archetype.HoverThrustNewtons, 1.0e-6) && Own.HoverGrip == 0.0);
+	FMantleChassisFeel Strong;
+	Strong.Power = 1.0;
+	TestTrue(TEXT("Power at strong: 30 percent more push"), FMath::IsNearlyEqual(FMantleChassisDerive::Derive(Hover, Strong).HoverThrustNewtons, 1.3 * Own.HoverThrustNewtons, 0.01));
+	FMantleChassisFeel Weak;
+	Weak.Power = -1.0;
+	TestTrue(TEXT("Power at weak: 30 percent less"), FMath::IsNearlyEqual(FMantleChassisDerive::Derive(Hover, Weak).HoverThrustNewtons, 0.7 * Own.HoverThrustNewtons, 0.01));
+	FMantleChassisFeel Grippy;
+	Grippy.Grip = 0.5;
+	TestEqual(TEXT("Grip reaches the handling"), FMantleChassisDerive::Derive(Hover, Grippy).HoverGrip, 0.5);
+
+	using Doc = FMantleVehicleChassisDocument;
+	TestEqual(TEXT("slippery: no slide assist"), Doc::HovercraftSlide(-1.0, 0.3, 1.5), 0.0);
+	TestTrue(TEXT("half way to slippery: half the preset's"), FMath::IsNearlyEqual(Doc::HovercraftSlide(-0.5, 0.3, 1.5), 0.15));
+	TestEqual(TEXT("the middle: the preset's"), Doc::HovercraftSlide(0.0, 0.3, 1.5), 0.3);
+	TestTrue(TEXT("half way to grippy: half way to the car-like hold"), FMath::IsNearlyEqual(Doc::HovercraftSlide(0.5, 0.3, 1.5), 0.9));
+	TestEqual(TEXT("grippy: the car-like hold"), Doc::HovercraftSlide(1.0, 0.3, 1.5), 1.5);
+	TestEqual(TEXT("held to the slider's ends"), Doc::HovercraftSlide(3.0, 0.3, 1.5), 1.5);
+	TestEqual(TEXT("the grippy end is what every hovercraft had before #381"), Doc::HovercraftGrippyLateralPerSecond, 1.5);
 	return true;
 }
 

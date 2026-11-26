@@ -1630,6 +1630,10 @@ declare extern type VehiclesService with
 	function GetBoostRegen(self, vehicle: Entity): number
 	--- How hard the boost pushes, from 0 (nothing) to 1 (the hardest it can; about 18 m/s of extra speed every second). 0.5 unless you change it. (server only)
 	function GetBoostStrength(self, vehicle: Entity): number
+	--- The vehicle's engine size in cc (cubic centimeters), as its creator picked it: a motorcycle's 125, 300, 600, 1000 or 1800 cc engine. nil when the vehicle does not give one (cars, aircraft). Errors if the entity is not a vehicle or no longer exists. (server only)
+	function GetEngineSize(self, vehicle: Entity): number?
+	--- What a plane or helicopter is doing: airspeed and verticalSpeed (cm/s, up positive), altitude (its height in the world, cm: the air thins with it, from world height 0), heightAboveGround (a helicopter's rotor over the ground, cm; nil past one rotor diameter), throttle (0 to 1; a helicopter's collective), a helicopter's inGroundEffect (the ground cushion is helping lift) and inVortexRing (it is sinking into its own downwash and losing lift), and assists (a helicopter's level, heightHold and yawHold, as its creator set them). A plane's (1.104): angleOfAttack (its wing's, degrees), stalled (past its stall angle), stallWarning (past 90% of it: draw your own warning), thrust (0 to 1, what its engines make: a jet spools up behind the throttle), afterburner (a jet with one: lit) and assists stallProtection and coordinatedTurns. Nil when the entity is not a plane or a helicopter. (server only)
+	function GetFlightInfo(self, vehicle: Entity): {airspeed: number, verticalSpeed: number, altitude: number, heightAboveGround: number?, throttle: number, inGroundEffect: boolean?, inVortexRing: boolean?, angleOfAttack: number?, stalled: boolean?, stallWarning: boolean?, thrust: number?, afterburner: boolean?, assists: {level: boolean?, heightHold: boolean?, yawHold: boolean?, stallProtection: boolean?, coordinatedTurns: boolean?}}?
 	--- The fuel in the tank, from 0 to MaxFuel. (server only)
 	function GetFuel(self, vehicle: Entity): number
 	--- How much fuel the car burns each second while it is driven and moving (1 unless you change it). (server only)
@@ -1638,10 +1642,16 @@ declare extern type VehiclesService with
 	function GetHeadlightColor(self, vehicle: Entity): string?
 	--- The car's health, from 0 to MaxHealth. It only changes while health is on. (server only)
 	function GetHealth(self, vehicle: Entity): number
+	--- How far a motorcycle leans now, in degrees: positive leaning right, negative left, 0 upright. A motorcycle leans into the turn it makes, as far as its speed and the turn need, up to its max lean. nil for a vehicle that is not a motorcycle. Errors if the entity is not a vehicle or no longer exists. (server only)
+	function GetLeanAngle(self, vehicle: Entity): number?
 	--- The script's word on a light: "on", "off" or "auto" (the game decides). light is "head", "rear", "reverse", "left" or "right". Errors if the entity is not a car or no longer exists. (server only)
 	function GetLights(self, vehicle: Entity, light: string): string
 	--- The names of the car's liveries, in the order SetLivery counts them: the first name is livery index 0, the next is 1, and so on. A name is what the vehicle's creator called it, or "Livery 1", "Livery 2" and so on for one without a name. The list is empty for a car published with no liveries, for the built-in cars, and for an entity that is not a car. (server only)
 	function GetLiveries(self, vehicle: Entity): {string}
+	--- GetFlightInfo for the plane or helicopter the local player is flying, for a place that draws its own instruments. Nil while the local player is not flying one. (client only)
+	function GetLocalFlightInfo(self): {airspeed: number, verticalSpeed: number, altitude: number, heightAboveGround: number?, throttle: number, inGroundEffect: boolean?, inVortexRing: boolean?, angleOfAttack: number?, stalled: boolean?, stallWarning: boolean?, thrust: number?, afterburner: boolean?, assists: {level: boolean?, heightHold: boolean?, yawHold: boolean?, stallProtection: boolean?, coordinatedTurns: boolean?}}?
+	--- How far the motorcycle the local player is riding leans now, in degrees (Vehicles:GetLeanAngle's sign: positive right). nil while the local player is not riding a motorcycle. Works on a client script; read it every frame for a lean readout. (client only)
+	function GetLocalLeanAngle(self): number?
 	--- The speed of the vehicle the local player is driving, in centimeters per second (Vehicles:GetSpeed's unit; multiply by 0.036 for km/h): its whole velocity, so it is not negative in reverse. nil while the local player is not driving a vehicle. Works on a client script, where Vehicles:GetSpeed does not; read it every frame to draw a speedometer. (client only)
 	function GetLocalSpeed(self): number?
 	--- The throttle of the aircraft the local player is flying, from 0 to 1; for a helicopter it is the collective. nil while the local player is not flying a plane or a helicopter (a car has no throttle lever; read its speed instead). (client only)
@@ -1666,6 +1676,8 @@ declare extern type VehiclesService with
 	function GetParked(self, spawn: Entity): Entity?
 	--- Where someone stands to open one of the car's parts, where the car is now: position is on the ground beside the part, and yaw (degrees) the way they face it. In front of the hood, behind the trunk, a step out from a door. Use it to check that a player is at the part, or to walk an NPC there. Nil when the entity is not a car or the car does not have that part. (server only)
 	function GetPartStandSpot(self, vehicle: Entity, part: string): {position: Vector3, yaw: number}?
+	--- A hovercraft's slide assist scale (SetSlideAssist; 1 unless a script changed it), or nil for anything but a hovercraft. (server only)
+	function GetSlideAssist(self, vehicle: Entity): number?
 	--- The car's speed in centimeters per second, as the simulation reports it. Errors if the entity is not a car or no longer exists. (server only)
 	function GetSpeed(self, vehicle: Entity): number
 	--- The underglow color set with SetUnderglow as "#RRGGBB". Nil when the underglow is off or the entity is not a car. (server only)
@@ -1752,6 +1764,8 @@ declare extern type VehiclesService with
 	function SetPaintPreset(self, vehicle: Entity, layer: string, preset: string): boolean
 	--- Open or shut one of the car's parts: part is "driverDoor", "passengerDoor", "rearLeftDoor", "rearRightDoor", "hood" or "trunk". Without a player the part swings there by itself (a remote, a script's own timing). With a player, their character walks round the car to the part's stand spot (GetPartStandSpot), faces it and lifts or pushes it with their hands, the part moving with them; that works for the trunk, the hood and the rear doors, and passing a player for a front door is an error (a front door swings as someone gets in or out, and shuts behind them). If the walk cannot be made or is cut short (the player is too far to walk there, is blocked, or walks off), the part still opens or shuts, by itself. Either way it stays, and every player sees it, also one who joins later. The newest call for a part wins: shutting it while a player is still on the way to open it stops them. Returns false when the entity is not a car, the car does not have that part (see GetOpenableParts), or the player is not on foot and alive; returns true at once, with nobody walking, when the part is already open or shut as asked. Example: Interaction.Interacted:Connect(function(car, player, part) if part == "hood" or part == "trunk" then Vehicles:SetPartOpen(car, part, not Vehicles:IsPartOpen(car, part), player) end end) (server only)
 	function SetPartOpen(self, vehicle: Entity, part: string, open: boolean, player: Player?): boolean
+	--- How much a hovercraft's skirt holds its line in turns, as a scale on its own: 1 is the hovercraft as it was built, 0 lets it slide like a real hovercraft on ice, and up to 5 grips almost like a car (for an arcade level or a power-up). Clamped to 0..5; it stays until you set it again, and a new vehicle starts at 1. Returns false, and changes nothing, for anything but a hovercraft. (server only)
+	function SetSlideAssist(self, vehicle: Entity, scale: number): boolean
 	--- Neon underglow: color is "#RRGGBB", a glowing strip under the car and a soft glow on the ground beneath it (no real light, so it costs almost nothing). Nil turns it off. Every player sees the change. Returns false when the entity is not a car. (server only)
 	function SetUnderglow(self, vehicle: Entity, color: string?): boolean
 	--- Put the wheels called name on the car (see GetWheelOptions); "stock" takes the car's own wheels back. Every player sees the change, and the wheel wears the car's wheels paint color and finish. Looks only: driving does not change. Returns false when the entity is not a car, the car cannot swap, or name is not one of its options. (server only)

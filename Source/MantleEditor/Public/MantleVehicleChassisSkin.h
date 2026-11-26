@@ -155,7 +155,7 @@ enum class EMantleVehiclePartKind : uint8
 {
 	/** A wheel: it spins about the chassis's wheel center, so the part is moved onto that center. */
 	Wheel,
-	/** A motorcycle's front fork: it turns with the steering about the chassis's wheel center; the part is left where the model has it. */
+	/** A motorcycle's front fork, or a quad's handlebar (#376 step 9d): it turns with the steering; the part is left where the model has it. */
 	Fork,
 	/** A propeller or a rotor: it spins about its own hub, so the bone is moved to the part's hub. */
 	Spinner,

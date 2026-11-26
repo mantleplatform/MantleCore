@@ -152,6 +152,11 @@ FName FMantleVehicleChassisBuilder::FrontForkBoneName()
 	return FName(TEXT("fork_f"));
 }
 
+FName FMantleVehicleChassisBuilder::HandlebarBoneName()
+{
+	return FName(TEXT("handlebar"));
+}
+
 FName FMantleVehicleChassisBuilder::AileronBoneName(const bool bRight)
 {
 	return FName(bRight ? TEXT("aileron_r") : TEXT("aileron_l"));
@@ -202,11 +207,6 @@ const TCHAR* FMantleVehicleChassisBuilder::TrackMaterialId()
 	return TEXT("ast_mat_track");
 }
 
-FName FMantleVehicleChassisBuilder::HandlebarBoneName()
-{
-	return FName(TEXT("handlebar"));
-}
-
 FString FMantleVehicleChassisBuilder::PresetDirectory()
 {
 #if MANTLE_RUNTIME_IN_GAME
@@ -241,12 +241,22 @@ bool FMantleVehicleChassisBuilder::LoadPresetText(const FString& PresetId, FStri
 	{
 		return MantleChassisBuilderPrivate::Refuse(OutError, FString::Printf(TEXT("'%s' is not a vehicle preset id"), *PresetId));
 	}
-	const FString Path = FPaths::Combine(PresetDirectory(), PresetId + TEXT(".json"));
-	if (!FFileHelper::LoadFileToString(OutText, *Path))
+	// "motorcycle+600": the motorcycle preset with its 600 engine merged over it (#378).
+	FString FileId;
+	FString Engine;
+	FMantleChassisSpec::SplitPresetId(PresetId, FileId, Engine);
+	const FString Path = FPaths::Combine(PresetDirectory(), FileId + TEXT(".json"));
+	FString FileText;
+	if (!FFileHelper::LoadFileToString(FileText, *Path))
 	{
 		return MantleChassisBuilderPrivate::Refuse(OutError, FString::Printf(TEXT("the vehicle preset file %s could not be read"), *Path));
 	}
-	return true;
+	if (Engine.IsEmpty())
+	{
+		OutText = MoveTemp(FileText);
+		return true;
+	}
+	return FMantleChassisSpec::ApplyEngine(FileText, Engine, OutText, OutError);
 }
 
 bool FMantleVehicleChassisBuilder::ReadReference(const FString& PresetJsonText, FMantleVehicleChassisReference& OutReference, FString& OutError)
@@ -358,6 +368,16 @@ bool FMantleVehicleChassisBuilder::MakeAsset(const FMantleChassisSpec& Spec, FMa
 		Body.Bones.Add({ Spec.WheelBone(Index), Parent });
 		Body.ReferencePose.Add(Pose);
 		Asset.WheelPositions.Add(Center);
+	}
+
+	// A quad's rider (#376 step 9d): the handlebar is a bone of its own under the root, midway between the grips on the centerline, which the
+	// wheel anim instance turns by the steered wheels' mean steering. No wheel hangs from it and the physics asset has no body on it. A jet ski's
+	// handlebar is the same bone, placed at its steering wheel's hub below (#15).
+	if (!Spec.bCenterline && Spec.Rider.bSet && Spec.Type != EMantleChassisType::JetSki)
+	{
+		Body.Bones.Add({ HandlebarBoneName(), 0 });
+		Body.ReferencePose.Add(FTransform(FVector(0.5 * (Spec.Rider.LeftGrip.X + Spec.Rider.RightGrip.X), 0.0,
+			0.5 * (Spec.Rider.LeftGrip.Z + Spec.Rider.RightGrip.Z))));
 	}
 
 	// A plane's control surfaces and engines: a bone each under the root, posed at the surface's hinge (its aerofoil), so a surface turns about its own

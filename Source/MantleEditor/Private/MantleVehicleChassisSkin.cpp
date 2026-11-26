@@ -505,6 +505,10 @@ namespace MantleVehicleChassisSkinPrivate
 		{
 			return FText::FromString(TEXT("Front fork (turns when you steer)"));
 		}
+		if (Bone == TEXT("handlebar"))
+		{
+			return FText::FromString(TEXT("Handlebar (turns when you steer)"));
+		}
 		if (Bone == TEXT("aileron_l"))
 		{
 			return FText::FromString(TEXT("Left aileron (flap on the back of the left wing)"));
@@ -551,7 +555,7 @@ namespace MantleVehicleChassisSkinPrivate
 		case EMantleVehiclePartKind::Wheel:
 			return FText::FromString(TEXT("Spins as the vehicle rolls."));
 		case EMantleVehiclePartKind::Fork:
-			return FText::FromString(TEXT("Turns the front wheel with the steering."));
+			return FText::FromString(TEXT("Turns with the steering."));
 		case EMantleVehiclePartKind::Spinner:
 			return FText::FromString(TEXT("Spins while the vehicle has a driver."));
 		default:
@@ -789,8 +793,9 @@ TArray<FMantleVehiclePartSlot> FMantleVehicleChassisSkin::PartSlots(const FMantl
 			}
 			Slot.Kind = EMantleVehiclePartKind::Wheel;
 		}
-		else if (Name.StartsWith(TEXT("fork")))
+		else if (Name.StartsWith(TEXT("fork")) || Name == FMantleVehicleChassisBuilder::HandlebarBoneName().ToString())
 		{
+			// A bike's fork, or a quad's handlebar (#376 step 9d): it turns with the steering and its part stays where the model has it.
 			Slot.Kind = EMantleVehiclePartKind::Fork;
 		}
 		else if (Name.StartsWith(TEXT("aileron")) || Name == TEXT("elevator") || Name == TEXT("rudder"))
@@ -895,8 +900,13 @@ FMantleVehicleModelMap FMantleVehicleChassisSkin::SuggestMap(const TConstArrayVi
 		Pair(SlotByName(TEXT("rudder")), nullptr, nullptr, Bones([](const FString& Name) { return Has(Name, TEXT("rudder")); }), TArray<int32>());
 		Pair(nullptr, SlotByName(TEXT("aileron_l")), SlotByName(TEXT("aileron_r")), Bones([](const FString& Name) { return Has(Name, TEXT("aileron")); }), TArray<int32>());
 
+		// A quad's handlebar (#376 step 9d): a bone called a handlebar, or a steering bar.
+		Pair(SlotByName(TEXT("handlebar")), nullptr, nullptr, Bones([](const FString& Name)
+			{ return Has(Name, TEXT("handlebar")) || Has(Name, TEXT("handle_bar")) || (Has(Name, TEXT("steer")) && Has(Name, TEXT("bar"))); }), TArray<int32>());
+
 		// A front fork: a bone called a fork, or the front suspension.
-		if (const FMantleVehiclePartSlot* Fork = Slots.FindByPredicate([](const FMantleVehiclePartSlot& Slot) { return Slot.Kind == EMantleVehiclePartKind::Fork; }))
+		if (const FMantleVehiclePartSlot* Fork = Slots.FindByPredicate([](const FMantleVehiclePartSlot& Slot)
+			{ return Slot.Kind == EMantleVehiclePartKind::Fork && Slot.ChassisBone.ToString().StartsWith(TEXT("fork")); }))
 		{
 			const TArray<int32> Forks = Bones([](const FString& Name) { return Has(Name, TEXT("fork")) || (Has(Name, TEXT("susp")) && (Name.EndsWith(TEXT("_f")) || Has(Name, TEXT("front")))); });
 			if (Forks.Num() == 1)

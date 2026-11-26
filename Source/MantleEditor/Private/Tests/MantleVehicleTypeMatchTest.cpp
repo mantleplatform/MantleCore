@@ -98,7 +98,7 @@ bool FMantleVehicleTypeMatchModelsTest::RunTest(const FString& Parameters)
 
 	// Each model picked as its own type fits, whichever of the group's types was picked.
 	for (const TCHAR* Type : { TEXT("sedan"), TEXT("sports"), TEXT("limousine"), TEXT("pickup"), TEXT("van"), TEXT("truck"), TEXT("sixwheeler"), TEXT("compact"), TEXT("muscle"),
-		 TEXT("drift"), TEXT("supercar") })
+		 TEXT("drift"), TEXT("supercar"), TEXT("offroad"), TEXT("bus"), TEXT("atv") })
 	{
 		const FMantleVehicleTypeMatch Match = Check::Check(Car(), Type);
 		TestEqual(*FString::Printf(TEXT("a car fits %s (%s)"), Type, *Describe(Match)), Match.Verdict, EMantleVehicleTypeVerdict::Fits);

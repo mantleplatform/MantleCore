@@ -206,13 +206,14 @@ bool FMantleChassisPlaneAirframeTest::RunTest(const FString& Parameters)
 	const FMantleChassisBlock Tail = Plane.TailplaneBlock();
 	const FMantleChassisBlock Fin = Plane.FinBlock();
 	const FVector Hub = Plane.PropellerHub(0);
+	const double Blade = Plane.Aircraft.PropellerRadius;
 	const FExpected Expected[] = {
 		{ 0, Body.Min, Body.Max, TEXT("the fuselage on the root") },
 		{ 4, LeftHalf.Min, LeftHalf.Max, TEXT("the left half-wing on aileron_l") },
 		{ 5, RightHalf.Min, RightHalf.Max, TEXT("the right half-wing on aileron_r") },
 		{ 6, Tail.Min, Tail.Max, TEXT("the tailplane on the elevator") },
 		{ 7, Fin.Min, Fin.Max, TEXT("the fin on the rudder") },
-		{ 8, Hub + FVector(-3.0, -110.0, -110.0), Hub + FVector(3.0, 110.0, 110.0), TEXT("the propeller's cross on the propeller") },
+		{ 8, Hub + FVector(-3.0, -Blade, -Blade), Hub + FVector(3.0, Blade, Blade), TEXT("the propeller's cross on the propeller") },
 		{ 1, FVector(150.0, -14.0, 0.0), FVector(230.0, 14.0, 80.0), TEXT("the nose wheel") },
 		{ 2, FVector(-230.0, -174.0, 0.0), FVector(-150.0, -146.0, 80.0), TEXT("the left main") },
 		{ 3, FVector(-230.0, 146.0, 0.0), FVector(-150.0, 174.0, 80.0), TEXT("the right main") },
@@ -380,8 +381,8 @@ bool FMantleChassisJetSpecTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the nozzle's box runs from its exit to the fuselage's rear end, 0.7 of the fuselage's width square"),
 		Same(Nozzle.Min, FVector(-1000.0, -42.0, 158.0)) && Same(Nozzle.Max, FVector(-950.0, 42.0, 242.0)));
 	TestTrue(TEXT("an intake stands on each side of the fuselage, from the wing's leading edge forward"),
-		Same(Jet.IntakeBlock(false).Min, FVector(-140.0, -90.0, 155.0)) && Same(Jet.IntakeBlock(false).Max, FVector(160.0, -60.0, 245.0))
-		&& Same(Jet.IntakeBlock(true).Min, FVector(-140.0, 60.0, 155.0)) && Same(Jet.IntakeBlock(true).Max, FVector(160.0, 90.0, 245.0)));
+		Same(Jet.IntakeBlock(false).Min, FVector(-141.25, -90.0, 155.0)) && Same(Jet.IntakeBlock(false).Max, FVector(158.75, -60.0, 245.0))
+		&& Same(Jet.IntakeBlock(true).Min, FVector(-141.25, 60.0, 155.0)) && Same(Jet.IntakeBlock(true).Max, FVector(158.75, 90.0, 245.0)));
 
 	// A resized jet keeps it a jet: the nozzle grows with it, still behind the tail.
 	const FMantleChassisSpec Bigger = FMantleChassisSpec::Scaled(Jet, 1.3);
@@ -395,7 +396,7 @@ bool FMantleChassisJetSpecTest::RunTest(const FString& Parameters)
 	FMantleChassisSpec Plane;
 	if (LoadPlane(*this, Plane))
 	{
-		TestTrue(TEXT("the plane has a propeller"), Plane.Aircraft.bPropeller && Plane.Aircraft.PropellerRadius == 110.0 && Plane.Aircraft.PropellerRpm == 1200.0);
+		TestTrue(TEXT("the warbird has a propeller"), Plane.Aircraft.bPropeller && Plane.Aircraft.PropellerRadius == 170.0 && Plane.Aircraft.PropellerRpm == 1200.0);
 		TestTrue(TEXT("and its engine pushes from the hub, ahead of the nose"), Same(Plane.EngineLocation(0), Plane.PropellerHub(0)) && Plane.EngineLocation(0).X > Plane.BodyBlock().Max.X);
 	}
 	return true;
@@ -548,7 +549,7 @@ bool FMantleChassisJetPropellerOptionalTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	FMantleChassisSpec Spec;
-	const FString Unpropped = Plane.Replace(TEXT("\"propeller\": { \"radius\": 110, \"rpm\": 1200 },"), TEXT(""));
+	const FString Unpropped = Plane.Replace(TEXT("\"propeller\": { \"radius\": 97, \"rpm\": 2400 },"), TEXT(""));
 	TestNotEqual(TEXT("the plane's propeller block is taken out"), Unpropped, Plane);
 	TestTrue(*FString::Printf(TEXT("the plane without it reads (%s)"), *Error), FMantleChassisSpec::Parse(Unpropped, Spec, Error));
 	TestTrue(TEXT("as a jet"), Spec.Aircraft.bSet && !Spec.Aircraft.bPropeller);

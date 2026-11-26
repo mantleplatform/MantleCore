@@ -5,6 +5,8 @@
 #include "Dom/JsonValue.h"
 #include "HAL/FileManager.h"
 #include "Interfaces/IPluginManager.h"
+#include "MantleChassisSpec.h"
+#include "MantleVehicleChassisBuilder.h"
 #include "MantleVehicleSource.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -121,7 +123,7 @@ namespace MantleVehiclePresetPrivate
 		static const TSet<FString> Known = {
 			TEXT("mass"), TEXT("maxSpeed"), TEXT("centerOfMass"), TEXT("dragCoefficient"), TEXT("frontalArea"),
 			TEXT("engine/maxTorque"), TEXT("engine/maxRPM"), TEXT("engine/idleRPM"), TEXT("engine/torqueCurve"),
-			TEXT("engine/tractionControl"), TEXT("engine/engineBraking"),
+			TEXT("engine/tractionControl"), TEXT("engine/engineBraking"), TEXT("engine/displacement"),
 			TEXT("transmission/gearRatios"), TEXT("transmission/reverseRatio"), TEXT("transmission/finalDrive"),
 			TEXT("transmission/changeUpRPM"), TEXT("transmission/changeDownRPM"), TEXT("transmission/shiftTime"),
 			TEXT("suspension/maxRaise"), TEXT("suspension/maxDrop"), TEXT("suspension/springRate"),
@@ -362,9 +364,9 @@ FString FMantleVehiclePresets::CardSentence(const FMantleVehiclePreset& Preset)
 {
 	// The cards of the three tall road vehicles: each names its own kinds, so no two cards offer the same vehicle.
 	static const TPair<const TCHAR*, const TCHAR*> OwnLines[] = {
-		{ TEXT("pickup"), TEXT("A tall road vehicle with long suspension: pickups, SUVs and off-roaders.") },
+		{ TEXT("pickup"), TEXT("A tall road vehicle with long suspension: pickups and SUVs.") },
 		{ TEXT("van"), TEXT("A tall box-bodied van: delivery vans, minibuses and ambulances.") },
-		{ TEXT("truck"), TEXT("A large, heavy road vehicle: box trucks, campervans and small buses.") },
+		{ TEXT("truck"), TEXT("A large, heavy road vehicle: box trucks, delivery trucks and campervans.") },
 	};
 	for (const TPair<const TCHAR*, const TCHAR*>& Own : OwnLines)
 	{
@@ -392,7 +394,34 @@ FString FMantleVehiclePresets::CardSentence(const FMantleVehiclePreset& Preset)
 
 const FMantleVehiclePreset* FMantleVehiclePresets::Find(const FString& Id)
 {
-	return All().FindByPredicate([&Id](const FMantleVehiclePreset& Preset) { return Preset.Id == Id; });
+	FString FileId;
+	FString Engine;
+	FMantleChassisSpec::SplitPresetId(Id, FileId, Engine);
+	if (Engine.IsEmpty())
+	{
+		return All().FindByPredicate([&Id](const FMantleVehiclePreset& Preset) { return Preset.Id == Id; });
+	}
+	// #378: the type with one of its engines, read once and kept (game thread only, as All is).
+	static TMap<FString, TUniquePtr<FMantleVehiclePreset>> WithEngines;
+	if (const TUniquePtr<FMantleVehiclePreset>* Found = WithEngines.Find(Id))
+	{
+		return Found->Get();
+	}
+	FString Text;
+	FString Error;
+	TUniquePtr<FMantleVehiclePreset> Read = MakeUnique<FMantleVehiclePreset>();
+	if (!FMantleVehicleChassisBuilder::LoadPresetText(Id, Text, Error) || !Parse(Text, *Read, Error))
+	{
+		UE_LOG(LogMantleVehiclePreset, Warning, TEXT("The vehicle preset %s could not be read: %s"), *Id, *Error);
+		return nullptr;
+	}
+	Read->EngineId = Engine;
+	return WithEngines.Add(Id, MoveTemp(Read)).Get();
+}
+
+FString FMantleVehiclePresets::SelectorIdOf(const FName Preset, const FName PresetEngine)
+{
+	return PresetEngine.IsNone() ? Preset.ToString() : Preset.ToString() + TEXT("+") + PresetEngine.ToString();
 }
 
 bool FMantleVehiclePresets::Parse(const FString& Json, FMantleVehiclePreset& Out, FString& OutError)
@@ -474,6 +503,31 @@ bool FMantleVehiclePresets::Parse(const FString& Json, FMantleVehiclePreset& Out
 	if (Root->TryGetObjectField(TEXT("defaults"), Defaults) && Defaults)
 	{
 		Preset.Defaults = *Defaults;
+	}
+
+	// #378: the engines a type offers (a motorcycle's sizes) and the one it starts with.
+	Root->TryGetStringField(TEXT("defaultEngine"), Preset.DefaultEngine);
+	const TArray<TSharedPtr<FJsonValue>>* Engines = nullptr;
+	if (Root->TryGetArrayField(TEXT("engines"), Engines) && Engines)
+	{
+		for (const TSharedPtr<FJsonValue>& Entry : *Engines)
+		{
+			const TSharedPtr<FJsonObject>* Engine = nullptr;
+			FMantleVehiclePresetEngine Read;
+			if (!Entry.IsValid() || !Entry->TryGetObject(Engine) || !Engine || !(*Engine)->TryGetStringField(TEXT("id"), Read.Id) || Read.Id.IsEmpty()
+				|| !(*Engine)->TryGetStringField(TEXT("name"), Read.Name))
+			{
+				OutError = TEXT("an engine needs an id and a name");
+				return false;
+			}
+			(*Engine)->TryGetStringField(TEXT("description"), Read.Description);
+			Preset.Engines.Add(MoveTemp(Read));
+		}
+		if (!Preset.Engines.ContainsByPredicate([&Preset](const FMantleVehiclePresetEngine& E) { return E.Id == Preset.DefaultEngine; }))
+		{
+			OutError = TEXT("defaultEngine is not one of the engines");
+			return false;
+		}
 	}
 
 	const TSharedPtr<FJsonObject>* Ranges = nullptr;
@@ -596,6 +650,8 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 	Reader.Float(TEXT("brakes/frontShare"), T.BrakeFrontShare);
 	Reader.Bool(TEXT("engine/tractionControl"), T.bTractionControl);
 	Reader.Float(TEXT("engine/engineBraking"), T.EngineBraking);
+	// #378: the engine's size, from a motorcycle's engine pick; absent, the tuning keeps its own (0, not given).
+	Reader.Int(TEXT("engine/displacement"), T.EngineDisplacement);
 
 	Reader.Float(TEXT("tires/friction"), T.TireFriction);
 	if (Reader.Float(TEXT("tires/rearFriction"), T.TireRearFriction))
