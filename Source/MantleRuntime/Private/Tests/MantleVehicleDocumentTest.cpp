@@ -494,8 +494,8 @@ bool FMantleVehicleDocumentGoldenTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleDocumentTestPrivate;
 	const TArray<FString> Selectors = MantleVehicleDocumentTestPrivate::Selectors();
-	// The twelve presets at scale 1 and at 0.7.
-	TestEqual(TEXT("twelve presets, two sizes each"), Selectors.Num(), 24);
+	// The sixteen presets at scale 1 and at 0.7.
+	TestEqual(TEXT("sixteen presets, two sizes each"), Selectors.Num(), 32);
 	for (const FString& Selector : Selectors)
 	{
 		FMantleChassisSpec Spec;
@@ -699,6 +699,7 @@ bool FMantleVehicleDocumentGroundHandlingTest::RunTest(const FString& Parameters
 	const TArray<FVector2D> WantCurve = { FVector2D(0.0, 1.0), FVector2D(20.0, 0.8), FVector2D(25.0, 0.75), FVector2D(37.5, 0.53), FVector2D(56.0, 0.35),
 		FVector2D(75.0, 0.27), FVector2D(120.0, 0.24) };
 	int32 Grounded = 0;
+	int32 OwnRear = 0;
 	for (const FString& Selector : Selectors())
 	{
 		FMantleChassisSpec Spec;
@@ -716,10 +717,21 @@ bool FMantleVehicleDocumentGroundHandlingTest::RunTest(const FString& Parameters
 			continue;
 		}
 		++Grounded;
-		// The preset's one friction is the middle: the front gets 6/7 of it, the rear 8/7 (3.0 and 4.0 of a 3.5), and nothing else is touched.
+		// The preset's one friction is the middle: the front gets 6/7 of it, the rear 8/7 (3.0 and 4.0 of a 3.5), and nothing else is touched. A preset
+		// that sets its own rear grip (the drift car) keeps it, times the friction over the preset's own, so its resized car keeps the balance.
 		const double Friction = (Spec.Derived.IsSet() ? Spec.Derived.GetValue() : Spec.Archetype).TireFriction;
+		const TSharedPtr<FJsonObject>* PresetTires = nullptr;
+		double PresetRear = 0.0;
+		const bool bOwnRear = Spec.Defaults->TryGetObjectField(TEXT("tires"), PresetTires) && (*PresetTires)->TryGetNumberField(TEXT("rearFriction"), PresetRear);
+		const double WantRear = bOwnRear ? PresetRear * Friction / Spec.Archetype.TireFriction : Friction * 8.0 / 7.0;
+		OwnRear += bOwnRear ? 1 : 0;
 		TestTrue(*FString::Printf(TEXT("%s: the front grips 6/7 of the preset's friction (%g of %g)"), *Selector, D.TireFriction, Friction), FMath::IsNearlyEqual(D.TireFriction, Friction * 6.0 / 7.0, 1.0e-9));
-		TestTrue(*FString::Printf(TEXT("%s: the rear grips 8/7 of it (%g)"), *Selector, D.TireRearFriction), D.bTireRearFriction && FMath::IsNearlyEqual(D.TireRearFriction, Friction * 8.0 / 7.0, 1.0e-9));
+		TestTrue(*FString::Printf(TEXT("%s: the rear grips %s (%g, want %g)"), *Selector, bOwnRear ? TEXT("the preset's own, scaled with the friction") : TEXT("8/7 of it"), D.TireRearFriction, WantRear),
+			D.bTireRearFriction && FMath::IsNearlyEqual(D.TireRearFriction, WantRear, 1.0e-9));
+		if (bOwnRear)
+		{
+			TestTrue(*FString::Printf(TEXT("%s: its rear grips less than its front"), *Selector), D.TireRearFriction < D.TireFriction);
+		}
 		if (TestEqual(*FString::Printf(TEXT("%s: the steering curve has every point"), *Selector), D.SteeringSpeedCurve.Num(), WantCurve.Num()))
 		{
 			for (int32 Index = 0; Index < WantCurve.Num(); ++Index)
@@ -729,6 +741,7 @@ bool FMantleVehicleDocumentGroundHandlingTest::RunTest(const FString& Parameters
 		}
 	}
 	TestTrue(TEXT("the cars, the trucks and the six-wheeler were checked"), Grounded >= 12);
+	TestEqual(TEXT("the drift car at both sizes keeps its own rear grip, and no other preset has one"), OwnRear, 2);
 
 	// The reader refuses a malformed curve or a rear grip out of range.
 	auto Refuses = [this](const TCHAR* Name, const TCHAR* Expect, TFunctionRef<void(FJsonObject&)> Mutate)

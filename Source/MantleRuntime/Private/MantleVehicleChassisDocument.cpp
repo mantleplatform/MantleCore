@@ -908,8 +908,18 @@ void FMantleVehicleChassisDocument::ComposeGroundHandling(const FMantleChassisSp
 			}
 			return Clamped;
 		};
+		// A preset that sets its own rear grip (the drift car's, under its front) keeps it, scaled with the friction so a resized or re-gripped car
+		// keeps the preset's balance; every other preset's rear is RearTireGripShare of the friction.
+		double Rear = Friction * RearTireGripShare;
+		const TSharedPtr<FJsonObject>* PresetTires = nullptr;
+		double PresetRear = 0.0;
+		if (Spec.Defaults.IsValid() && Spec.Defaults->TryGetObjectField(TEXT("tires"), PresetTires) && PresetTires && (*PresetTires)->TryGetNumberField(TEXT("rearFriction"), PresetRear)
+			&& Spec.Archetype.TireFriction > 0.0)
+		{
+			Rear = PresetRear * Friction / Spec.Archetype.TireFriction;
+		}
 		Tires->SetNumberField(TEXT("friction"), Held(TEXT("tires/friction"), Friction * FrontTireGripShare));
-		Tires->SetNumberField(TEXT("rearFriction"), Held(TEXT("tires/rearFriction"), Friction * RearTireGripShare));
+		Tires->SetNumberField(TEXT("rearFriction"), Held(TEXT("tires/rearFriction"), Rear));
 	}
 }
 
