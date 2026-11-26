@@ -3967,14 +3967,25 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 	for (const float Ratio : T.GearRatios)
 	{
 		Gears.Add(VehicleNumber(Ratio));
-		// An electric car (#445) has one fixed reduction: its first ratio, nothing else.
-		if (T.bElectric) break;
+		// An electric car (#445) has one fixed reduction, and a belt drive one box after the belt: its first ratio, nothing else.
+		if (T.bElectric || T.bCvt) break;
 	}
 	Transmission->SetArrayField(TEXT("gearRatios"), Gears);
 	if (T.bElectric)
 	{
 		// It reverses through the same ratio and never shifts (#445): only the final drive.
 		Transmission->SetField(TEXT("finalDrive"), VehicleNumber(T.FinalDrive));
+	}
+	else if (T.bCvt)
+	{
+		// A belt drive (ATV follow-on): reverse and the final drive, and the belt. It never shifts: no change points or shift time.
+		Transmission->SetField(TEXT("reverseRatio"), VehicleNumber(T.ReverseRatio));
+		Transmission->SetField(TEXT("finalDrive"), VehicleNumber(T.FinalDrive));
+		TSharedRef<FJsonObject> Belt = MakeShared<FJsonObject>();
+		Belt->SetField(TEXT("lowRatio"), VehicleNumber(T.CvtLowRatio));
+		Belt->SetField(TEXT("highRatio"), VehicleNumber(T.CvtHighRatio));
+		Belt->SetField(TEXT("shiftRPM"), VehicleInteger(T.CvtShiftRPM));
+		Transmission->SetObjectField(TEXT("cvt"), Belt);
 	}
 	else
 	{
@@ -4693,8 +4704,32 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 		VehicleCheckRange(Subject, FString::Printf(TEXT("Gear Ratios %d"), Gear), TEXT("transmission/gearRatios/*"), T.GearRatios[Gear], OutIssues);
 	}
 	VehicleCheckRange(Subject, TEXT("Final Drive"), TEXT("transmission/finalDrive"), T.FinalDrive, OutIssues);
+	// A belt drive (ATV follow-on): one box after the belt, the belt's high ratio below its low one, the held rpm above idle and at most the red line.
+	// It never shifts, so it has no shift points or shift time to check.
+	if (T.bCvt && !T.bElectric)
+	{
+		if (T.GearRatios.Num() != 1)
+		{
+			AddError(FString::Printf(TEXT("has a belt drive with %d gears; a belt drive has one box after the belt."), T.GearRatios.Num()),
+				TEXT("Give Gear Ratios one entry (Final Drive times it is the box after the belt)."));
+		}
+		VehicleCheckRange(Subject, TEXT("Reverse Ratio"), TEXT("transmission/reverseRatio"), T.ReverseRatio, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Belt Low Ratio"), TEXT("transmission/cvt/lowRatio"), T.CvtLowRatio, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Belt High Ratio"), TEXT("transmission/cvt/highRatio"), T.CvtHighRatio, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Belt Held RPM"), TEXT("transmission/cvt/shiftRPM"), T.CvtShiftRPM, OutIssues);
+		if (T.CvtHighRatio >= T.CvtLowRatio)
+		{
+			AddError(FString::Printf(TEXT("has a belt whose high ratio (%g) is not below its low ratio (%g)."), T.CvtHighRatio, T.CvtLowRatio),
+				TEXT("Make Belt High Ratio the smaller one."));
+		}
+		if (T.CvtShiftRPM <= T.IdleRPM || T.CvtShiftRPM > T.MaxRPM)
+		{
+			AddError(FString::Printf(TEXT("holds %d RPM on its belt, not above idle (%d) and at most Max RPM (%d)."), T.CvtShiftRPM, T.IdleRPM, T.MaxRPM),
+				TEXT("Set Belt Held RPM between Idle RPM and Max RPM (usually the power peak)."));
+		}
+	}
 	// An electric car (#445) has no reverse ratio, shift points or shift time.
-	if (!T.bElectric)
+	else if (!T.bElectric)
 	{
 		VehicleCheckRange(Subject, TEXT("Reverse Ratio"), TEXT("transmission/reverseRatio"), T.ReverseRatio, OutIssues);
 		const int32 ChangeUp = T.ChangeUpRPM > 0 ? T.ChangeUpRPM : static_cast<int32>(T.MaxRPM * FMantleVehicleConverter::DefaultChangeUpFraction);

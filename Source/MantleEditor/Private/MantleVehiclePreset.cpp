@@ -125,6 +125,7 @@ namespace MantleVehiclePresetPrivate
 			TEXT("engine/drive"), TEXT("engine/peakPower"), TEXT("engine/regenBraking"), TEXT("engine/batteryCapacity"),
 			TEXT("transmission/gearRatios"), TEXT("transmission/reverseRatio"), TEXT("transmission/finalDrive"),
 			TEXT("transmission/changeUpRPM"), TEXT("transmission/changeDownRPM"), TEXT("transmission/shiftTime"),
+			TEXT("transmission/cvt/lowRatio"), TEXT("transmission/cvt/highRatio"), TEXT("transmission/cvt/shiftRPM"),
 			TEXT("suspension/maxRaise"), TEXT("suspension/maxDrop"), TEXT("suspension/springRate"),
 			TEXT("suspension/springPreload"), TEXT("suspension/damping"),
 			TEXT("steering/maxAngle"), TEXT("steering/ackermann"), TEXT("steering/speedCurve"),
@@ -600,6 +601,11 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 	Reader.Int(TEXT("transmission/changeDownRPM"), T.ChangeDownRPM);
 	// #376: each gear change's time, part of the car; absent, the tuning keeps its own (0.5 s).
 	Reader.Float(TEXT("transmission/shiftTime"), T.ShiftTime);
+	// ATV follow-on: a belt drive. A preset sets it whole: one without a belt makes the vehicle geared again.
+	T.bCvt = Reader.Find(TEXT("transmission/cvt/lowRatio")).IsValid();
+	Reader.Float(TEXT("transmission/cvt/lowRatio"), T.CvtLowRatio);
+	Reader.Float(TEXT("transmission/cvt/highRatio"), T.CvtHighRatio);
+	Reader.Int(TEXT("transmission/cvt/shiftRPM"), T.CvtShiftRPM);
 
 	Reader.Float(TEXT("suspension/maxRaise"), T.SuspensionMaxRaise);
 	Reader.Float(TEXT("suspension/maxDrop"), T.SuspensionMaxDrop);

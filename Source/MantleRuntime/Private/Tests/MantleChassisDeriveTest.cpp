@@ -841,4 +841,55 @@ bool FMantleChassisDeriveHoldsAreVisibleTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleChassisDeriveKeepsTheBeltTest,
+	"Mantle.Vehicle.Chassis.DeriveKeepsTheBelt",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleChassisDeriveKeepsTheBeltTest::RunTest(const FString& Parameters)
+{
+	// ATV follow-on: a resized belt drive keeps its belt (its ratios and held rpm are the belt's, not the size's) and its one gear, and has no change
+	// points; its final drive follows the derive's rule, as every car's does.
+	auto Transmission = [this](const TCHAR* Selector) -> TSharedPtr<FJsonObject>
+	{
+		FMantleChassisSpec Spec;
+		FString Error;
+		TSharedPtr<FJsonObject> Json;
+		if (!TestTrue(*FString::Printf(TEXT("%s loads (%s)"), Selector, *Error), FMantleVehicleChassisBuilder::LoadSpec(Selector, Spec, Error))
+			|| !TestTrue(*FString::Printf(TEXT("%s: the document is JSON"), Selector),
+				FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(FMantleChassisSpec::ComposeDocument(Spec)), Json) && Json.IsValid()))
+		{
+			return nullptr;
+		}
+		const TSharedPtr<FJsonObject>* Object = nullptr;
+		return Json->TryGetObjectField(TEXT("transmission"), Object) && Object ? *Object : nullptr;
+	};
+	const TSharedPtr<FJsonObject> Full = Transmission(TEXT("atv"));
+	const TSharedPtr<FJsonObject> Small = Transmission(TEXT("atv@0.7"));
+	if (!TestTrue(TEXT("both have a transmission"), Full.IsValid() && Small.IsValid()))
+	{
+		return true;
+	}
+	for (const TSharedPtr<FJsonObject>& Box : { Full, Small })
+	{
+		TestFalse(TEXT("a belt drive has no change-up rpm"), Box->HasField(TEXT("changeUpRPM")));
+		TestFalse(TEXT("a belt drive has no change-down rpm"), Box->HasField(TEXT("changeDownRPM")));
+		TestEqual(TEXT("one gear after the belt"), Box->GetArrayField(TEXT("gearRatios")).Num(), 1);
+	}
+	const TSharedPtr<FJsonObject>* FullBelt = nullptr;
+	const TSharedPtr<FJsonObject>* SmallBelt = nullptr;
+	if (TestTrue(TEXT("both keep the belt"), Full->TryGetObjectField(TEXT("cvt"), FullBelt) && Small->TryGetObjectField(TEXT("cvt"), SmallBelt)))
+	{
+		for (const TCHAR* Key : { TEXT("lowRatio"), TEXT("highRatio"), TEXT("shiftRPM") })
+		{
+			TestEqual(*FString::Printf(TEXT("the belt's %s doesn't follow the size"), Key), (*SmallBelt)->GetNumberField(Key), (*FullBelt)->GetNumberField(Key));
+		}
+	}
+	TestEqual(TEXT("the gear after the belt doesn't follow the size"), Small->GetArrayField(TEXT("gearRatios"))[0]->AsNumber(),
+		Full->GetArrayField(TEXT("gearRatios"))[0]->AsNumber());
+	// The final drive is the derive's, by the rule every car's follows (DeriveIsDeterministic and the derive goldens hold its number).
+	TestTrue(TEXT("the final drive is there"), Small->GetNumberField(TEXT("finalDrive")) > 0.0);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

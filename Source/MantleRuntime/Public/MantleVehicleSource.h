@@ -419,16 +419,36 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	float FinalDrive = 3.5f;
 
 	/** 0: 85% of Max RPM. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0", ClampMax = "20000", EditCondition = "!bElectric"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0", ClampMax = "20000", EditCondition = "!bElectric && !bCvt"))
 	int32 ChangeUpRPM = 0;
 
 	/** 0: 40% of Max RPM. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0", ClampMax = "20000", EditCondition = "!bElectric"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0", ClampMax = "20000", EditCondition = "!bElectric && !bCvt"))
 	int32 ChangeDownRPM = 0;
 
 	/** Seconds each gear change takes (transmission.shiftTime), with no drive while it shifts. 0.5 is Epic's default. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0.05", ClampMax = "2", EditCondition = "!bElectric"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0.05", ClampMax = "2", EditCondition = "!bElectric && !bCvt"))
 	float ShiftTime = 0.5f;
+
+	/**
+	 * A belt drive (transmission.cvt, as on ATVs and scooters): the engine holds Belt Held RPM at full throttle while the belt slides from its low ratio
+	 * to its high one, and it never shifts. Gear Ratios then has one entry, the box after the belt (times Final Drive); Change Up/Down RPM and Shift Time
+	 * aren't used. Combustion engines only.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (EditCondition = "!bElectric", DisplayName = "Belt Drive (CVT)"))
+	bool bCvt = false;
+
+	/** The belt's ratio pulling away (the most pull). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "1.5", ClampMax = "6", EditCondition = "bCvt && !bElectric", DisplayName = "Belt Low Ratio"))
+	float CvtLowRatio = 3.1f;
+
+	/** The belt's ratio at speed, below the low one. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0.3", ClampMax = "1.5", EditCondition = "bCvt && !bElectric", DisplayName = "Belt High Ratio"))
+	float CvtHighRatio = 0.75f;
+
+	/** The rpm the engine holds at full throttle while the belt shifts (usually its power peak). Above idle, at most Max RPM. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "1000", ClampMax = "20000", EditCondition = "bCvt && !bElectric", DisplayName = "Belt Held RPM"))
+	int32 CvtShiftRPM = 6500;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Suspension", meta = (ClampMin = "0", ClampMax = "50", Units = "cm"))
 	float SuspensionMaxRaise = 10.f;

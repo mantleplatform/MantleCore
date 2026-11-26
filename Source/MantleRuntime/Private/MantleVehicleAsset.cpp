@@ -60,6 +60,9 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("transmission/changeUpRPM"), 500.0, 20000.0 },
 		{ TEXT("transmission/changeDownRPM"), 300.0, 20000.0 },
 		{ TEXT("transmission/shiftTime"), 0.05, 2.0 },
+		{ TEXT("transmission/cvt/lowRatio"), 1.5, 6.0 },
+		{ TEXT("transmission/cvt/highRatio"), 0.3, 1.5 },
+		{ TEXT("transmission/cvt/shiftRPM"), 1000.0, 20000.0 },
 		{ TEXT("suspension/maxRaise"), 0.0, 50.0 },
 		{ TEXT("suspension/maxDrop"), 0.0, 50.0 },
 		{ TEXT("suspension/springRate"), 1.0, 5000.0 },
@@ -556,6 +559,15 @@ namespace MantleVehicleAssetPrivate
 		if (D.bElectric && D.GearRatios.Num() != 1)
 		{
 			return P.Fail(TEXT("/transmission/gearRatios"), FString::Printf(TEXT("has %d gears; an electric motor has one fixed reduction"), D.GearRatios.Num()));
+		}
+		// A belt drive (ATV follow-on): its high ratio is the lower one, and it holds an rpm above idle and no higher than the red line.
+		if (D.bCvt && D.CvtHighRatio >= D.CvtLowRatio)
+		{
+			return P.Fail(TEXT("/transmission/cvt/highRatio"), FString::Printf(TEXT("is %g, not below lowRatio %g"), D.CvtHighRatio, D.CvtLowRatio));
+		}
+		if (D.bCvt && (D.CvtShiftRPM <= D.IdleRPM || D.CvtShiftRPM > D.MaxRPM))
+		{
+			return P.Fail(TEXT("/transmission/cvt/shiftRPM"), FString::Printf(TEXT("is %d, not above idle %d and at most maxRPM %d"), D.CvtShiftRPM, D.IdleRPM, D.MaxRPM));
 		}
 		if (D.ChangeUpRPM > D.MaxRPM || D.ChangeDownRPM >= D.ChangeUpRPM)
 		{
@@ -2367,6 +2379,35 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 			D.ReverseRatio = Ratio;
 		}
 		P.Number(Transmission, TEXT("/transmission"), TEXT("finalDrive"), TEXT("transmission/finalDrive"), D.FinalDrive);
+		D.ChangeUpRPM = D.MaxRPM;
+		D.ChangeDownRPM = 0;
+		D.ShiftTime = 0.0;
+	}
+	// A belt drive (ATV follow-on): the one gear after the belt, the final drive and reverse, and the belt. It never shifts, so the change points are
+	// its red line and none, as an electric car's.
+	else if (P.Ok() && !D.bElectric && P.Object(Root, TEXT(""), TEXT("transmission"), Transmission) && Transmission->HasField(TEXT("cvt")))
+	{
+		TSharedPtr<FJsonObject> Belt;
+		const TArray<TSharedPtr<FJsonValue>>* Gears = nullptr;
+		double Ratio = 0.0;
+		if (P.Keys(Transmission, TEXT("/transmission"), { TEXT("gearRatios"), TEXT("reverseRatio"), TEXT("finalDrive"), TEXT("cvt") },
+				{ TEXT("gearRatios"), TEXT("reverseRatio"), TEXT("finalDrive"), TEXT("cvt") })
+			&& P.Array(Transmission->TryGetField(TEXT("gearRatios")), TEXT("/transmission/gearRatios"), 1, 1, Gears)
+			&& P.NumberValue((*Gears)[0], TEXT("/transmission/gearRatios/0"), TEXT("transmission/gearRatios/*"), false, Ratio))
+		{
+			D.GearRatios.Add(static_cast<float>(Ratio));
+		}
+		P.Number(Transmission, TEXT("/transmission"), TEXT("reverseRatio"), TEXT("transmission/reverseRatio"), D.ReverseRatio);
+		P.Number(Transmission, TEXT("/transmission"), TEXT("finalDrive"), TEXT("transmission/finalDrive"), D.FinalDrive);
+		if (P.Ok() && P.Object(Transmission, TEXT("/transmission"), TEXT("cvt"), Belt)
+			&& P.Keys(Belt, TEXT("/transmission/cvt"), { TEXT("lowRatio"), TEXT("highRatio"), TEXT("shiftRPM") },
+				{ TEXT("lowRatio"), TEXT("highRatio"), TEXT("shiftRPM") }))
+		{
+			D.bCvt = true;
+			P.Number(Belt, TEXT("/transmission/cvt"), TEXT("lowRatio"), TEXT("transmission/cvt/lowRatio"), D.CvtLowRatio);
+			P.Number(Belt, TEXT("/transmission/cvt"), TEXT("highRatio"), TEXT("transmission/cvt/highRatio"), D.CvtHighRatio);
+			P.Int(Belt, TEXT("/transmission/cvt"), TEXT("shiftRPM"), TEXT("transmission/cvt/shiftRPM"), D.CvtShiftRPM);
+		}
 		D.ChangeUpRPM = D.MaxRPM;
 		D.ChangeDownRPM = 0;
 		D.ShiftTime = 0.0;

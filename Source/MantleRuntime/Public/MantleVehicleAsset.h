@@ -502,6 +502,12 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	int32 ChangeDownRPM = 0;
 	/** transmission.shiftTime: seconds each gear change takes (no drive while it shifts). Absent: 0.5, Epic's GearChangeTime default. */
 	double ShiftTime = 0.5;
+	/** transmission.cvt (ATV follow-on): a belt drive. The engine holds CvtShiftRPM at full throttle (idle at a closed one) while the belt slides from
+	 *  CvtLowRatio to CvtHighRatio; GearRatios has the one gear after the belt, and it never shifts (ChangeUpRPM MaxRPM, ChangeDownRPM 0). */
+	bool bCvt = false;
+	double CvtLowRatio = 0.0;
+	double CvtHighRatio = 0.0;
+	int32 CvtShiftRPM = 0;
 
 	double SuspensionMaxRaise = 10.0;
 	double SuspensionMaxDrop = 10.0;

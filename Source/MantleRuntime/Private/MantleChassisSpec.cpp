@@ -799,7 +799,8 @@ FString FMantleChassisSpec::ComposeDocument(const FMantleChassisSpec& Spec, TArr
 	const TSharedPtr<FJsonObject> Transmission = ChildObject(Doc, TEXT("transmission"));
 	SetDefault(Transmission, TEXT("reverseRatio"), DefaultReverseRatio);
 	double RedlineRpm = 0.0;
-	if (Engine->TryGetNumberField(TEXT("maxRPM"), RedlineRpm))
+	// A belt drive (transmission.cvt, ATV follow-on) never shifts: it has no change points.
+	if (!Transmission->HasField(TEXT("cvt")) && Engine->TryGetNumberField(TEXT("maxRPM"), RedlineRpm))
 	{
 		SetDefault(Transmission, TEXT("changeUpRPM"), FMath::FloorToDouble(RedlineRpm * 0.85));
 		SetDefault(Transmission, TEXT("changeDownRPM"), FMath::FloorToDouble(RedlineRpm * 0.4));

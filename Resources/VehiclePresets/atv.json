@@ -3,7 +3,7 @@
   "id": "atv",
   "name": "ATV (quad bike)",
   "description": "A four-wheeled quad bike: ATVs, farm quads and sport quads. The rider sits astride it and steers by the handlebars, all four wheels pull, and it is light, narrow and nimble off the road.",
-  "comment": "A vehicle preset (#728); see sedan.json for the format. The real machine is a Polaris Sportsman 570 (#376 step 9d), from Polaris's published specs: 567 cc ProStar single, 44 hp, an automatic PVT (a CVT) with on-demand AWD, 318 kg (701 lb) estimated dry weight plus about 12 kg of fuel, 128.3 cm (50.5 in) wheelbase, 210.8 x 121.9 x 119.4 cm, 29.2 cm ground clearance, an 84.5 cm seat, 25 x 8-12 front and 25 x 10-12 rear tires (31.75 cm radius) and 20.8 / 24.1 cm of travel. No instrumented test was found, so it is reported, not judged. Its rider straddles it on a motorcycle seat (chassis.rider): a quad's, whose four wheels steer themselves and whose grips ride a handlebar bone between them (#376 step 9d). ABS and traction control are off (real quads have neither; Joshua 2026-11-25), and both axles drive all the time. Estimates: the torque (52 Nm at 5500 rpm, 48 at the 6500 rpm power peak), the 7000 rpm limit, the CVT as six close steps holding the engine near its peak with a 0.05 s change, the ~90 km/h top speed (the governor), the 97 cm track, the 45/55 split, the drag and frontal area, the 110 cm body, the handlebar, footboards and seat, and a 0.65 g grip on asphalt (knobby tires): friction 0.9 (1.0 cornered at 0.725 g). The centre of mass sits at the car type's stability bound (42 cm; a real quad's is nearer 50, so this one tips less easily). Springs, damping, brakes and engine braking follow steps 7-9's rules, with springs for a 1.8 Hz ride with a rider on board. Its tire forces act at the wheel centres, not the contact patch as a car's do: at the patch the light, narrow quad rocked side to side at rest.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format. The real machine is a Polaris Sportsman 570 (#376 step 9d), from Polaris's published specs: 567 cc ProStar single, 44 hp, an automatic PVT (a CVT) with on-demand AWD, 318 kg (701 lb) estimated dry weight plus about 12 kg of fuel, 128.3 cm (50.5 in) wheelbase, 210.8 x 121.9 x 119.4 cm, 29.2 cm ground clearance, an 84.5 cm seat, 25 x 8-12 front and 25 x 10-12 rear tires (31.75 cm radius) and 20.8 / 24.1 cm of travel. No instrumented test was found, so it is reported, not judged. Its rider straddles it on a motorcycle seat (chassis.rider): a quad's, whose four wheels steer themselves and whose grips ride a handlebar bone between them (#376 step 9d). ABS and traction control are off (real quads have neither; Joshua 2026-11-25), and both axles drive all the time. Its belt drive (transmission.cvt, ATV follow-on) is a real CVT: the engine holds 6500 rpm at full throttle while the belt slides from 3.1 to 0.75, then the EBS high-range box, 11.12:1 in Polaris's manual (x 32 / 31.75 for our wheel = 11.21, split as gear 1.2 x final drive 9.34 to stay under the 10 limit), and reverse 21.74 / 11.12 x 1.2 = 2.346. The low ratio is worked out from Polaris's ~3,000 rpm at 3 mph in low range (generic Polaris manual), the high one from the ~93 km/h the blogs give at the shift rpm. Estimates: the torque (52 Nm at 5500 rpm, 48 at the 6500 rpm power peak, which the belt holds), the 7000 rpm limit, the ~90 km/h top speed (the governor), the 97 cm track, the 45/55 split, the drag and frontal area, the 110 cm body, the handlebar, footboards and seat, and a 0.65 g grip on asphalt (knobby tires): friction 0.9 (1.0 cornered at 0.725 g). The centre of mass sits at the car type's stability bound (42 cm; a real quad's is nearer 50, so this one tips less easily). Springs, damping, brakes and engine braking follow steps 7-9's rules, with springs for a 1.8 Hz ride with a rider on board. Its tire forces act at the wheel centres, not the contact patch as a car's do: at the patch the light, narrow quad rocked side to side at rest.",
   "movementType": "wheeled",
   "publishable": true,
   "type": "car",
@@ -63,12 +63,10 @@
       "engineBraking": 0.007
     },
     "transmission": {
-      "gearRatios": [3.4, 2.4, 1.8, 1.4, 1.15, 1.0],
-      "reverseRatio": 3.4,
-      "finalDrive": 8.6,
-      "changeUpRPM": 6500,
-      "changeDownRPM": 4000,
-      "shiftTime": 0.05
+      "gearRatios": [1.2],
+      "reverseRatio": 2.346,
+      "finalDrive": 9.34,
+      "cvt": { "lowRatio": 3.1, "highRatio": 0.75, "shiftRPM": 6500 }
     },
     "suspension": {
       "maxRaise": 10,
@@ -103,7 +101,9 @@
     "engine/maxRPM": [5000, 12000],
     "engine/idleRPM": [800, 1800],
     "engine/engineBraking": [0, 0.1],
-    "transmission/shiftTime": [0.05, 1],
+    "transmission/cvt/lowRatio": [2, 4.5],
+    "transmission/cvt/highRatio": [0.5, 1.2],
+    "transmission/cvt/shiftRPM": [4000, 8000],
     "suspension/maxRaise": [3, 25],
     "suspension/maxDrop": [3, 25],
     "suspension/springRate": [30, 600],
