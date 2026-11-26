@@ -92,7 +92,7 @@
       "idleRPM": 1300,
       "torqueCurve": [[0, 0.85], [8700, 0.85], [10500, 1], [14500, 0.93], [16500, 0.79]],
       "tractionControl": true,
-      "engineBraking": 0.0039
+      "engineBraking": 0.0084
     },
     "transmission": {
       "gearRatios": [5.355, 4.146, 3.456, 2.993, 2.666, 2.384],
@@ -104,23 +104,23 @@
     },
     "suspension": {
       "maxRaise": 8.1,
-      "maxDrop": 8.1,
-      "springRate": 307,
+      "maxDrop": 10.0,
+      "springRate": 180,
       "springPreload": 50,
-      "damping": 0.5
+      "damping": 0.38
     },
     "steering": {
       "maxAngle": 40,
       "ackermann": false
     },
     "brakes": {
-      "brakeTorque": 780,
-      "handbrakeTorque": 390,
+      "brakeTorque": 610,
+      "handbrakeTorque": 305,
       "abs": true,
       "frontShare": 0.75
     },
     "tires": {
-      "friction": 1.8
+      "friction": 2.0
     },
     "camera": {
       "armLength": 380,
@@ -165,7 +165,7 @@
           "idleRPM": 1400,
           "torqueCurve": [[0, 0.85], [5400, 0.85], [8000, 1], [9000, 0.941], [11000, 0.8]],
           "tractionControl": false,
-          "engineBraking": 0.0031
+          "engineBraking": 0.0068
         },
         "transmission": {
           "gearRatios": [8.618, 5.704, 4.149, 3.477, 2.911, 2.555],
@@ -176,10 +176,17 @@
           "shiftTime": 0.25
         },
         "brakes": {
-          "brakeTorque": 660,
-          "handbrakeTorque": 330,
+          "brakeTorque": 520,
+          "handbrakeTorque": 260,
           "abs": true,
           "frontShare": 0.75
+        },
+        "suspension": {
+          "maxRaise": 8.1,
+          "maxDrop": 10.5,
+          "springRate": 148,
+          "springPreload": 50,
+          "damping": 0.31
         }
       },
       "chassis": {
@@ -207,7 +214,7 @@
           "idleRPM": 1300,
           "torqueCurve": [[0, 0.85], [6400, 0.85], [9000, 1], [10750, 0.93], [12250, 0.791]],
           "tractionControl": false,
-          "engineBraking": 0.0016
+          "engineBraking": 0.0043
         },
         "transmission": {
           "gearRatios": [7.607, 5.24, 4.056, 3.381, 2.94, 2.593],
@@ -218,10 +225,17 @@
           "shiftTime": 0.25
         },
         "brakes": {
-          "brakeTorque": 740,
-          "handbrakeTorque": 370,
+          "brakeTorque": 570,
+          "handbrakeTorque": 285,
           "abs": true,
           "frontShare": 0.75
+        },
+        "suspension": {
+          "maxRaise": 8.1,
+          "maxDrop": 10.3,
+          "springRate": 166,
+          "springPreload": 50,
+          "damping": 0.35
         }
       },
       "chassis": {
@@ -249,7 +263,7 @@
           "idleRPM": 1300,
           "torqueCurve": [[0, 0.85], [8700, 0.85], [10500, 1], [14500, 0.93], [16500, 0.79]],
           "tractionControl": true,
-          "engineBraking": 0.0039
+          "engineBraking": 0.0084
         },
         "transmission": {
           "gearRatios": [5.355, 4.146, 3.456, 2.993, 2.666, 2.384],
@@ -260,10 +274,17 @@
           "shiftTime": 0.15
         },
         "brakes": {
-          "brakeTorque": 780,
-          "handbrakeTorque": 390,
+          "brakeTorque": 610,
+          "handbrakeTorque": 305,
           "abs": true,
           "frontShare": 0.75
+        },
+        "suspension": {
+          "maxRaise": 8.1,
+          "maxDrop": 10.0,
+          "springRate": 180,
+          "springPreload": 50,
+          "damping": 0.38
         }
       },
       "chassis": {
@@ -291,7 +312,7 @@
           "idleRPM": 1250,
           "torqueCurve": [[0, 0.85], [8100, 0.85], [11500, 1], [13500, 0.92], [14500, 0.782]],
           "tractionControl": true,
-          "engineBraking": 0.0055
+          "engineBraking": 0.0121
         },
         "transmission": {
           "gearRatios": [4.248, 3.556, 3.01, 2.58, 2.257, 2.042],
@@ -302,10 +323,17 @@
           "shiftTime": 0.08
         },
         "brakes": {
-          "brakeTorque": 820,
-          "handbrakeTorque": 410,
+          "brakeTorque": 650,
+          "handbrakeTorque": 325,
           "abs": true,
           "frontShare": 0.75
+        },
+        "suspension": {
+          "maxRaise": 8.1,
+          "maxDrop": 9.9,
+          "springRate": 189,
+          "springPreload": 50,
+          "damping": 0.4
         }
       },
       "chassis": {
@@ -333,7 +361,7 @@
           "idleRPM": 850,
           "torqueCurve": [[0, 0.85], [3200, 0.85], [3250, 1], [5250, 0.784], [5500, 0.667]],
           "tractionControl": true,
-          "engineBraking": 0.0148
+          "engineBraking": 0.0331
         },
         "transmission": {
           "gearRatios": [4.515, 3.129, 2.324, 1.882, 1.603, 1.353],
@@ -344,8 +372,8 @@
           "shiftTime": 0.3
         },
         "brakes": {
-          "brakeTorque": 1580,
-          "handbrakeTorque": 790,
+          "brakeTorque": 1180,
+          "handbrakeTorque": 590,
           "abs": true,
           "frontShare": 0.75
         }
