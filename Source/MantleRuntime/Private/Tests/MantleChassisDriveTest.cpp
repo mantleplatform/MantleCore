@@ -102,19 +102,24 @@ bool FMantleChassisDriveChoiceTest::RunTest(const FString& Parameters)
 					DrivenCount(Chosen), Plain.EngineBraking, DrivenCount(Plain)),
 					FMath::IsNearlyEqual(Chosen.EngineBraking * DrivenCount(Chosen), Plain.EngineBraking * DrivenCount(Plain), 1e-6));
 			}
-			// Resized after the choice, the derived handling carries the scale once (not twice).
+			// Resized after the choice, the derived handling carries the scale once (not twice). Derive rounds each number to six significant digits
+			// (RoundSignificant), so the two agree to that: 1e-5 of the car-wide value (the six-wheeler's 4/6 left 2e-6 over an absolute 1e-6).
 			const FMantleChassisSpec Big = FMantleChassisSpec::Scaled(Spec, 1.3);
 			const FMantleChassisSpec BigPlain = FMantleChassisSpec::Scaled(Base, 1.3);
 			FComposed BigChosen, BigBase;
 			if (Compose(Big, BigChosen) && Compose(BigPlain, BigBase) && BigBase.EngineBraking > 0.0)
 			{
-				TestTrue(*FString::Printf(TEXT("%s@1.3: drive %d scales engine braking once"), Case.Id, int32(Drive)),
-					FMath::IsNearlyEqual(BigChosen.EngineBraking * DrivenCount(BigChosen), BigBase.EngineBraking * DrivenCount(BigBase), 1e-6));
+				const double CarWide = BigBase.EngineBraking * DrivenCount(BigBase);
+				TestTrue(*FString::Printf(TEXT("%s@1.3: drive %d scales engine braking once (%.9g x %d vs %.9g x %d)"), Case.Id, int32(Drive), BigChosen.EngineBraking,
+					DrivenCount(BigChosen), BigBase.EngineBraking, DrivenCount(BigBase)),
+					FMath::IsNearlyEqual(BigChosen.EngineBraking * DrivenCount(BigChosen), CarWide, 1e-5 * CarWide));
 			}
 		}
 	}
-	// Not offered where the drive isn't a choice: a bike on its centerline, a plane, a helicopter, a hovercraft.
-	for (const TCHAR* Id : { TEXT("motorcycle"), TEXT("plane"), TEXT("helicopter"), TEXT("hovercraft") })
+	// Not offered where the drive isn't a choice (decision 46: wheeled types with a driven axle only): a bike on its centerline, a bicycle, planes, helicopters,
+	// a hovercraft, a boat and a jet ski (their layouts have a driven axle), the tracked types and the trailers (no engine).
+	for (const TCHAR* Id : { TEXT("motorcycle"), TEXT("bicycle"), TEXT("plane"), TEXT("jet"), TEXT("warbird"), TEXT("helicopter"), TEXT("lighthelicopter"),
+			 TEXT("hovercraft"), TEXT("boat"), TEXT("jetski"), TEXT("tank"), TEXT("bulldozer"), TEXT("semitrailer"), TEXT("utilitytrailer") })
 	{
 		FMantleChassisSpec Spec;
 		FString Error;
