@@ -139,6 +139,21 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("passengerSeat/feet/right/rotation/*"), -180.0, 180.0 },
 		{ TEXT("passengerSeat/exits/*/location/*"), -1000.0, 1000.0 },
 		{ TEXT("passengerSeat/exits/*/yaw"), -180.0, 180.0 },
+		{ TEXT("extraSeats/*/location/*"), -1000.0, 1000.0 },
+		{ TEXT("extraSeats/*/yaw"), -180.0, 180.0 },
+		{ TEXT("extraSeats/*/hold/*"), -1000.0, 1000.0 },
+		{ TEXT("extraSeats/*/weaponArc/yawMin"), -180.0, 180.0 },
+		{ TEXT("extraSeats/*/weaponArc/yawMax"), -180.0, 180.0 },
+		{ TEXT("extraSeats/*/weaponArc/pitchMin"), -90.0, 90.0 },
+		{ TEXT("extraSeats/*/weaponArc/pitchMax"), -90.0, 90.0 },
+		{ TEXT("extraSeats/*/pelvis/location/*"), -1000.0, 1000.0 },
+		{ TEXT("extraSeats/*/pelvis/rotation/*"), -180.0, 180.0 },
+		{ TEXT("extraSeats/*/feet/left/location/*"), -1000.0, 1000.0 },
+		{ TEXT("extraSeats/*/feet/left/rotation/*"), -180.0, 180.0 },
+		{ TEXT("extraSeats/*/feet/right/location/*"), -1000.0, 1000.0 },
+		{ TEXT("extraSeats/*/feet/right/rotation/*"), -180.0, 180.0 },
+		{ TEXT("extraSeats/*/exits/*/location/*"), -1000.0, 1000.0 },
+		{ TEXT("extraSeats/*/exits/*/yaw"), -180.0, 180.0 },
 		{ TEXT("camera/armLength"), 100.0, 3000.0 },
 		{ TEXT("camera/height"), 0.0, 1000.0 },
 		{ TEXT("collision/*/center/*"), -1000.0, 1000.0 },
@@ -665,7 +680,34 @@ namespace MantleVehicleAssetPrivate
 		{
 			return false;
 		}
-		return !D.bPassengerSeat || CheckVehicleSeatContacts(P, D, TEXT("passengerSeat"), D.PassengerSeatLocation, D.PassengerSeatContacts, false);
+		if (D.bPassengerSeat && !CheckVehicleSeatContacts(P, D, TEXT("passengerSeat"), D.PassengerSeatLocation, D.PassengerSeatContacts, false))
+		{
+			return false;
+		}
+		// The extra seats (#449): a rider's machine has none, each door it names is one the vehicle has, and its contact points.
+		if (!D.ExtraSeats.IsEmpty() && D.SeatKind == EMantleVehicleSeatKind::Motorcycle)
+		{
+			return P.Fail(TEXT("/extraSeats"), TEXT("is on a motorcycle-seat vehicle, which carries only its rider and a pillion"));
+		}
+		for (int32 Index = 0; Index < D.ExtraSeats.Num(); ++Index)
+		{
+			const FMantleVehicleExtraSeatDesc& Seat = D.ExtraSeats[Index];
+			const FString Name = FString::Printf(TEXT("extraSeats/%d"), Index);
+			const bool bDoor = Seat.Door == EMantleVehicleSeatDoor::None
+				|| (Seat.Door == EMantleVehicleSeatDoor::Driver && D.SeatDoor.IsSet())
+				|| (Seat.Door == EMantleVehicleSeatDoor::Passenger && D.bPassengerSeat && D.PassengerSeatDoor.IsSet())
+				|| (Seat.Door == EMantleVehicleSeatDoor::RearLeft && D.RearLeftDoor.bSet)
+				|| (Seat.Door == EMantleVehicleSeatDoor::RearRight && D.RearRightDoor.bSet);
+			if (!bDoor)
+			{
+				return P.Fail(TEXT("/") + Name + TEXT("/door"), TEXT("names a door this vehicle does not have"));
+			}
+			if (!CheckVehicleSeatContacts(P, D, *Name, Seat.Location, Seat.Contacts, false))
+			{
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/** Three numbers within RangePath's range, as a linear color. */
@@ -1925,6 +1967,68 @@ namespace MantleVehicleAssetPrivate
 		return true;
 	}
 
+	/**
+	 * The extra seats (#449): at most MaxExtraSeats, each exactly its keys. location is required; yaw (0), pose (sit), door (none) and
+	 * hidden (false) are optional, as are the passenger's arc, pelvis, feet and exits. A stand spot has no pelvis or feet (it stands
+	 * on-foot) and may have a hold; a sit seat has no hold. Which doors exist is checked with the other rules (CheckVehicleRules).
+	 */
+	void ReadVehicleExtraSeats(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
+	{
+		const TArray<TSharedPtr<FJsonValue>>* Seats = nullptr;
+		if (!P.Array(Root->TryGetField(TEXT("extraSeats")), TEXT("/extraSeats"), 1, FMantleVehicleLimits::MaxExtraSeats, Seats))
+		{
+			return;
+		}
+		static const TCHAR* const Poses[] = { TEXT("sit"), TEXT("stand") };
+		static const TCHAR* const Doors[] = { TEXT("driverDoor"), TEXT("passengerDoor"), TEXT("rearLeftDoor"), TEXT("rearRightDoor") };
+		TArray<FMantleVehicleExtraSeatDesc> Out;
+		Out.Reserve(Seats->Num());
+		for (int32 Index = 0; Index < Seats->Num(); ++Index)
+		{
+			const FString Pointer = FString::Printf(TEXT("/extraSeats/%d"), Index);
+			const TSharedPtr<FJsonValue>& Value = (*Seats)[Index];
+			const TSharedPtr<FJsonObject> Seat = Value.IsValid() && Value->Type == EJson::Object ? Value->AsObject() : nullptr;
+			if (!Seat.IsValid())
+			{
+				P.Fail(Pointer, TEXT("must be an object"));
+				return;
+			}
+			FMantleVehicleExtraSeatDesc E;
+			int32 Pose = 0;
+			int32 Door = -1;
+			if (!P.Keys(Seat, Pointer,
+					{ TEXT("location"), TEXT("yaw"), TEXT("pose"), TEXT("door"), TEXT("weaponArc"), TEXT("hidden"), TEXT("pelvis"), TEXT("feet"),
+					  TEXT("exits"), TEXT("hold") },
+					{ TEXT("location") })
+				|| !P.Vector(Seat->TryGetField(TEXT("location")), Pointer + TEXT("/location"), TEXT("extraSeats/*/location/*"), E.Location)
+				|| (Seat->HasField(TEXT("yaw")) && !P.Number(Seat, Pointer, TEXT("yaw"), TEXT("extraSeats/*/yaw"), E.Yaw))
+				|| (Seat->HasField(TEXT("pose")) && !ReadVehicleEnumName(P, Seat, Pointer, TEXT("pose"), Poses, Pose))
+				|| (Seat->HasField(TEXT("door")) && !ReadVehicleEnumName(P, Seat, Pointer, TEXT("door"), Doors, Door))
+				|| !ReadVehicleWeaponArc(P, Seat, Pointer, TEXT("extraSeats/*"), E.WeaponArc)
+				|| (Seat->HasField(TEXT("hidden")) && !P.Bool(Seat, Pointer, TEXT("hidden"), E.bHidden))
+				|| !ReadVehicleSeatContacts(P, Seat, Pointer, TEXT("extraSeats/*"), E.Contacts)
+				|| (Seat->HasField(TEXT("hold")) && !P.Vector(Seat->TryGetField(TEXT("hold")), Pointer + TEXT("/hold"), TEXT("extraSeats/*/hold/*"), E.Hold)))
+			{
+				return;
+			}
+			E.Pose = static_cast<EMantleVehicleSeatPose>(Pose);
+			E.Door = static_cast<EMantleVehicleSeatDoor>(Door + 1);
+			E.bHold = Seat->HasField(TEXT("hold"));
+			if (E.Pose == EMantleVehicleSeatPose::Stand && (E.Contacts.bPelvis || E.Contacts.bFeet))
+			{
+				P.Fail(Pointer + (E.Contacts.bPelvis ? TEXT("/pelvis") : TEXT("/feet")), TEXT("is for a sit seat; a stand spot stands on-foot"));
+				return;
+			}
+			if (E.Pose == EMantleVehicleSeatPose::Sit && E.bHold)
+			{
+				P.Fail(Pointer + TEXT("/hold"), TEXT("is for a stand spot; a sit seat has none"));
+				return;
+			}
+			Out.Add(MoveTemp(E));
+		}
+		D.ExtraSeats = MoveTemp(Out);
+	}
+
 	/** The rider's rotation control: exactly its keys, an absent one 0 or false (not the definition's default), each number within its range. */
 	bool ReadVehicleRotationControl(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Rider, const FString& RiderPointer, FMantleVehicleRotationControlDesc& Out)
 	{
@@ -2245,7 +2349,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 		{ TEXT("schemaVersion"), TEXT("mass"), TEXT("maxSpeed"), TEXT("centerOfMass"), TEXT("dragCoefficient"), TEXT("frontalArea"),
 		  TEXT("engine"), TEXT("transmission"), TEXT("suspension"), TEXT("steering"), TEXT("brakes"), TEXT("tires"), TEXT("wheels"),
 		  TEXT("seat"), TEXT("camera"), TEXT("collision"), TEXT("materials"), TEXT("paint"), TEXT("lights"), TEXT("liveries"), TEXT("liveryNames"), TEXT("liveryGlow"), TEXT("liveryUV"),
-		  TEXT("defaultLivery"), TEXT("linkage"), TEXT("parts"), TEXT("passengerSeat"), TEXT("trunk"), TEXT("hood"), TEXT("rearLeftDoor"), TEXT("rearRightDoor"), TEXT("horn"), TEXT("preset"), TEXT("movementType"),
+		  TEXT("defaultLivery"), TEXT("linkage"), TEXT("parts"), TEXT("passengerSeat"), TEXT("extraSeats"), TEXT("trunk"), TEXT("hood"), TEXT("rearLeftDoor"), TEXT("rearRightDoor"), TEXT("horn"), TEXT("preset"), TEXT("movementType"),
 		  TEXT("flight"), TEXT("helicopter"), TEXT("hover") },
 		{ TEXT("schemaVersion"), TEXT("mass"), TEXT("dragCoefficient"), TEXT("frontalArea"), TEXT("engine"),
 		  TEXT("transmission"), TEXT("suspension"), TEXT("steering"), TEXT("brakes"), TEXT("tires"), TEXT("wheels"), TEXT("seat"),
@@ -2519,6 +2623,10 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	if (P.Ok() && Root->HasField(TEXT("passengerSeat")))
 	{
 		ReadVehiclePassengerSeat(P, Root, D);
+	}
+	if (P.Ok() && Root->HasField(TEXT("extraSeats")))
+	{
+		ReadVehicleExtraSeats(P, Root, D);
 	}
 	if (P.Ok() && Root->HasField(TEXT("trunk")))
 	{

@@ -626,6 +626,31 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 	Layout->TryGetBoolField(TEXT("centerline"), Spec.bCenterline);
 	const TSharedPtr<FJsonObject>* Seats = nullptr;
 	Spec.bPassenger = Root->TryGetObjectField(TEXT("seats"), Seats) && Seats && (*Seats)->HasField(TEXT("passenger"));
+	// The extra seats (#449): optional, each with a location and the rest optional.
+	const TArray<TSharedPtr<FJsonValue>>* ExtraSeats = nullptr;
+	if (Chassis->TryGetArrayField(TEXT("extraSeats"), ExtraSeats) && ExtraSeats)
+	{
+		for (int32 Index = 0; Index < ExtraSeats->Num(); ++Index)
+		{
+			const TSharedPtr<FJsonObject> Item = (*ExtraSeats)[Index].IsValid() ? (*ExtraSeats)[Index]->AsObject() : nullptr;
+			const FString Path = FString::Printf(TEXT("chassis.extraSeats[%d]"), Index);
+			FMantleChassisExtraSeat Extra;
+			if (!Item.IsValid() || !GetVector(Item, TEXT("location"), *(Path + TEXT(".location")), Extra.Location, OutError))
+			{
+				if (OutError.IsEmpty()) OutError = Path + TEXT(" must be an object with a location");
+				return false;
+			}
+			Item->TryGetNumberField(TEXT("yaw"), Extra.Yaw);
+			Item->TryGetStringField(TEXT("pose"), Extra.Pose);
+			Item->TryGetStringField(TEXT("door"), Extra.Door);
+			if (Item->HasField(TEXT("hold")))
+			{
+				if (!GetVector(Item, TEXT("hold"), *(Path + TEXT(".hold")), Extra.Hold, OutError)) return false;
+				Extra.bHold = true;
+			}
+			Spec.ExtraSeats.Add(Extra);
+		}
+	}
 	FString DriverKind;
 	if (Root->TryGetObjectField(TEXT("seats"), Seats) && Seats && (*Seats)->TryGetStringField(TEXT("driver"), DriverKind))
 	{
@@ -882,6 +907,30 @@ FString FMantleChassisSpec::ComposeDocument(const FMantleChassisSpec& Spec, TArr
 		const TSharedPtr<FJsonObject> Passenger = MakeShared<FJsonObject>();
 		Passenger->SetArrayField(TEXT("location"), NumberArray(FVector(Spec.Seat.X, -Spec.Seat.Y, Spec.Seat.Z)));
 		Doc->SetObjectField(TEXT("passengerSeat"), Passenger);
+	}
+	// The extra seats (#449), in the preset's order. A door is kept only when the vehicle has it (a bare chassis has no hinged doors,
+	// so its seats are open ones; a creator's model with the doors keeps them through the builder).
+	if (!Spec.ExtraSeats.IsEmpty())
+	{
+		auto HasDoor = [&Doc](const FString& Door)
+		{
+			const TSharedPtr<FJsonObject>* Part = nullptr;
+			if (Door == TEXT("driverDoor")) return Doc->TryGetObjectField(TEXT("seat"), Part) && Part && (*Part)->HasField(TEXT("door"));
+			if (Door == TEXT("passengerDoor")) return Doc->TryGetObjectField(TEXT("passengerSeat"), Part) && Part && (*Part)->HasField(TEXT("door"));
+			return (Door == TEXT("rearLeftDoor") || Door == TEXT("rearRightDoor")) && Doc->HasField(Door);
+		};
+		TArray<TSharedPtr<FJsonValue>> Extras;
+		for (const FMantleChassisExtraSeat& Extra : Spec.ExtraSeats)
+		{
+			const TSharedPtr<FJsonObject> Item = MakeShared<FJsonObject>();
+			Item->SetArrayField(TEXT("location"), NumberArray(Extra.Location));
+			Item->SetNumberField(TEXT("yaw"), Extra.Yaw);
+			Item->SetStringField(TEXT("pose"), Extra.Pose);
+			if (!Extra.Door.IsEmpty() && HasDoor(Extra.Door)) Item->SetStringField(TEXT("door"), Extra.Door);
+			if (Extra.bHold) Item->SetArrayField(TEXT("hold"), NumberArray(Extra.Hold));
+			Extras.Add(MakeShared<FJsonValueObject>(Item));
+		}
+		Doc->SetArrayField(TEXT("extraSeats"), Extras);
 	}
 
 	// The movement type's block and the seats' kinds: flat numbers, never the preset's id. After the seats and the camera they go on.
@@ -1141,6 +1190,11 @@ FMantleChassisSpec FMantleChassisSpec::Scaled(const FMantleChassisSpec& Spec, co
 	Out.Height *= Factor;
 	Out.Clearance *= Factor;
 	Out.Seat *= Factor;
+	for (FMantleChassisExtraSeat& Extra : Out.ExtraSeats)
+	{
+		Extra.Location *= Factor;
+		Extra.Hold *= Factor;
+	}
 	if (Spec.bSteeringWheel)
 	{
 		Out.Hub *= Factor;

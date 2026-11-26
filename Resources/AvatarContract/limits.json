@@ -1197,6 +1197,7 @@
       "maxLinkageRules": 64,
       "maxParts": 16,
       "maxSeatExits": 4,
+      "maxExtraSeats": 126,
       "contactReach": 150,
       "wheelHandTolerance": 5,
       "maxAerofoils": 8,
@@ -1282,6 +1283,21 @@
         "passengerSeat/feet/right/rotation/*": [-180, 180],
         "passengerSeat/exits/*/location/*": [-1000, 1000],
         "passengerSeat/exits/*/yaw": [-180, 180],
+        "extraSeats/*/location/*": [-1000, 1000],
+        "extraSeats/*/yaw": [-180, 180],
+        "extraSeats/*/hold/*": [-1000, 1000],
+        "extraSeats/*/weaponArc/yawMin": [-180, 180],
+        "extraSeats/*/weaponArc/yawMax": [-180, 180],
+        "extraSeats/*/weaponArc/pitchMin": [-90, 90],
+        "extraSeats/*/weaponArc/pitchMax": [-90, 90],
+        "extraSeats/*/pelvis/location/*": [-1000, 1000],
+        "extraSeats/*/pelvis/rotation/*": [-180, 180],
+        "extraSeats/*/feet/left/location/*": [-1000, 1000],
+        "extraSeats/*/feet/left/rotation/*": [-180, 180],
+        "extraSeats/*/feet/right/location/*": [-1000, 1000],
+        "extraSeats/*/feet/right/rotation/*": [-180, 180],
+        "extraSeats/*/exits/*/location/*": [-1000, 1000],
+        "extraSeats/*/exits/*/yaw": [-180, 180],
         "trunk/lid/pivot/*": [-1000, 1000],
         "trunk/lid/axis/*": [-1, 1],
         "trunk/lid/scale": [-2, 2],
@@ -1411,7 +1427,7 @@
         "hover/damping/maxSkirtBrakeAccel": [0, 5000],
         "hover/angularDamping": [0, 5]
       },
-      "comment": "A creator-published vehicle (#435): one binary glTF whose skinned body has a bone at every wheel center, with the vehicle document (schema/vehicle.schema.json) at extras.mantleVehicle. The cook worker writes MVH1 (backend/internal/cook/vehicle.go): the resolved document, then the body as MSK1 role 4 on its own bone table (skeleton 'vehicle', reference pose included; distinct from the place skeletal mesh role 3). body caps the mesh; minWheels to maxWheels, maxTorqueCurvePoints, maxGears and maxCollisionBoxes are the document's array sizes; ranges is every number the document may hold, by path (* for any array item), and each is the schema's minimum and maximum there (validate.py checks both ways). A wheel's radius and width come from the body vertices weighted only to its bone when there are at least wheelMinVertices of them; otherwise the document gives them. maxLinkageRules caps the document's linkage (the aim, stretch and copy rules that move a body's suspension bones after its wheels, #435 b). maxParts caps the document's parts (#435 item 2: static meshes uploaded beside the vehicle, each riding a bone of the body, drawn only): a body shell, glass, an interior, lights and bumpers, and a tire each on up to eight wheels fit in 16; each part is one more mesh component per car, and a place may park 32 cars. A part's materials list is at most placeAssets.staticMesh.maxSections long, one per slot of its mesh. A seat's contact points (#612: pelvis, hands, feet and exits, in the vehicle's own space) hold at most maxSeatExits exits; a pelvis, hand or foot target in the body's space (no bone) is at most contactReach cm from its seat's location, and a hand holding the steering wheel (hands.kind wheel) is within wheelHandTolerance cm of the rim. maxAerofoils, maxThrusters, maxSpinBones (a flight or helicopter block), maxRotors and minHoverPads to maxHoverPads (a hover block) cap the non-wheeled kinds' arrays (#821); every number in those blocks, the rider's and the camera boom's has its ranges entry like any other. The plugin's Convert vehicle command applies the same numbers. A body may have up to 64 materials (sections); the 8 it had before was a placeholder that split cars into extra pieces with lights that could not switch on (see staticMesh.comment)."
+      "comment": "A creator-published vehicle (#435): one binary glTF whose skinned body has a bone at every wheel center, with the vehicle document (schema/vehicle.schema.json) at extras.mantleVehicle. The cook worker writes MVH1 (backend/internal/cook/vehicle.go): the resolved document, then the body as MSK1 role 4 on its own bone table (skeleton 'vehicle', reference pose included; distinct from the place skeletal mesh role 3). body caps the mesh; minWheels to maxWheels, maxTorqueCurvePoints, maxGears and maxCollisionBoxes are the document's array sizes; ranges is every number the document may hold, by path (* for any array item), and each is the schema's minimum and maximum there (validate.py checks both ways). A wheel's radius and width come from the body vertices weighted only to its bone when there are at least wheelMinVertices of them; otherwise the document gives them. maxLinkageRules caps the document's linkage (the aim, stretch and copy rules that move a body's suspension bones after its wheels, #435 b). maxParts caps the document's parts (#435 item 2: static meshes uploaded beside the vehicle, each riding a bone of the body, drawn only): a body shell, glass, an interior, lights and bumpers, and a tire each on up to eight wheels fit in 16; each part is one more mesh component per car, and a place may park 32 cars. A part's materials list is at most placeAssets.staticMesh.maxSections long, one per slot of its mesh. A seat's contact points (#612: pelvis, hands, feet and exits, in the vehicle's own space) hold at most maxSeatExits exits; a pelvis, hand or foot target in the body's space (no bone) is at most contactReach cm from its seat's location, and a hand holding the steering wheel (hands.kind wheel) is within wheelHandTolerance cm of the rim. maxExtraSeats caps the document's extraSeats (#449: the seats after the driver's and the front passenger's, numbered 2 onwards), 126, so every seat number of a vehicle (0 to 127) fits in a byte. maxAerofoils, maxThrusters, maxSpinBones (a flight or helicopter block), maxRotors and minHoverPads to maxHoverPads (a hover block) cap the non-wheeled kinds' arrays (#821); every number in those blocks, the rider's and the camera boom's has its ranges entry like any other. The plugin's Convert vehicle command applies the same numbers. A body may have up to 64 materials (sections); the 8 it had before was a placeholder that split cars into extra pieces with lights that could not switch on (see staticMesh.comment)."
     },
     "livery": {
       "maxLiveries": 8,

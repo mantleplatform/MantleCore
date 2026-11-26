@@ -340,6 +340,67 @@ struct MANTLERUNTIME_API FMantleVehicleSourceWeaponArc
  * How a creator vehicle drives: schema/vehicle.schema.json, every default the schema's. Mantle holds
  * each number to limits.json placeAssets.vehicle.ranges when the place is checked and again when it is cooked.
  */
+/** How an extra seat's occupant rides (#449). */
+UENUM(BlueprintType)
+enum class EMantleVehicleSourceSeatPose : uint8
+{
+	Sit,
+	/** Standing on the spot, a bus standee. */
+	Stand,
+};
+
+/** The door an extra seat is got into through (#449). None: an open seat (a boat's deck, an open bed). */
+UENUM(BlueprintType)
+enum class EMantleVehicleSourceSeatDoor : uint8
+{
+	None,
+	DriverDoor,
+	PassengerDoor,
+	RearLeftDoor,
+	RearRightDoor,
+};
+
+/** One seat beyond the driver's and the front passenger's (the document's extraSeats, #449). */
+USTRUCT(BlueprintType)
+struct MANTLERUNTIME_API FMantleVehicleSourceSeat
+{
+	GENERATED_BODY()
+
+	/** A sit seat: where the seated capsule's centre goes. A stand spot: where the feet go. In the body's space, cm. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Seat")
+	FVector Location = FVector::ZeroVector;
+
+	/** The way the occupant faces, about Z: 0 faces the car's +X. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Seat", meta = (Units = "deg", ClampMin = -180, ClampMax = 180))
+	float Yaw = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Seat")
+	EMantleVehicleSourceSeatPose Pose = EMantleVehicleSourceSeatPose::Sit;
+
+	/** The door it is got into through; it must be a door this vehicle has. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Seat")
+	EMantleVehicleSourceSeatDoor Door = EMantleVehicleSourceSeatDoor::None;
+
+	/** The occupant is not drawn while seated (a model with no inside there). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Seat")
+	bool bHidden = false;
+
+	/** Where a gun held here may aim and fire. Off: worked out from where the seat sits. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Seat", meta = (DisplayName = "Firearm Aim Arc"))
+	FMantleVehicleSourceWeaponArc WeaponArc;
+
+	/** Pelvis, feet and exits (a sit seat's; a stand spot has exits only). Hands are never written for an extra seat. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Seat")
+	FMantleVehicleSourceSeatContacts Contacts;
+
+	/** A stand spot's hand grip (a pole or a strap), in the body's space. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Seat", meta = (EditCondition = "Pose == EMantleVehicleSourceSeatPose::Stand"))
+	bool bHold = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Seat", meta = (EditCondition = "bHold"))
+	FVector Hold = FVector::ZeroVector;
+};
+
 USTRUCT(BlueprintType)
 struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 {
@@ -544,6 +605,11 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	/** The passenger's contact points, as the driver's; its hands are never on the steering wheel. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Passenger", meta = (EditCondition = "bPassengerSeat"))
 	FMantleVehicleSourceSeatContacts PassengerContacts;
+
+	/** Seats beyond the driver's and the front passenger's (#449), in order: a bus's rows and standees, a sedan's rear seats. At most
+	 *  126 (FMantleVehicleLimits::MaxExtraSeats). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Extra seats")
+	TArray<FMantleVehicleSourceSeat> ExtraSeats;
 
 	/** A trunk: a lid that someone standing behind the car opens and shuts. It holds nothing. Off: the car has no trunk. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trunk")

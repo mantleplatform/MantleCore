@@ -3,7 +3,7 @@
   "id": "sports",
   "name": "Sports car",
   "description": "A low, fast, stiffly sprung car: sports cars, supercars and race cars. Plenty of torque to the rear wheels, so it needs a steady foot, and it sits low enough to feel very quick.",
-  "comment": "A vehicle preset (#728); see sedan.json for the format. The driver sits 46.8 cm behind the steering wheel hub, here on a 262 cm wheelbase with the seat 42 cm behind the middle. Rear drive, stiff springs, a low center of mass, high torque.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format. The driver sits 46.8 cm behind the steering wheel hub, here on a 262 cm wheelbase with the seat 42 cm behind the middle. Rear drive, stiff springs, a low center of mass, high torque. Seats (#449): 4, like the 911's 2+2: two small rear seats (no middle seat) 63 cm behind the front row and 8 cm lower, reached through the two doors (the left one the driver's door, the right one the passenger's).",
   "movementType": "wheeled",
   "publishable": true,
   "type": "car",
@@ -37,7 +37,11 @@
     "seat": {
       "location": [-42, -37, 58],
       "steeringWheel": { "location": [4.8, -37, 61], "radius": 19 }
-    }
+    },
+    "extraSeats": [
+      { "location": [-105, -34, 50], "door": "driverDoor" },
+      { "location": [-105, 34, 50], "door": "passengerDoor" }
+    ]
   },
   "derive": {
     "stability": 1.15,

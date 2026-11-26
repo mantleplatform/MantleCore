@@ -204,6 +204,48 @@ struct FMantleVehicleWeaponArcDesc
 	double PitchMax = 90.0;
 };
 
+/** How an extra seat's occupant rides (the document's extraSeats pose, #449). */
+UENUM(BlueprintType)
+enum class EMantleVehicleSeatPose : uint8
+{
+	/** Seated, as the passenger is. */
+	Sit,
+	/** Standing on the spot (a bus standee): the on-foot pose, held in place. */
+	Stand,
+};
+
+/** Which of the vehicle's doors an extra seat is reached through (the document's extraSeats door, #449). None: an open seat. */
+UENUM(BlueprintType)
+enum class EMantleVehicleSeatDoor : uint8
+{
+	None,
+	/** seat.door, the driver's. */
+	Driver,
+	/** passengerSeat.door. */
+	Passenger,
+	RearLeft,
+	RearRight,
+};
+
+/**
+ * One seat beyond the driver's and the front passenger's (the document's extraSeats, #449). Where it is (for a sit seat the
+ * seated capsule's centre, as seat.location; for a stand spot the feet), the way its occupant faces, degrees about Z (0: the
+ * body's +X), and the rest as the passenger seat's. Hold: a stand spot's hand grip (a pole or strap), bHold says it has one.
+ */
+struct FMantleVehicleExtraSeatDesc
+{
+	FVector Location = FVector::ZeroVector;
+	double Yaw = 0.0;
+	EMantleVehicleSeatPose Pose = EMantleVehicleSeatPose::Sit;
+	EMantleVehicleSeatDoor Door = EMantleVehicleSeatDoor::None;
+	FMantleVehicleWeaponArcDesc WeaponArc;
+	bool bHidden = false;
+	/** Pelvis, feet and exits only (no hands: a hand on a steering wheel is the driver's). */
+	FMantleVehicleSeatContactsDesc Contacts;
+	bool bHold = false;
+	FVector Hold = FVector::ZeroVector;
+};
+
 /** One chassis collision box in the body's component space: center and half size, cm. */
 struct FMantleVehicleBoxDesc
 {
@@ -555,6 +597,12 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	bool bPassengerSeatHidden = false;
 
 	/**
+	 * The seats beyond those two, in document order (extraSeats, #449). Seat numbers come from this order and never change:
+	 * 0 the driver, 1 the front passenger (even when absent), 2 + Index each of these.
+	 */
+	TArray<FMantleVehicleExtraSeatDesc> ExtraSeats;
+
+	/**
 	 * The trunk. bTrunk: the car has one. Its lid, where a character stands to open it (on the ground behind the car, in
 	 * the body's space) and the way it faces there, degrees about Z (0: the body's +X, towards the car).
 	 */
@@ -738,6 +786,8 @@ struct MANTLERUNTIME_API FMantleVehicleLimits
 	static constexpr double HingeMinAxis = 0.01;
 	/** placeAssets.vehicle.maxSeatExits: the standing spots a seat's exits may list. */
 	static constexpr int32 MaxSeatExits = 4;
+	/** placeAssets.vehicle.maxExtraSeats: the seats beyond the driver's and the front passenger's (#449). Seat numbers fit a byte. */
+	static constexpr int32 MaxExtraSeats = 126;
 	/** placeAssets.vehicle.contactReach: how far, cm, a pelvis, hand or foot target in the body's space may be from its seat's location. */
 	static constexpr double ContactReach = 150.0;
 	/** placeAssets.vehicle.wheelHandTolerance: how far, cm, a hand holding the steering wheel may be from its rim. */

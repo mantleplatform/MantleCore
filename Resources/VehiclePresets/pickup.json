@@ -3,7 +3,7 @@
   "id": "pickup",
   "name": "Pickup / SUV",
   "description": "A tall road vehicle with long suspension: pickups, SUVs and vans. It rides high, and the long travel soaks up rough ground.",
-  "comment": "A vehicle preset (#728); see sedan.json for the format. Sized so the real-scale Vol 2 SUV of the owner's Fab test pack comes out at about 1.0 and the undersized Vol 1 pickup at about 1.2.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format. Sized so the real-scale Vol 2 SUV of the owner's Fab test pack comes out at about 1.0 and the undersized Vol 1 pickup at about 1.2. Seats (#449): 4, like a crew cab: the driver, the front passenger and two rear seats (no middle seat) 90 cm behind the front row, each by its own rear door.",
   "movementType": "wheeled",
   "publishable": true,
   "type": "car",
@@ -37,7 +37,11 @@
     "seat": {
       "location": [-5, -38, 100],
       "steeringWheel": { "location": [41.8, -38, 103], "radius": 20 }
-    }
+    },
+    "extraSeats": [
+      { "location": [-90, -38, 100], "door": "rearLeftDoor" },
+      { "location": [-90, 38, 100], "door": "rearRightDoor" }
+    ]
   },
   "derive": {
     "stability": 1.15,

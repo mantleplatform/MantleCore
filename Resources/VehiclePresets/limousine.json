@@ -3,7 +3,7 @@
   "id": "limousine",
   "name": "Limousine",
   "description": "A long, heavy luxury car: limousines, stretched cars, hearses and long wheelbase saloons. The driver sits at the front, and it rides soft and turns wide.",
-  "comment": "A vehicle preset (#728); see sedan.json for the format. A sedan's wheels (so the fit sizes a model the same way, from radius and track, never from the length) on a 450 cm wheelbase. The driver sits 89 cm ahead of the middle, as far back from the front axle as the sedan's, and the chassis is heavier and softer sprung.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format. A sedan's wheels (so the fit sizes a model the same way, from radius and track, never from the length) on a 450 cm wheelbase. The driver sits 89 cm ahead of the middle, as far back from the front axle as the sedan's, and the chassis is heavier and softer sprung. Seats (#449): 8, like a stretched Town Car: the front two, a rear-facing bench of 3 behind them and a forward-facing bench of 3 at the back, 190 cm apart; the left seats by the left rear door, the middle and right ones by the right rear door.",
   "movementType": "wheeled",
   "publishable": true,
   "type": "car",
@@ -37,7 +37,15 @@
     "seat": {
       "location": [89, -36, 76],
       "steeringWheel": { "location": [135.8, -36, 79], "radius": 19 }
-    }
+    },
+    "extraSeats": [
+      { "location": [0, -50, 76], "yaw": 180, "door": "rearLeftDoor" },
+      { "location": [0, 0, 76], "yaw": 180, "door": "rearRightDoor" },
+      { "location": [0, 50, 76], "yaw": 180, "door": "rearRightDoor" },
+      { "location": [-190, -50, 76], "door": "rearLeftDoor" },
+      { "location": [-190, 0, 76], "door": "rearRightDoor" },
+      { "location": [-190, 50, 76], "door": "rearRightDoor" }
+    ]
   },
   "derive": {
     "stability": 1.15,

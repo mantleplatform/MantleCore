@@ -31,6 +31,21 @@ struct FMantleVehicleChassisRotationControl
 };
 
 /**
+ * One seat beyond the driver's and the front passenger's, as a preset's chassis.extraSeats gives it (#449): where it is (a sit seat's
+ * seated capsule centre, a stand spot's feet), the way its occupant faces (degrees about Z), sit or stand, the door it is got into
+ * through ("" for none; the composed document keeps it only when the vehicle has that door), and a stand spot's hand grip.
+ */
+struct FMantleChassisExtraSeat
+{
+	FVector Location = FVector::ZeroVector;
+	double Yaw = 0.0;
+	FString Pose = TEXT("sit");
+	FString Door;
+	bool bHold = false;
+	FVector Hold = FVector::ZeroVector;
+};
+
+/**
  * What a rider-seat preset (seats.driver "motorcycle") adds to the chassis. Chassis frame, cm. The grips ride the front fork
  * bone and the pegs the root bone; the reference names the bones, so a preset never does.
  */
@@ -92,6 +107,8 @@ struct FMantleVehicleChassisReference
 	double AxleX(const int32 Index) const { return Wheelbase * (0.5 - AxlePositions[Index]); }
 
 	FVector PassengerSeat() const { return FVector(Seat.X, -Seat.Y, Seat.Z); }
+	/** The preset's chassis.extraSeats (#449), in the chassis's space: a bus's rows and standees, a sedan's rear seats. */
+	TArray<FMantleChassisExtraSeat> ExtraSeats;
 };
 
 /**

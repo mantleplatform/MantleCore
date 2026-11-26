@@ -266,6 +266,7 @@ FMantleVehicleChassisReference FMantleVehicleChassisBuilder::ReferenceOf(const F
 	Reference.SteeringWheelRadius = Spec.RimRadius;
 	Reference.SteeringWheelPitch = FMantleChassisSpec::SteeringWheelPitch;
 	Reference.bPassenger = Spec.bPassenger;
+	Reference.ExtraSeats = Spec.ExtraSeats;
 	Reference.bCenterline = Spec.bCenterline;
 	Reference.DriverSeat = Spec.DriverSeat;
 	Reference.bSteeringWheel = Spec.bSteeringWheel;

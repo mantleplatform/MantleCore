@@ -1328,9 +1328,10 @@ namespace MantleVehicleBuilderPrivate
 			Out.Problems.Add(TEXT("The vehicle's settings could not be worked out. Change a size and try again."));
 			return Out;
 		}
-		// Also the movement part, which ApplyMovement puts in the vehicle's own fields: the type and its block, and the camera's boom.
-		const TCHAR* const Written[] = { TEXT("schemaVersion"), TEXT("wheels"), TEXT("collision"), TEXT("seat"), TEXT("passengerSeat"), TEXT("movementType"), TEXT("flight"),
-			TEXT("helicopter"), TEXT("hover") };
+		// Also the movement part, which ApplyMovement puts in the vehicle's own fields: the type and its block, and the camera's boom. The extra seats (#449) are the chassis's
+		// own seats like the other two.
+		const TCHAR* const Written[] = { TEXT("schemaVersion"), TEXT("wheels"), TEXT("collision"), TEXT("seat"), TEXT("passengerSeat"), TEXT("extraSeats"), TEXT("movementType"),
+			TEXT("flight"), TEXT("helicopter"), TEXT("hover") };
 		for (const TCHAR* Key : Written)
 		{
 			Document->RemoveField(Key);

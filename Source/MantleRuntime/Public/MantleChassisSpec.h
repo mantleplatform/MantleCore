@@ -325,6 +325,8 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	double RimRadius = 0.0;
 	/** seats.passenger is set: the car has a passenger seat, the driver's mirrored across Y. */
 	bool bPassenger = false;
+	/** chassis.extraSeats (#449), in order; empty without them. */
+	TArray<FMantleChassisExtraSeat> ExtraSeats;
 	/** One wheel per axle, on the centerline (layout.centerline): a motorcycle. A plane has only its nose axle so (FMantleChassisAxle::bCenterline). */
 	bool bCenterline = false;
 	/** The seat has a steering wheel (a rider's has handlebars instead, and a pilot's a stick and a throttle). */
