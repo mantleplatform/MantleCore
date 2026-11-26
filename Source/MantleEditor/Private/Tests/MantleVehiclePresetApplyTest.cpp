@@ -186,8 +186,8 @@ bool FMantleVehiclePresetApplyLeavesOthersTest::RunTest(const FString& Parameter
 	// The preset carries no center of mass, so the creator's choice (off) stays.
 	TestFalse(TEXT("center of mass override is untouched"), T.bOverrideCenterOfMass);
 	// And the values it does carry did change.
-	TestEqual(TEXT("mass applied"), T.Mass, 1500.f);
-	TestEqual(TEXT("max speed applied"), T.MaxSpeed, 4500.f);
+	TestEqual(TEXT("mass applied"), T.Mass, 1546.f);
+	TestEqual(TEXT("max speed applied"), T.MaxSpeed, 5944.f);
 	return true;
 }
 

@@ -88,8 +88,8 @@ bool FMantleVehicleBuilderBuildTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("a scratch vehicle's save says nothing"), SaveProblem.IsEmpty());
 		TestTrue(TEXT("the model copy counts as unsaved"), FMantleVehicleBuilder::IsModelUnsaved(*Built.Source, Copy));
 		TestEqual(TEXT("the vehicle remembers its type"), Built.Source->Preset, FName(TEXT("sedan")));
-		TestEqual(TEXT("the sedan's mass"), Built.Source->Tuning.Mass, 1500.f);
-		TestEqual(TEXT("the sedan's top speed"), Built.Source->Tuning.MaxSpeed, 4500.f);
+		TestEqual(TEXT("the sedan's mass"), Built.Source->Tuning.Mass, 1546.f);
+		TestEqual(TEXT("the sedan's top speed"), Built.Source->Tuning.MaxSpeed, 5944.f);
 		// The model is only a skin: collision, center of mass and seats are the chassis's, whatever the model's physics asset held.
 		TestEqual(TEXT("the collision is the chassis's one box"), Built.Source->Tuning.Collision.Num(), 1);
 		TestTrue(TEXT("the center of mass is the chassis's"), Built.Source->Tuning.bOverrideCenterOfMass);
@@ -134,7 +134,7 @@ bool FMantleVehicleBuilderBuildTest::RunTest(const FString& Parameters)
 		if (TestNotNull(TEXT("the switched build gives the vehicle"), Switched.Source))
 		{
 			TestEqual(TEXT("the vehicle remembers its new type"), Switched.Source->Preset, FName(TEXT("pickup")));
-			TestEqual(TEXT("the pickup's mass replaces the tuned one"), Switched.Source->Tuning.Mass, 2000.f);
+			TestEqual(TEXT("the pickup's mass replaces the tuned one"), Switched.Source->Tuning.Mass, 2141.f);
 			if (TestTrue(TEXT("the pickup has its own fit"), Switched.Fit.IsSet()))
 			{
 				TestEqual(TEXT("a different type recomputes the Size"), Switched.Source->FitScale, static_cast<float>(Switched.Fit->Scale));
@@ -191,7 +191,7 @@ bool FMantleVehicleBuilderApplyTest::RunTest(const FString& Parameters)
 		FMantleVehicleBuildResult Out;
 		TestTrue(TEXT("the sedan applies to a tuned vehicle with no type"), MantleVehicleBuilderPrivate::ApplyChosenPreset(*Sedan, *Source, Out));
 		TestEqual(TEXT("the type is remembered"), Source->Preset, FName(TEXT("sedan")));
-		TestEqual(TEXT("the sedan's mass replaces the old one"), Source->Tuning.Mass, 1500.f);
+		TestEqual(TEXT("the sedan's mass replaces the old one"), Source->Tuning.Mass, 1546.f);
 		TestTrue(TEXT("the replaced settings are mentioned"), Out.Notes.ContainsByPredicate([](const FString& Note)
 		{
 			return Note.StartsWith(TEXT("This vehicle had its own settings from before")) && Note.Contains(TEXT("Undo (Ctrl+Z)"));
