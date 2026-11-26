@@ -173,6 +173,27 @@ namespace MantleChassisSpecTestPrivate
 		}
 	},
 	{
+		// A boat's (#15) wheels are hidden and drive nothing (the document's reader needs a steered and a driven one): its body is the hull's box and its
+		// drive's pod, its collision the hull alone.
+		TEXT("boat"),
+		TEXT(R"MCS({"mass":1516,"maxSpeed":2100,"dragCoefficient":0.5,"frontalArea":2.5,"engine":{"maxTorque":300,"maxRPM":6000,"idleRPM":700,"torqueCurve":[[0,0.6],[3000,1],[6000,0.8]]},"transmission":{"gearRatios":[1.0],"reverseRatio":1.0,"finalDrive":1.0,"changeUpRPM":5000,"changeDownRPM":2000},"suspension":{"maxRaise":10,"maxDrop":10,"springRate":400,"springPreload":100,"damping":0.5},"steering":{"maxAngle":10,"ackermann":false},"brakes":{"brakeTorque":1500,"handbrakeTorque":3000},"tires":{"friction":2},"camera":{"armLength":650,"height":200},"schemaVersion":1,"wheels":[{"bone":"wheel_fl","steering":true,"driven":false,"handbrake":false,"radius":20,"width":10},{"bone":"wheel_fr","steering":true,"driven":false,"handbrake":false,"radius":20,"width":10},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":false,"radius":20,"width":10},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":false,"radius":20,"width":10}],"collision":[{"center":[0.0,0.0,60.0],"extent":[309.5,122.0,50.0]}],"centerOfMass":[-40,0,60],"seat":{"location":[20,-45,75],"steeringWheel":{"location":[62,-45,95],"rotation":[-20.0,0.0,0.0],"radius":18}},"passengerSeat":{"location":[20,45,75]}})MCS"),
+		48, 24,
+		{ -354.4, -122.0, -44.4 }, { 309.5, 122.0, 110.0 },
+		{
+			{ TEXT("root"), -1, { 0.0, 0.0, 0.0 } },
+			{ TEXT("wheel_fl"), 0, { 200.0, -90.0, 20.0 } },
+			{ TEXT("wheel_fr"), 0, { 200.0, 90.0, 20.0 } },
+			{ TEXT("wheel_rl"), 0, { -200.0, -90.0, 20.0 } },
+			{ TEXT("wheel_rr"), 0, { -200.0, 90.0, 20.0 } }
+		},
+		{
+			{ 200.0, -90.0, 20.0 },
+			{ 200.0, 90.0, 20.0 },
+			{ -200.0, -90.0, 20.0 },
+			{ -200.0, 90.0, 20.0 }
+		}
+	},
+	{
 		TEXT("jet"),
 		TEXT(R"MCS({"mass":9000,"maxSpeed":12000,"dragCoefficient":0.25,"frontalArea":2.16,"engine":{"maxTorque":300,"maxRPM":3000,"idleRPM":600,"torqueCurve":[[0,0.6],[1500,1],[3000,0.8]]},"transmission":{"gearRatios":[1.0],"reverseRatio":1.0,"finalDrive":1.0,"changeUpRPM":2500,"changeDownRPM":1000},"suspension":{"maxRaise":10,"maxDrop":15,"springRate":2050,"springPreload":580,"damping":0.85},"steering":{"maxAngle":25,"ackermann":false},"brakes":{"brakeTorque":5000,"handbrakeTorque":5000},"tires":{"friction":1.47},"camera":{"armLength":2150,"height":150},"schemaVersion":1,"wheels":[{"bone":"wheel_f","steering":true,"driven":false,"handbrake":false,"radius":40,"width":26},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":false,"radius":40,"width":26},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":false,"radius":40,"width":26}],"collision":[{"center":[-200.0,0.0,200.0],"extent":[750.0,60.0,90.0]},{"center":[-290.0,0.0,200.0],"extent":[150.0,490.0,18.75]},{"center":[-870.0,0.0,215.0],"extent":[70.0,250.0,8.75]},{"center":[-850.0,0.0,440.0],"extent":[100.0,12.5,150.0]}],"centerOfMass":[-200,0,205],"seat":{"location":[250,0,273]}})MCS"),
 		414, 240,
@@ -560,7 +581,7 @@ namespace MantleChassisSpecTestPrivate
 		{
 			return Value;
 		}
-		for (const TCHAR* Key : { TEXT("movementType"), TEXT("flight"), TEXT("helicopter"), TEXT("hover"), TEXT("trailer"), TEXT("hitch") })
+		for (const TCHAR* Key : { TEXT("movementType"), TEXT("flight"), TEXT("helicopter"), TEXT("hover"), TEXT("boat"), TEXT("trailer"), TEXT("hitch") })
 		{
 			Doc->RemoveField(Key);
 		}

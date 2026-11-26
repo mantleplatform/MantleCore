@@ -435,8 +435,8 @@ bool FMantleVehicleChassisBuilder::MakeAsset(const FMantleChassisSpec& Spec, FMa
 		Shapes.AddBox(FVector3f(Center - Extent), FVector3f(Center + Extent), 0);
 	}
 	// A helicopter's wheels are its skids' hidden contact points, so none is drawn: the skids below stand for them. A hovercraft's are where its pads lift,
-	// under its skirt, and are not drawn either.
-	const bool bDrawWheels = !Spec.Helicopter.bSet && !Spec.Hovercraft.bSet;
+	// under its skirt, and are not drawn either; nor are a boat's, which only its document's reader needs.
+	const bool bDrawWheels = !Spec.Helicopter.bSet && !Spec.Hovercraft.bSet && !Spec.Boat.bSet;
 	for (int32 Index = 0; bDrawWheels && Index < Spec.WheelCount(); ++Index)
 	{
 		Shapes.AddWheel(FVector3f(Spec.WheelCenter(Index)), static_cast<float>(Spec.WheelRadius), static_cast<float>(Spec.WheelWidth), WheelBones[Index]);
@@ -448,6 +448,12 @@ bool FMantleVehicleChassisBuilder::MakeAsset(const FMantleChassisSpec& Spec, FMa
 		{
 			Shapes.AddBox(FVector3f(Block.Min), FVector3f(Block.Max), 0);
 		}
+	}
+	// A boat's: its drive's pod (an outboard's leg, a jet's nozzle) on the root.
+	if (Spec.Boat.bSet)
+	{
+		const FMantleChassisBlock Drive = Spec.BoatDriveBlock();
+		Shapes.AddBox(FVector3f(Drive.Min), FVector3f(Drive.Max), 0);
 	}
 	// A helicopter's: the mast, the tail boom, the fin and the skids on the root, a cross of blades on each rotor's bone.
 	if (Spec.Helicopter.bSet)

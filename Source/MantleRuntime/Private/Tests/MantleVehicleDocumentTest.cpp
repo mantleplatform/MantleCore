@@ -294,7 +294,7 @@ namespace MantleVehicleDocumentTestPrivate
 		Test.TestTrue(*(Label + TEXT(": the movement type")),
 			D.MovementType == (Spec.Aircraft.bSet ? EMantleVehicleMovementKind::Plane
 				: (Spec.Helicopter.bSet ? EMantleVehicleMovementKind::Helicopter : (Spec.Hovercraft.bSet ? EMantleVehicleMovementKind::Hover
-				: (Spec.bTrailer ? EMantleVehicleMovementKind::Trailer : EMantleVehicleMovementKind::Wheeled)))));
+				: (Spec.Boat.bSet ? EMantleVehicleMovementKind::Boat : (Spec.bTrailer ? EMantleVehicleMovementKind::Trailer : EMantleVehicleMovementKind::Wheeled))))));
 
 		if (Spec.Aircraft.bSet)
 		{
@@ -496,8 +496,8 @@ bool FMantleVehicleDocumentGoldenTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleDocumentTestPrivate;
 	const TArray<FString> Selectors = MantleVehicleDocumentTestPrivate::Selectors();
-	// The twenty-two presets at scale 1 and at 0.7.
-	TestEqual(TEXT("twenty-two presets, two sizes each"), Selectors.Num(), 44);
+	// Every preset at scale 1 and at 0.7.
+	TestEqual(TEXT("every preset, two sizes each"), Selectors.Num(), 2 * FMantleVehicleChassisBuilder::PresetIds().Num());
 	for (const FString& Selector : Selectors)
 	{
 		FMantleChassisSpec Spec;
@@ -526,7 +526,7 @@ bool FMantleVehicleDocumentGoldenTest::RunTest(const FString& Parameters)
 			FromDocument.Equals(FromSpec, ESearchCase::CaseSensitive));
 
 		// The pure wheeled types write nothing new: a car composes to the document it did before the movement keys existed.
-		if (!Spec.Aircraft.bSet && !Spec.Helicopter.bSet && !Spec.Hovercraft.bSet && !Spec.Rider.bSet && !Spec.bTrailer)
+		if (!Spec.Aircraft.bSet && !Spec.Helicopter.bSet && !Spec.Hovercraft.bSet && !Spec.Boat.bSet && !Spec.Rider.bSet && !Spec.bTrailer)
 		{
 			const TSharedPtr<FJsonObject> Doc = ParseObject(Text);
 			const TSharedPtr<FJsonObject> Copy = ParseObject(Text);
@@ -717,7 +717,7 @@ bool FMantleVehicleDocumentGroundHandlingTest::RunTest(const FString& Parameters
 		{
 			continue;
 		}
-		const bool bGround = !Spec.Aircraft.bSet && !Spec.Helicopter.bSet && !Spec.Hovercraft.bSet && Spec.WheelCount() > 2;
+		const bool bGround = !Spec.Aircraft.bSet && !Spec.Helicopter.bSet && !Spec.Hovercraft.bSet && !Spec.Boat.bSet && Spec.WheelCount() > 2;
 		if (!bGround)
 		{
 			// A bike keeps its tires' own, a plane's, a helicopter's and a hovercraft's are not a car's: neither key is written.
@@ -1035,7 +1035,7 @@ bool FMantleVehicleDocumentRefusalsTest::RunTest(const FString& Parameters)
 		}
 	};
 	// The baseline reads: the mutations below are the only reason a document does not.
-	for (const TCHAR* Id : { TEXT("plane"), TEXT("jet"), TEXT("helicopter"), TEXT("hovercraft"), TEXT("motorcycle"), TEXT("sedan") })
+	for (const TCHAR* Id : { TEXT("plane"), TEXT("jet"), TEXT("helicopter"), TEXT("hovercraft"), TEXT("boat"), TEXT("motorcycle"), TEXT("sedan") })
 	{
 		FMantleVehicleDesc D;
 		FString Error;
@@ -1046,7 +1046,12 @@ bool FMantleVehicleDocumentRefusalsTest::RunTest(const FString& Parameters)
 	Refuses(TEXT("a plane with no flight block"), TEXT("plane"), TEXT("needs a flight block"), [](FJsonObject& Doc) { Doc.RemoveField(TEXT("flight")); });
 	Refuses(TEXT("a helicopter with no helicopter block"), TEXT("helicopter"), TEXT("needs a helicopter block"), [](FJsonObject& Doc) { Doc.RemoveField(TEXT("helicopter")); });
 	Refuses(TEXT("a hovercraft with no hover block"), TEXT("hovercraft"), TEXT("needs a hover block"), [](FJsonObject& Doc) { Doc.RemoveField(TEXT("hover")); });
-	Refuses(TEXT("an unknown movement type"), TEXT("plane"), TEXT("/movementType"), [](FJsonObject& Doc) { Doc.SetStringField(TEXT("movementType"), TEXT("boat")); });
+	Refuses(TEXT("a boat with no boat block"), TEXT("boat"), TEXT("needs a boat block"), [](FJsonObject& Doc) { Doc.RemoveField(TEXT("boat")); });
+	Refuses(TEXT("an unknown movement type"), TEXT("plane"), TEXT("must be one of wheeled, plane, helicopter, hover, boat"), [](FJsonObject& Doc) { Doc.SetStringField(TEXT("movementType"), TEXT("submarine")); });
+	Refuses(TEXT("a boat's drive of no kind it knows"), TEXT("boat"), TEXT("must be one of propeller, jet"), [](FJsonObject& Doc)
+		{ Doc.GetObjectField(TEXT("boat"))->GetObjectField(TEXT("propulsion"))->SetStringField(TEXT("kind"), TEXT("paddle")); });
+	Refuses(TEXT("a jet with a prop walk"), TEXT("boat"), TEXT("a jet has none"), [](FJsonObject& Doc)
+		{ Doc.GetObjectField(TEXT("boat"))->GetObjectField(TEXT("propulsion"))->SetStringField(TEXT("kind"), TEXT("jet")); });
 	Refuses(TEXT("a car with a flight block"), TEXT("sedan"), TEXT("belongs to movementType"), [](FJsonObject& Doc)
 	{
 		Doc.SetObjectField(TEXT("flight"), MakeShared<FJsonObject>());
