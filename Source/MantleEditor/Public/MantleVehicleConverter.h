@@ -511,6 +511,9 @@ public:
 	 */
 	static FMantleVehicleSourceSeatContacts GuessSeatContacts(const FMantleVehicleSourceTuning& Tuning, bool bPassenger);
 
+	/** #444: the rpm full boost arrives at for a tuning: its Spool RPM, or 40% of its Max RPM when that is 0. */
+	static int32 SpoolRPMFor(const FMantleVehicleSourceTuning& Tuning);
+
 	/**
 	 * The vehicle document for Source: schema/vehicle.schema.json, keys in the schema's order, numbers rounded, only
 	 * what the creator set away from "measure it" (a wheel's radius and width, the seat, the shift points, the
@@ -520,9 +523,6 @@ public:
 	 * into the document, in plain words, and is left empty when they were. A document whose movement blocks do not read is missing them (a bike without its rider block),
 	 * so the check (CheckSource) and the build ask, and say so, rather than let it export.
 	 */
-	/** #444: the rpm full boost arrives at for a tuning: its Spool RPM, or 40% of its Max RPM when that is 0. */
-	static int32 SpoolRPMFor(const FMantleVehicleSourceTuning& Tuning);
-
 	static TSharedRef<FJsonObject> MakeDocument(const UMantleVehicleSource& Source, const TMap<FString, FString>& SectionMaterialIds, FString* OutError = nullptr);
 
 	/**
