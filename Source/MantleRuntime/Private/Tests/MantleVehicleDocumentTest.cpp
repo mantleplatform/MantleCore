@@ -495,8 +495,8 @@ bool FMantleVehicleDocumentGoldenTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleDocumentTestPrivate;
 	const TArray<FString> Selectors = MantleVehicleDocumentTestPrivate::Selectors();
-	// The nineteen presets at scale 1 and at 0.7.
-	TestEqual(TEXT("nineteen presets, two sizes each"), Selectors.Num(), 38);
+	// The twenty-one presets at scale 1 and at 0.7 (#379 added the warbird).
+	TestEqual(TEXT("twenty-one presets, two sizes each"), Selectors.Num(), 42);
 	for (const FString& Selector : Selectors)
 	{
 		FMantleChassisSpec Spec;
@@ -1803,9 +1803,10 @@ bool FMantleVehicleDocumentCookedGroundTest::RunTest(const FString& Parameters)
 				C.Vec(TEXT("rider/pelvisOffset"), VectorAt(Rider, TEXT("pelvisOffset")), R.PelvisOffset);
 				C.Vec(TEXT("rider/stopPelvisShift"), VectorAt(Rider, TEXT("stopPelvisShift")), R.StopPelvisShift);
 				C.Number(TEXT("rider/kneeSplayDegrees"), Rider, TEXT("kneeSplayDegrees"), R.KneeSplayDegrees, 8.0);
-				TestTrue(TEXT("rider/rearTireFriction survived"), R.bRearTireFriction);
+				// The rider's own rear grip and rear brake (an older document's; #378's preset writes neither): read when the example has them, unset when not.
+				TestEqual(TEXT("rider/rearTireFriction survived exactly when written"), R.bRearTireFriction, Rider->HasField(TEXT("rearTireFriction")));
 				C.Number(TEXT("rider/rearTireFriction"), Rider, TEXT("rearTireFriction"), R.RearTireFriction, 0.0);
-				TestTrue(TEXT("rider/rearBrakeTorque survived"), R.bRearBrakeTorque);
+				TestEqual(TEXT("rider/rearBrakeTorque survived exactly when written"), R.bRearBrakeTorque, Rider->HasField(TEXT("rearBrakeTorque")));
 				C.Number(TEXT("rider/rearBrakeTorque"), Rider, TEXT("rearBrakeTorque"), R.RearBrakeTorque, 0.0);
 				const TSharedPtr<FJsonObject> Control = ObjectAt(Rider, TEXT("rotationControl"));
 				const FMantleVehicleRotationControlDesc& RC = R.RotationControl;
