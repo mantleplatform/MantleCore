@@ -81,9 +81,10 @@ bool FMantleVehicleBuilderCardsTest::RunTest(const FString& Parameters)
 {
 	const TArray<const FMantleVehiclePreset*> Cards = FMantleVehiclePresets::Publishable();
 
-	// Every type a creator can build has a card: three kinds of ground vehicle, the bike and the three that leave the ground.
+	// Every type a creator can build has a card: three kinds of ground vehicle, the bike, the two on tracks and the three that leave the ground.
 	const TCHAR* const Expected[] = { TEXT("sedan"), TEXT("sports"), TEXT("limousine"), TEXT("pickup"), TEXT("van"), TEXT("truck"), TEXT("sixwheeler"),
-		TEXT("motorcycle"), TEXT("plane"), TEXT("jet"), TEXT("helicopter"), TEXT("hovercraft") };
+		TEXT("compact"), TEXT("muscle"), TEXT("drift"), TEXT("supercar"), TEXT("motorcycle"), TEXT("tank"),
+		TEXT("bulldozer"), TEXT("plane"), TEXT("jet"), TEXT("helicopter"), TEXT("hovercraft") };
 	for (const TCHAR* Id : Expected)
 	{
 		TestTrue(*FString::Printf(TEXT("%s has a card"), Id), Cards.ContainsByPredicate([Id](const FMantleVehiclePreset* Card) { return Card->Id == Id; }));
@@ -122,17 +123,18 @@ bool FMantleVehicleBuilderCardsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("surrounding space is trimmed"), Card(TEXT("  A van.  ")), FString(TEXT("A van.")));
 	TestEqual(TEXT("no description, no sentence"), Card(TEXT("")), FString());
 
-	// Road vehicles first, then what flies, then what floats.
+	// Road vehicles first, then the tracked ones (#448), then what flies, then what floats.
 	const auto Rank = [](const FMantleVehiclePreset* Card)
 	{
-		return Card->MovementType == TEXT("wheeled") ? 0 : Card->MovementType == TEXT("plane") ? 1 : Card->MovementType == TEXT("helicopter") ? 2 : 3;
+		return Card->MovementType == TEXT("wheeled") ? 0 : Card->MovementType == TEXT("tracked") ? 1 : Card->MovementType == TEXT("plane") ? 2
+			: Card->MovementType == TEXT("helicopter") ? 3 : 4;
 	};
 	bool bInOrder = true;
 	for (int32 Index = 1; Index < Cards.Num(); ++Index)
 	{
 		bInOrder &= Rank(Cards[Index - 1]) <= Rank(Cards[Index]);
 	}
-	TestTrue(TEXT("the cards run from road vehicles to planes to helicopters to hovercraft"), bInOrder);
+	TestTrue(TEXT("the cards run from road vehicles to tracked ones to planes to helicopters to hovercraft"), bInOrder);
 
 	// A preset whose file does not say it is ready is no card (positive control for the filter): the sedan's file with the flag turned off.
 	FString Json;
@@ -170,7 +172,7 @@ bool FMantleVehicleBuilderSizeTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("its summary is the ground one"), FMantleVehicleShape::Summarize(Session.GetShaped()).Family == EMantleVehicleFamily::Ground);
 	}
 
-	for (const TCHAR* Id : { TEXT("plane"), TEXT("jet"), TEXT("helicopter"), TEXT("hovercraft") })
+	for (const TCHAR* Id : { TEXT("plane"), TEXT("jet"), TEXT("helicopter"), TEXT("hovercraft"), TEXT("tank"), TEXT("bulldozer") })
 	{
 		FMantleChassisSpec Archetype;
 		if (!Load(*this, Id, Archetype))
@@ -225,6 +227,17 @@ bool FMantleVehicleBuilderSizeTest::RunTest(const FString& Parameters)
 		{
 			TestTrue(*FString::Printf(TEXT("%s's pads and hover height grew"), Id),
 				Near(Shaped.Hovercraft.PadTravel, Archetype.Hovercraft.PadTravel * 1.5, 1.0e-9) && Near(Shaped.Clearance, Archetype.Clearance * 1.5, 1.0e-9));
+		}
+		if (Archetype.Tracked.bSet)
+		{
+			// The tracks grow with the hull: the road wheels, the gauge and the tracks' width, and the pivot speed with the gauge (so it turns on the spot as fast);
+			// the lateral share is a ratio and stays, so the tracks are no harder to turn than the preset's.
+			TestTrue(*FString::Printf(TEXT("%s's wheelbase, gauge and road wheels are 1.5 times"), Id), Near(Shaped.Wheelbase, Archetype.Wheelbase * 1.5, 1.0e-9)
+				&& Near(Shaped.Track, Archetype.Track * 1.5, 1.0e-9) && Near(Shaped.WheelRadius, Archetype.WheelRadius * 1.5, 1.0e-9));
+			TestTrue(*FString::Printf(TEXT("%s's tracks are 1.5 times as wide and run 1.5 times as fast in a pivot"), Id),
+				Near(Shaped.Tracked.TrackWidth, Archetype.Tracked.TrackWidth * 1.5, 1.0e-9) && Near(Shaped.Tracked.PivotTrackSpeed, Archetype.Tracked.PivotTrackSpeed * 1.5, 1.0e-9));
+			TestTrue(*FString::Printf(TEXT("%s's lateral share stays"), Id), Near(Shaped.Tracked.LateralShare, Archetype.Tracked.LateralShare, 1.0e-12));
+			TestTrue(*FString::Printf(TEXT("%s turns on the spot as fast"), Id), Near(FMantleVehicleShape::PivotSeconds(Shaped), FMantleVehicleShape::PivotSeconds(Archetype), 1.0e-9));
 		}
 
 		// Reset puts it back.
@@ -456,6 +469,105 @@ bool FMantleVehicleBuilderSummaryTest::RunTest(const FString& Parameters)
 	{
 		const FString Said = FMantleVehicleShape::Describe(FMantleVehicleShape::Summarize(Sedan)).ToString();
 		TestTrue(TEXT("a car still says how it turns"), Said.StartsWith(TEXT("Weighs about ")) && Said.Contains(TEXT("Turns in a circle about ")) && Said.EndsWith(TEXT(" km/h.")));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleBuilderTrackedSummaryTest,
+	"Mantle.Vehicle.Builder.TrackedSummaryAndFeel",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleBuilderTrackedSummaryTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleBuilderTypesTestPrivate;
+	// A tank and a bulldozer (#448): weight, top speed (the governor), the time for a full turn on the spot and the ground pressure, each worked out here from the
+	// preset's own numbers apart from the shape code; nothing about turning circles, which a vehicle that turns on the spot has none of.
+	struct FExpected
+	{
+		const TCHAR* Id;
+		const TCHAR* Speed;
+		const TCHAR* Turn;
+		const TCHAR* Pressure;
+	};
+	const FExpected Cases[] = {
+		// Leopard 2A4: 68 km/h; pi x 310 / 97 = 10.0 s; 55150 / (2 x 63.5 x 525) = 0.83 kg/cm^2, 81 kPa.
+		{ TEXT("tank"), TEXT("Top speed about 70 km/h."), TEXT("Turns a full circle on the spot in about 10 seconds."), TEXT("about 0.83 kg on each square centimeter (81 kPa).") },
+		// Cat D6: 11.7 km/h, said to the km/h; pi x 200 / 52 = 12.1 s; 22130 / (2 x 76 x 290) = 0.5 kg/cm^2, 49 kPa (Cat's own figure).
+		{ TEXT("bulldozer"), TEXT("Top speed about 12 km/h."), TEXT("Turns a full circle on the spot in about 12 seconds."), TEXT("about 0.5 kg on each square centimeter (49 kPa).") },
+	};
+	for (const FExpected& Case : Cases)
+	{
+		FMantleChassisSpec Archetype;
+		if (!Load(*this, Case.Id, Archetype))
+		{
+			continue;
+		}
+		const FMantleVehicleSummary Own = FMantleVehicleShape::Summarize(Archetype);
+		TestTrue(*FString::Printf(TEXT("%s is tracked"), Case.Id), Own.Family == EMantleVehicleFamily::Tracked && FMantleVehicleShape::FamilyOf(Archetype) == EMantleVehicleFamily::Tracked);
+		TestFalse(*FString::Printf(TEXT("%s's road wheels are drawn"), Case.Id), FMantleVehicleShape::WheelsHidden(Archetype));
+		TestTrue(*FString::Printf(TEXT("%s weighs what its preset says"), Case.Id), Near(Own.MassKg, Archetype.Archetype.Mass, 1.0e-9));
+		TestTrue(*FString::Printf(TEXT("%s's top speed is its speed limit"), Case.Id), Near(Own.TopSpeedKmh, Archetype.Archetype.MaxSpeed * 0.036, 1.0e-9));
+		const double Pivot = UE_DOUBLE_PI * Archetype.Track / Archetype.Tracked.PivotTrackSpeed;
+		TestTrue(*FString::Printf(TEXT("%s turns on the spot in %.2f s (%.2f)"), Case.Id, Own.PivotSeconds, Pivot), Near(Own.PivotSeconds, Pivot, 1.0e-9));
+		const double Pressure = Archetype.Archetype.Mass / (2.0 * Archetype.Tracked.TrackWidth * (Archetype.Wheelbase + Archetype.WheelRadius));
+		TestTrue(*FString::Printf(TEXT("%s presses %.3f kg/cm^2 (%.3f)"), Case.Id, Own.GroundPressureKgCm2, Pressure), Near(Own.GroundPressureKgCm2, Pressure, 1.0e-9));
+		const FString Said = FMantleVehicleShape::Describe(Own).ToString();
+		TestTrue(*FString::Printf(TEXT("%s says what it weighs (%s)"), Case.Id, *Said), Said.StartsWith(TEXT("Weighs about ")));
+		TestTrue(*FString::Printf(TEXT("%s says its top speed (%s)"), Case.Id, *Said), Said.Contains(Case.Speed));
+		TestTrue(*FString::Printf(TEXT("%s says how long a turn on the spot takes (%s)"), Case.Id, *Said), Said.Contains(Case.Turn));
+		TestTrue(*FString::Printf(TEXT("%s says its ground pressure (%s)"), Case.Id, *Said), Said.Contains(Case.Pressure));
+		TestFalse(*FString::Printf(TEXT("%s does not turn like a car"), Case.Id), Said.Contains(TEXT("Turns in a circle")));
+		TestTrue(*FString::Printf(TEXT("%s's Size help is its own"), Case.Id), FMantleVehicleShape::SizeHelp(Own.Family).ToString().Contains(TEXT("turns on the spot")));
+
+		// Sized down to 0.8 (inside the mass range): the turn takes as long (the pivot speed grows with the gauge), and the pressure is the derived weight over the
+		// scaled tracks, so it falls by about 0.8 (weight by 0.8 cubed over contact by 0.8 squared).
+		FMantleVehicleShapeSession Session;
+		Session.Start(Archetype, 0.5, 2.0);
+		TestTrue(*FString::Printf(TEXT("%s takes a Size"), Case.Id), Session.SetSize(0.8));
+		const FMantleChassisSpec& Shaped = Session.GetShaped();
+		const FMantleVehicleSummary Smaller = FMantleVehicleShape::Summarize(Shaped);
+		TestTrue(*FString::Printf(TEXT("%s smaller turns on the spot as fast (%.2f s)"), Case.Id, Smaller.PivotSeconds), Near(Smaller.PivotSeconds, Own.PivotSeconds, 1.0e-9));
+		const double ShapedPressure = Shaped.Derived->Mass / (2.0 * Shaped.Tracked.TrackWidth * (Shaped.Wheelbase + Shaped.WheelRadius));
+		TestTrue(*FString::Printf(TEXT("%s smaller presses %.3f kg/cm^2, its weight over its tracks"), Case.Id, Smaller.GroundPressureKgCm2),
+			Near(Smaller.GroundPressureKgCm2, ShapedPressure, 1.0e-9) && Smaller.GroundPressureKgCm2 < Own.GroundPressureKgCm2);
+		TestTrue(*FString::Printf(TEXT("the session says %s's new numbers"), Case.Id), Session.GetSummary().ToString() != Said);
+
+		// The feel: all four sliders, as a car's (its road wheels are wheels to the derivation). Grip at half is 15% more friction; the top speed at the bottom 30% less.
+		Session.Reset();
+		for (const EMantleVehicleFeel Feel : MantleVehicleFeels)
+		{
+			TestTrue(*FString::Printf(TEXT("%s has feel %d"), Case.Id, static_cast<int32>(Feel)), Session.HasFeel(Feel));
+		}
+		TestTrue(*FString::Printf(TEXT("%s: grip moves"), Case.Id), Session.SetFeel(EMantleVehicleFeel::Grip, 0.5));
+		TestTrue(*FString::Printf(TEXT("%s: grip at half is 15%% more friction"), Case.Id), Near(Session.GetShaped().Derived->TireFriction, Archetype.Archetype.TireFriction * 1.15, 0.01));
+		Session.Reset();
+		Session.SetFeel(EMantleVehicleFeel::TopSpeed, -1.0);
+		TestTrue(*FString::Printf(TEXT("%s: top speed -1 is 30%% slower"), Case.Id), Near(Session.GetShaped().Derived->MaxSpeed, Archetype.Archetype.MaxSpeed * 0.7, 0.01));
+		TestTrue(*FString::Printf(TEXT("%s: and the summary's top speed with it"), Case.Id),
+			Near(FMantleVehicleShape::Summarize(Session.GetShaped()).TopSpeedKmh, Archetype.Archetype.MaxSpeed * 0.7 * 0.036, 0.01));
+
+		// At its own size it warns of nothing about its wheels or its balance.
+		for (const FText& Line : FMantleVehicleShape::Warnings(Archetype))
+		{
+			const FString Text = Line.ToString();
+			TestFalse(*FString::Printf(TEXT("%s at its own size: %s"), Case.Id, *Text), Text.Contains(TEXT("wheels stick out")) || Text.Contains(TEXT("top-heavy")));
+		}
+	}
+
+	// A layout whose tracks can't turn it says so instead of a time.
+	FMantleVehicleSummary Stuck;
+	Stuck.Family = EMantleVehicleFamily::Tracked;
+	Stuck.MassKg = 20000.0;
+	Stuck.TopSpeedKmh = 40.0;
+	Stuck.GroundPressureKgCm2 = 0.6;
+	TestTrue(TEXT("a tracked vehicle with no pivot says so"), FMantleVehicleShape::Describe(Stuck).ToString().Contains(TEXT("can't turn it on the spot")));
+
+	// Nothing else is tracked or has a pivot time or a ground pressure.
+	FMantleChassisSpec Sedan;
+	if (Load(*this, TEXT("sedan"), Sedan))
+	{
+		TestTrue(TEXT("a sedan has no pivot time or ground pressure"), FMantleVehicleShape::PivotSeconds(Sedan) == 0.0 && FMantleVehicleShape::GroundPressureKgCm2(Sedan) == 0.0);
 	}
 	return true;
 }

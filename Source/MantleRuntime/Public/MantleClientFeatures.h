@@ -37,6 +37,8 @@ namespace MantleClientFeatures
 	inline const TCHAR* const VehicleFliers = TEXT("vehicleFliers");
 	/** A vehicle document's movementType hover and its hover block. */
 	inline const TCHAR* const VehicleHover = TEXT("vehicleHover");
+	/** A vehicle document's movementType tracked and its tracked block (#448): a tank's or a bulldozer's two tracks. */
+	inline const TCHAR* const VehicleTracked = TEXT("vehicleTracked");
 	/** A vehicle document's movementType boat and its boat block (#15). */
 	inline const TCHAR* const VehicleBoat = TEXT("vehicleBoat");
 	/** A vehicle seat's kind (motorcycle, pilot), exit distance and a motorcycle driver's rider block. */
@@ -106,7 +108,7 @@ namespace MantleClientFeatures
 	{
 		return {
 			InstancedMesh, CrowdSpawner, CrowdPointsOfInterest, SkeletalMesh, RectLight, Decal, LightShape, Terrain, TerrainGrass,
-			Vehicle, VehicleLinkage, VehicleParts, VehicleCarInteraction, VehicleContactPoints, VehicleHiddenSeat, VehicleFliers, VehicleHover, VehicleBoat, VehicleSeatKind, VehicleWeaponArc, VehicleLights, VehiclePaintLayers, VehicleLiveryNames, Effect, EffectSprites, Constraint, Scatter, ReflectionProbes, Storage,
+			Vehicle, VehicleLinkage, VehicleParts, VehicleCarInteraction, VehicleContactPoints, VehicleHiddenSeat, VehicleFliers, VehicleHover, VehicleTracked, VehicleBoat, VehicleSeatKind, VehicleWeaponArc, VehicleLights, VehiclePaintLayers, VehicleLiveryNames, Effect, EffectSprites, Constraint, Scatter, ReflectionProbes, Storage,
 			UIDocuments, EnvironmentDefaults, EnvironmentLighting, AvatarHeight, SoundEmitterAutoplay, StaticMeshPhysics, PhysicsMaterial, Surface, DrawDistance, CarPaint,
 			MaterialFidelity, MaterialAdditive, WeaponDocument, WorldText, VoxelWorld, ScatterDrawDistance, ScatterTerrain, ScatterShapes, ScatterCollision, ScatterPaintLayer, ScatterGroundAlign, ScatterMinSpacing, ScatterPathStep, ScatterPathExclusions, ScatterLarge
 		};

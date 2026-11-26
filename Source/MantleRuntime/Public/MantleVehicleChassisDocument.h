@@ -9,28 +9,29 @@ class UMantleVehicleSource;
 struct FMantleChassisSpec;
 
 /**
- * The movement part of a vehicle document, written and derived: movementType, the flight, helicopter or hover block, the seats' kinds, the
+ * The movement part of a vehicle document, written and derived: movementType, the flight, helicopter, hover or tracked block, the seats' kinds, the
  * driver's exit distance and rider fit, and the chase camera's boom. Every number is flat: a published vehicle's handling is fixed when it is published, so
  * the document never carries a preset id and the client never re-derives from one. The Go cook
  * (backend/internal/cook/vehicle_movement.go) writes the same form into MVH1 and FMantleVehicleAssetReader reads it.
  *
  * Derive is the pure number derivation the chassis demo path (FMantleChassisDefinitions, in the game module, which this plugin cannot depend on) computed
- * from a chassis spec: the airframe's aerofoils, the engines, the propellers, the rotors, the hover pads, the rider's grips. Write turns what Derive made (or
+ * from a chassis spec: the airframe's aerofoils, the engines, the propellers, the rotors, the hover pads, the tracks, the rider's grips. Write turns what Derive made (or
  * what a reader read) into the document's JSON, with every default filled, so Write then ParseDocument gives back exactly the Desc that was written.
  *
  * No UObjects: any thread.
  */
 struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 {
-	/** A helicopter's rigid-body linear damping, per second: the rotor's drag, which settles a hover and holds its top speed near 50 m/s (helicopter.linearDamping). */
-	static constexpr double HelicopterLinearDamping = 0.1;
+	/** A helicopter's rigid-body linear damping, per second (helicopter.linearDamping): none since #380. The chassis's speed-squared drag is its drag, the
+	 *  level assist stops a slow drift, and the assist's nose-down limit (or, with it off, the rotor's flapback) holds its top speed near its never-exceed speed. */
+	static constexpr double HelicopterLinearDamping = 0.0;
 	/** How fast a helicopter's collective moves, full travel per second (a plane's throttle takes two): helicopter.throttleLeverRate. */
 	static constexpr double HelicopterCollectiveRate = 1.0;
 	/** A hovercraft's rigid-body angular damping, per second, on the ground and in the air alike (default 0.5): hover.angularDamping. */
 	static constexpr double HovercraftAngularDamping = 0.5;
 	/**
-	 * How much of the elevator's travel the player's keys and stick reach (flight.pitchAuthority): half of its 20 degrees, a visible flap and a real climb that is
-	 * still hard to stall from one held key.
+	 * How much of the elevator's travel the player's keys and stick reach (flight.pitchAuthority): half of it, so a held key (keys are on or off) pitches
+	 * gently. The stall protection assist (#379) is what keeps a player out of a stall.
 	 */
 	static constexpr double PlanePitchAuthority = 0.5;
 	/** How far to the side a bike's rider steps off, cm: a body-width, not a car's door (seat.exitSideDistance). */
@@ -66,10 +67,11 @@ struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 
 	/**
 	 * A ground car's handling, baked into Document (a published vehicle's handling is fixed when it is published, so Make adds none of its own): for a
-	 * chassis on more than two wheels that is not a plane, a helicopter or a hovercraft, the steering eases off with speed (steering.speedCurve, the built-in
+	 * chassis on more than two wheels that is not a plane, a helicopter, a hovercraft or a tracked vehicle, the steering eases off with speed (steering.speedCurve, the built-in
 	 * sports car's curve: mph, share of the lock) and the tires grip front and rear as the built-in sports car's do (tires.friction times FrontTireGripShare, and
 	 * tires.rearFriction times RearTireGripShare): at full lock at 100 km/h a tap of the key slid the front tires past their grip and spun the car, and equal
-	 * tires let the driven rear go first. Document's tires and steering objects must exist. Nothing for any other chassis.
+	 * tires let the driven rear go first. A preset whose defaults set tires.rearFriction (the drift car, rear under the front) keeps that rear instead, times
+	 * the friction over the preset's own, so a resized car keeps its balance. Document's tires and steering objects must exist. Nothing for any other chassis.
 	 */
 	static void ComposeGroundHandling(const FMantleChassisSpec& Spec, FJsonObject& Document, TArray<FString>* OutHeld = nullptr);
 
@@ -85,14 +87,14 @@ struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 	static TArray<FVector2D> GroundSteeringSpeedCurve();
 
 	/**
-	 * The movement keys of Spec's chassis alone, as the JSON object text UMantleVehicleSource::MovementBlocks holds: the flight, helicopter or hover block, and
+	 * The movement keys of Spec's chassis alone, as the JSON object text UMantleVehicleSource::MovementBlocks holds: the flight, helicopter, hover or tracked block, and
 	 * the seat's exitSideDistance and rider and the camera's boomLocation, each under the key they have in a document. "{}" for a car.
 	 */
 	static FString MovementBlocksJson(const FMantleChassisSpec& Spec);
 
 	/**
 	 * Merges a source's movement and optional seat firearm aim arcs into a document made from it: its movement type and seat kinds when they are
-	 * not the baseline, enabled arcs on placed seats, and the blocks MovementBlocks holds (top-level flight, helicopter and hover replace the document's;
+	 * not the baseline, enabled arcs on placed seats, and the blocks MovementBlocks holds (top-level flight, helicopter, hover and tracked replace the document's;
 	 * seat, passengerSeat and camera objects add their keys to the document's own, which must already exist). A disabled arc is not written: the seat's arc is
 	 * then worked out from where it sits. False, with the reason in OutError, for invalid arcs or blocks that are not a JSON object or name a key a source may not
 	 * set (movementType, kind, or anything else).

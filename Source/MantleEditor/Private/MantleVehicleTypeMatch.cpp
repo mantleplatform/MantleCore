@@ -59,6 +59,45 @@ namespace MantleVehicleTypeMatchPrivate
 		return HasAny(Lower, { TEXT("turbine"), TEXT("afterburner"), TEXT("nozzle") });
 	}
 
+	/** A name's words, lower case: split at anything but a letter, and where a lower-case letter is followed by an upper-case one (RoadWheel_L1: road, wheel, l). */
+	TArray<FString> NameWords(const FString& Name)
+	{
+		TArray<FString> Words;
+		FString Word;
+		TCHAR Last = 0;
+		for (const TCHAR Letter : Name)
+		{
+			const bool bLetter = FChar::IsAlpha(Letter);
+			if (!Word.IsEmpty() && (!bLetter || (FChar::IsUpper(Letter) && FChar::IsLower(Last))))
+			{
+				Words.Add(Word.ToLower());
+				Word.Reset();
+			}
+			if (bLetter)
+			{
+				Word.AppendChar(Letter);
+			}
+			Last = Letter;
+		}
+		if (!Word.IsEmpty())
+		{
+			Words.Add(Word.ToLower());
+		}
+		return Words;
+	}
+
+	bool IsAnyOf(const FString& Word, std::initializer_list<const TCHAR*> Choices)
+	{
+		for (const TCHAR* Choice : Choices)
+		{
+			if (Word.Equals(Choice, ESearchCase::CaseSensitive))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	/** The bones whose name passes Test, a chain of them (a wheel with a brake bone under it) counted once at the bone nearest the root. */
 	TArray<int32> TopBones(const FMantleVehicleModel& Model, const TFunctionRef<bool(const FString&)> Test)
 	{
@@ -120,6 +159,8 @@ namespace MantleVehicleTypeMatchPrivate
 			return TEXT("helicopter");
 		case EMantleVehicleModelFamily::Hover:
 			return TEXT("hovercraft");
+		case EMantleVehicleModelFamily::Tracked:
+			return TEXT("tank");
 		default:
 			return FString();
 		}
@@ -138,6 +179,8 @@ namespace MantleVehicleTypeMatchPrivate
 			return TEXT("a plane");
 		case EMantleVehicleModelFamily::Helicopter:
 			return TEXT("a helicopter");
+		case EMantleVehicleModelFamily::Tracked:
+			return TEXT("a tank or bulldozer");
 		default:
 			return TEXT("a hovercraft");
 		}
@@ -155,10 +198,114 @@ namespace MantleVehicleTypeMatchPrivate
 			return TEXT("flies on wings");
 		case EMantleVehicleModelFamily::Helicopter:
 			return TEXT("flies on a rotor");
+		case EMantleVehicleModelFamily::Tracked:
+			return TEXT("runs on two tracks");
 		default:
 			return TEXT("floats on air");
 		}
 	}
+}
+
+bool FMantleVehicleTypeMatchCheck::IsTrackPartName(const FString& Name)
+{
+	using namespace MantleVehicleTypeMatchPrivate;
+	if (IsTrackBeltName(Name))
+	{
+		return true;
+	}
+	const TArray<FString> Words = NameWords(Name);
+	for (int32 Index = 0; Index < Words.Num(); ++Index)
+	{
+		const FString& Word = Words[Index];
+		const FString After = Index + 1 < Words.Num() ? Words[Index + 1] : FString();
+		if (IsAnyOf(Word, { TEXT("sprocket"), TEXT("sprockets"), TEXT("idler"), TEXT("idlers"), TEXT("roadwheel"), TEXT("roadwheels") }))
+		{
+			return true;
+		}
+		if (Word == TEXT("road") && IsAnyOf(After, { TEXT("wheel"), TEXT("wheels") }))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool FMantleVehicleTypeMatchCheck::IsTrackBeltName(const FString& Name)
+{
+	using namespace MantleVehicleTypeMatchPrivate;
+	const TArray<FString> Words = NameWords(Name);
+	// A tire's tread is a car's: tread counts only on a part that is not a tire.
+	const bool bTire = Words.ContainsByPredicate([](const FString& Word) { return IsAnyOf(Word, { TEXT("tire"), TEXT("tires"), TEXT("tyre"), TEXT("tyres") }); });
+	for (int32 Index = 0; Index < Words.Num(); ++Index)
+	{
+		const FString& Word = Words[Index];
+		const FString Before = Index > 0 ? Words[Index - 1] : FString();
+		const FString After = Index + 1 < Words.Num() ? Words[Index + 1] : FString();
+		// A car's track rod and track bar steer and locate its axle; they are no track.
+		if (IsAnyOf(Word, { TEXT("track"), TEXT("tracks") }) && !IsAnyOf(After, { TEXT("rod"), TEXT("rods"), TEXT("bar"), TEXT("bars") }))
+		{
+			return true;
+		}
+		if (IsAnyOf(Word, { TEXT("tread"), TEXT("treads") }) && !bTire)
+		{
+			return true;
+		}
+		// A seat belt, a fan belt, a timing belt or a motorcycle's belt drive is a car's or a bike's.
+		if (IsAnyOf(Word, { TEXT("belt"), TEXT("belts") }) && !IsAnyOf(Before, { TEXT("seat"), TEXT("safety"), TEXT("fan"), TEXT("timing"), TEXT("serpentine"), TEXT("drive"), TEXT("v") })
+			&& !IsAnyOf(After, { TEXT("drive"), TEXT("guard"), TEXT("cover") }))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool FMantleVehicleTypeMatchCheck::WheelsPackedLikeTracks(const TConstArrayView<FVector> Positions, const double FloorZ)
+{
+	if (Positions.Num() < 8)
+	{
+		return false;
+	}
+	// The row the wheels make runs along the longer side of their box; the two sides are either half across it.
+	FBox Box(ForceInit);
+	for (const FVector& Position : Positions)
+	{
+		Box += Position;
+	}
+	const FVector Size = Box.GetSize();
+	const int32 Along = Size.X >= Size.Y ? 0 : 1;
+	const int32 Across = 1 - Along;
+	const double Middle = Box.GetCenter()[Across];
+	TArray<FVector> Sides[2];
+	for (const FVector& Position : Positions)
+	{
+		const double Off = Position[Across] - Middle;
+		if (FMath::Abs(Off) < 1.0)
+		{
+			// A wheel in the middle is on neither side: this is no pair of tracks.
+			return false;
+		}
+		Sides[Off < 0.0 ? 0 : 1].Add(Position);
+	}
+	for (TArray<FVector>& Side : Sides)
+	{
+		if (Side.Num() < 4)
+		{
+			return false;
+		}
+		Side.Sort([Along](const FVector& A, const FVector& B) { return A[Along] < B[Along]; });
+		for (int32 Index = 1; Index < Side.Num(); ++Index)
+		{
+			// A hub's height above the ground is its wheel's radius, so two neighbors' heights together are a wheel across.
+			const double Diameter = (Side[Index - 1].Z - FloorZ) + (Side[Index].Z - FloorZ);
+			const double Gap = Side[Index][Along] - Side[Index - 1][Along];
+			if (!(Diameter > 0.0) || Gap >= MaxGapPerDiameter * Diameter)
+			{
+				return false;
+			}
+		}
+	}
+	return true;
 }
 
 EMantleVehicleModelFamily FMantleVehicleTypeMatchCheck::FamilyOfType(const FString& TypeId)
@@ -183,6 +330,10 @@ EMantleVehicleModelFamily FMantleVehicleTypeMatchCheck::FamilyOfType(const FStri
 	if (Preset->MovementType == TEXT("hover"))
 	{
 		return EMantleVehicleModelFamily::Hover;
+	}
+	if (Preset->MovementType == TEXT("tracked"))
+	{
+		return EMantleVehicleModelFamily::Tracked;
 	}
 	return EMantleVehicleModelFamily::Unknown;
 }
@@ -229,6 +380,51 @@ EMantleVehicleModelFamily FMantleVehicleTypeMatchCheck::FamilyOfModel(const FMan
 			OutEvidence.Add(TEXT("a jet engine"));
 		}
 		return EMantleVehicleModelFamily::Plane;
+	}
+
+	// Tracks (#448), only on real evidence, before the wheels a track runs over would say a road vehicle: a part named like a track's (its bones by their own
+	// spelling, so a RoadWheel splits into its words), or a row of 4 or more wheels on each side packed into a track. Two rows of 3 stay a six-wheeled truck.
+	{
+		TArray<FString> TrackBones;
+		for (const FMantleSkinnedMeshBone& Bone : Model.Bones)
+		{
+			const FString BoneName = Bone.Name.ToString();
+			if (IsTrackPartName(BoneName))
+			{
+				TrackBones.Add(BoneName);
+			}
+		}
+		const bool bTrackMaterial = Model.Materials.ContainsByPredicate([](const FSkeletalMaterial& Material)
+		{
+			return IsTrackPartName(Material.MaterialSlotName.ToString()) || IsTrackPartName(Material.ImportedMaterialSlotName.ToString());
+		});
+		bool bPacked = false;
+		const FBox WheelBounds = Model.Bounds();
+		if (Wheels.Num() >= 8 && Model.BonePositions.Num() == Model.Bones.Num() && WheelBounds.IsValid)
+		{
+			TArray<FVector> Hubs;
+			for (const int32 Wheel : Wheels)
+			{
+				Hubs.Add(Model.BonePositions[Wheel]);
+			}
+			bPacked = WheelsPackedLikeTracks(Hubs, WheelBounds.Min.Z);
+		}
+		if (TrackBones.Num() > 0 || bTrackMaterial || bPacked)
+		{
+			if (TrackBones.Num() > 0)
+			{
+				OutEvidence.Add(FString::Printf(TEXT("parts named like a track's (%s)"), *TrackBones[0]));
+			}
+			if (bTrackMaterial)
+			{
+				OutEvidence.Add(TEXT("a track material"));
+			}
+			if (bPacked)
+			{
+				OutEvidence.Add(FString::Printf(TEXT("%d wheels packed into two tracks"), Wheels.Num()));
+			}
+			return EMantleVehicleModelFamily::Tracked;
+		}
 	}
 
 	// Wheels: more than two is a road vehicle, two in a line a motorcycle.
@@ -330,7 +526,7 @@ FMantleVehicleTypeMatch FMantleVehicleTypeMatchCheck::Check(const FMantleVehicle
 	{
 		return Out;
 	}
-	// Only the proportions to go by: they can say a model is not a car or a bike, but not what a plane, helicopter or hovercraft is, so those picks are let through.
+	// Only the proportions to go by: they can say a model is not a car or a bike, but not what a plane, helicopter, hovercraft or tracked vehicle is, so those picks are let through.
 	if (Out.Confidence == EMantleVehicleTypeConfidence::Weak && Wanted != EMantleVehicleModelFamily::Road && Wanted != EMantleVehicleModelFamily::Motorcycle)
 	{
 		return Out;

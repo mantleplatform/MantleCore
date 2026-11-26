@@ -119,10 +119,11 @@ bool FMantleChassisHelicopterSpecTest::RunTest(const FString& Parameters)
 			Skid.Min.Z > 0.0 && Skid.Max.Z < Heli.WheelRadius);
 	}
 
-	// The rotor holds 1.6 times the weight, so the collective that holds the weight is its inverse.
+	// The rotor holds its real helicopter's share of the weight (#380: the Bell 407's, from its hover ceiling), so the collective that holds the weight is
+	// its inverse.
 	const double Weight = Heli.Archetype.Mass * Gravity;
 	TestTrue(TEXT("the rotor's thrust is the archetype's"), FMath::IsNearlyEqual(Heli.Archetype.RotorThrustNewtons, Heli.Helicopter.RotorThrustNewtons));
-	TestTrue(TEXT("1.6 times the weight"), FMath::IsNearlyEqual(Heli.Helicopter.RotorThrustNewtons / Weight, 1.6, 0.05));
+	TestTrue(TEXT("1.1 to 1.6 times the weight"), Heli.Helicopter.RotorThrustNewtons / Weight >= 1.1 && Heli.Helicopter.RotorThrustNewtons / Weight <= 1.6);
 	TestTrue(*FString::Printf(TEXT("the hover collective %.4f is the weight over the thrust"), Heli.Helicopter.HoverCollective),
 		FMath::IsNearlyEqual(Heli.Helicopter.HoverCollective, Weight / Heli.Helicopter.RotorThrustNewtons, 0.005));
 
@@ -239,10 +240,10 @@ bool FMantleChassisHelicopterPartsTest::RunTest(const FString& Parameters)
 	TestTrue(*FString::Printf(TEXT("and says so (%s)"), *Error), Error.Contains(TEXT("helicopter")));
 	Cut = Text.Replace(TEXT("\"type\": \"helicopter\""), TEXT("\"type\": \"car\""));
 	TestFalse(TEXT("a car with a helicopter block is refused"), FMantleChassisSpec::Parse(Cut, Spec, Error));
-	Cut = Text.Replace(TEXT("\"thrust\": 39200"), TEXT("\"thrusts\": 39200"));
+	Cut = Text.Replace(TEXT("\"thrust\": 32006"), TEXT("\"thrusts\": 32006"));
 	TestFalse(TEXT("a rotor with no thrust is refused"), FMantleChassisSpec::Parse(Cut, Spec, Error));
 	TestTrue(*FString::Printf(TEXT("and says which (%s)"), *Error), Error.Contains(TEXT("rotor.thrust")));
-	Cut = Text.Replace(TEXT("\"hoverCollective\": 0.625"), TEXT("\"hoverCollective\": 1.2"));
+	Cut = Text.Replace(TEXT("\"hoverCollective\": 0.671"), TEXT("\"hoverCollective\": 1.2"));
 	TestFalse(TEXT("a rotor that cannot hold the weight is refused"), FMantleChassisSpec::Parse(Cut, Spec, Error));
 	Cut = Text.Replace(TEXT("\"driver\": \"pilot\""), TEXT("\"driver\": \"car\""));
 	TestFalse(TEXT("a helicopter without a pilot is refused"), FMantleChassisSpec::Parse(Cut, Spec, Error));

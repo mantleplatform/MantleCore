@@ -128,7 +128,7 @@ namespace MantleVehiclePresetPrivate
 			TEXT("suspension/springPreload"), TEXT("suspension/damping"),
 			TEXT("steering/maxAngle"), TEXT("steering/ackermann"), TEXT("steering/speedCurve"),
 			TEXT("brakes/brakeTorque"), TEXT("brakes/handbrakeTorque"), TEXT("brakes/abs"), TEXT("brakes/frontShare"),
-			TEXT("tires/friction"), TEXT("tires/rearFriction"),
+			TEXT("tires/friction"), TEXT("tires/rearFriction"), TEXT("tires/rollingResistance"),
 			TEXT("camera/armLength"), TEXT("camera/height") };
 		return Known;
 	}
@@ -344,14 +344,15 @@ TArray<const FMantleVehiclePreset*> FMantleVehiclePresets::Publishable()
 			Out.Add(&Preset);
 		}
 	}
-	// Road vehicles first, then what flies, then what floats; within a movement type the order stays by id.
+	// Road vehicles first, then tracked ones (#448), then what flies, then what floats; within a movement type the order stays by id.
 	const auto Rank = [](const FString& MovementType)
 	{
 		if (MovementType == TEXT("wheeled")) { return 0; }
-		if (MovementType == TEXT("plane")) { return 1; }
-		if (MovementType == TEXT("helicopter")) { return 2; }
-		if (MovementType == TEXT("hover")) { return 3; }
-		return 4;
+		if (MovementType == TEXT("tracked")) { return 1; }
+		if (MovementType == TEXT("plane")) { return 2; }
+		if (MovementType == TEXT("helicopter")) { return 3; }
+		if (MovementType == TEXT("hover")) { return 4; }
+		return 5;
 	};
 	Out.StableSort([&Rank](const FMantleVehiclePreset& A, const FMantleVehiclePreset& B) { return Rank(A.MovementType) < Rank(B.MovementType); });
 	return Out;
@@ -601,6 +602,8 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 	{
 		T.bTireRearFriction = true;
 	}
+	// #447, #448: how much every wheel loses to rolling; absent, the tuning keeps its own (a car tire's 0.012).
+	Reader.Float(TEXT("tires/rollingResistance"), T.TireRollingResistance);
 
 	Reader.Float(TEXT("camera/armLength"), T.CameraArmLength);
 	Reader.Float(TEXT("camera/height"), T.CameraHeight);

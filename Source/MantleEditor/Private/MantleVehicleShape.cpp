@@ -89,7 +89,10 @@ namespace MantleVehicleShapePrivate
 	/** Two sizes this close are the same size. */
 	constexpr double SameSize = 1.0e-6;
 
-	/** Every handling line (FMantleChassisHandling::Clamped) of a family that matters to it: a plane's or a helicopter's wheels, engine and gearing are inert, so only its weight counts. */
+	/**
+	 * Every handling line (FMantleChassisHandling::Clamped) of a family that matters to it: a plane's or a helicopter's wheels, engine and gearing are inert, so only its
+	 * weight counts; a tracked vehicle steers no wheel (its tracks turn it), so its steering lock is inert.
+	 */
 	bool ClampMatters(const EMantleVehicleFamily Family, const FString& Path)
 	{
 		switch (Family)
@@ -99,6 +102,8 @@ namespace MantleVehicleShapePrivate
 			return Path == TEXT("mass");
 		case EMantleVehicleFamily::Hovercraft:
 			return Path == TEXT("mass") || Path == TEXT("maxSpeed");
+		case EMantleVehicleFamily::Tracked:
+			return Path != TEXT("steering/maxAngle");
 		default:
 			return true;
 		}
@@ -225,12 +230,14 @@ EMantleVehicleFamily FMantleVehicleShape::FamilyOf(const FMantleChassisSpec& Spe
 	case EMantleChassisType::Plane: return EMantleVehicleFamily::Aircraft;
 	case EMantleChassisType::Helicopter: return EMantleVehicleFamily::Helicopter;
 	case EMantleChassisType::Hovercraft: return EMantleVehicleFamily::Hovercraft;
+	case EMantleChassisType::Tracked: return EMantleVehicleFamily::Tracked;
 	default: return EMantleVehicleFamily::Ground;
 	}
 }
 
 bool FMantleVehicleShape::WheelsHidden(const FMantleChassisSpec& Spec)
 {
+	// A tracked vehicle's road wheels are drawn (each turns inside its belt), so they are not hidden.
 	return Spec.Type == EMantleChassisType::Helicopter || Spec.Type == EMantleChassisType::Hovercraft;
 }
 
@@ -273,6 +280,27 @@ double FMantleVehicleShape::HoverTopSpeedKmh(const FMantleChassisSpec& Spec)
 	const double Linear = Handling.Mass * HoverLinearDamping + Thrust / Fade;
 	const double MetersPerSecond = Drag > 0.0 ? (-Linear + FMath::Sqrt(Linear * Linear + 4.0 * Drag * Thrust)) / (2.0 * Drag) : Thrust / Linear;
 	return FMath::Min(MetersPerSecond, Fade) * 3.6;
+}
+
+double FMantleVehicleShape::PivotSeconds(const FMantleChassisSpec& Spec)
+{
+	if (Spec.Type != EMantleChassisType::Tracked || !Spec.Tracked.bSet || !(Spec.Tracked.PivotTrackSpeed > 0.0) || !(Spec.Track > 0.0))
+	{
+		return 0.0;
+	}
+	// The tracks run opposite ways at the pivot speed, each half the gauge from the middle: 2 x speed / gauge radians a second, so a full circle (2 pi) takes
+	// pi x gauge / speed seconds. Scaled grows the pivot speed with the gauge, so it takes as long at any Size.
+	return UE_DOUBLE_PI * Spec.Track / Spec.Tracked.PivotTrackSpeed;
+}
+
+double FMantleVehicleShape::GroundPressureKgCm2(const FMantleChassisSpec& Spec)
+{
+	const double ContactLength = Spec.Wheelbase + Spec.WheelRadius;
+	if (Spec.Type != EMantleChassisType::Tracked || !Spec.Tracked.bSet || !(Spec.Tracked.TrackWidth > 0.0) || !(ContactLength > 0.0))
+	{
+		return 0.0;
+	}
+	return MantleVehicleShapePrivate::HandlingOf(Spec).Mass / (2.0 * Spec.Tracked.TrackWidth * ContactLength);
 }
 
 bool FMantleVehicleShape::IsEditable(const FMantleChassisSpec& Archetype, const EMantleVehicleDimension Dimension)
@@ -507,6 +535,12 @@ FMantleVehicleSummary FMantleVehicleShape::Summarize(const FMantleChassisSpec& S
 		Out.HoverHeightCm = Spec.Clearance;
 		Out.TopSpeedKmh = HoverTopSpeedKmh(Spec);
 		break;
+	case EMantleVehicleFamily::Tracked:
+		// Its speed limit (cm/s to km/h) is its top speed: an engine governor, as a real tank's or bulldozer's is. It turns on the spot, not in a circle.
+		Out.TopSpeedKmh = Handling.MaxSpeed * 0.036;
+		Out.PivotSeconds = PivotSeconds(Spec);
+		Out.GroundPressureKgCm2 = GroundPressureKgCm2(Spec);
+		break;
 	default:
 		Out.TurningCircleCm = TurningCircleCm(Spec, Handling);
 		// cm/s to km/h.
@@ -548,6 +582,17 @@ FText FMantleVehicleShape::Describe(const FMantleVehicleSummary& Summary)
 	case EMantleVehicleFamily::Hovercraft:
 		return FText::Format(LOCTEXT("SummaryHovercraft", "Weighs about {0}. Floats about {1} above the ground. Top speed about {2} km/h."), Weight,
 			LengthText(Summary.HoverHeightCm), Speed);
+	case EMantleVehicleFamily::Tracked:
+	{
+		// A slow machine (a bulldozer's 12 km/h) says its speed to the km/h: to the nearest five would make it half again too fast or too slow.
+		const FText TrackedSpeed = Summary.TopSpeedKmh < 30.0 ? FText::AsNumber(FMath::Max(1, FMath::RoundToInt(Summary.TopSpeedKmh))) : Speed;
+		const FText Turn = Summary.PivotSeconds > 0.0
+			? FText::Format(LOCTEXT("SummaryPivot", "Turns a full circle on the spot in about {0} seconds."), FText::AsNumber(FMath::Max(1, FMath::RoundToInt(Summary.PivotSeconds))))
+			: LOCTEXT("SummaryNoPivot", "Its tracks can't turn it on the spot.");
+		const FText Pressure = FText::Format(LOCTEXT("SummaryPressure", "Presses on the ground with about {0} kg on each square centimeter ({1} kPa)."),
+			FText::AsNumber(FMath::RoundToDouble(Summary.GroundPressureKgCm2 * 100.0) / 100.0), FText::AsNumber(FMath::RoundToInt(Summary.GroundPressureKgCm2 * KilopascalsPerKgCm2)));
+		return FText::Format(LOCTEXT("SummaryTracked", "Weighs about {0}. Top speed about {1} km/h. {2} {3}"), Weight, TrackedSpeed, Turn, Pressure);
+	}
 	default:
 		break;
 	}
@@ -703,6 +748,8 @@ FText FMantleVehicleShape::SizeHelp(const EMantleVehicleFamily Family)
 		return LOCTEXT("HelpSizeHelicopter", "How big the whole helicopter is: its cabin, rotor and tail grow together, so it still lifts what it weighs. A bigger helicopter weighs more.");
 	case EMantleVehicleFamily::Hovercraft:
 		return LOCTEXT("HelpSizeHovercraft", "How big the whole hovercraft is: its hull, fan and skirt grow together. A bigger hovercraft weighs more and floats higher.");
+	case EMantleVehicleFamily::Tracked:
+		return LOCTEXT("HelpSizeTracked", "How big the whole vehicle is: its hull, road wheels and tracks grow together, so it still turns on the spot as quickly. A bigger one weighs more.");
 	default:
 		return LOCTEXT("HelpSizeGround", "How big the whole vehicle is, all of its sizes together.");
 	}
@@ -746,10 +793,14 @@ FText FMantleVehicleShape::DriveAdvice(const FMantleChassisSpec& Spec)
 {
 	if (Spec.Aircraft.bSet)
 	{
-		// Take-off rolls of about 130 m for the jet and 340 m for the plane, with some to spare.
+		// Take-off rolls (#379's flight model) of about 290 m for the light plane and the jet and 350 m for the warbird, with some to spare.
+		if (Spec.Id == TEXT("warbird"))
+		{
+			return LOCTEXT("AdviceWarbird", "A warbird needs a long, flat, open stretch to take off from, about 460 m, or a runway. Mantle puts it on the flattest ground it finds ahead of you and tells you where.");
+		}
 		return Spec.Aircraft.bPropeller
-			? LOCTEXT("AdvicePlane", "A plane needs a long, flat, open stretch to take off from, about 350 m, or a runway. Mantle puts it on the flattest ground it finds ahead of you and tells you where.")
-			: LOCTEXT("AdviceJet", "A jet needs a long, flat, open stretch to take off from, about 150 m, or a runway. Mantle puts it on the flattest ground it finds ahead of you and tells you where.");
+			? LOCTEXT("AdvicePlane", "A plane needs a long, flat, open stretch to take off from, about 375 m, or a runway. Mantle puts it on the flattest ground it finds ahead of you and tells you where.")
+			: LOCTEXT("AdviceJet", "A jet needs a long, flat, open stretch to take off from, about 375 m, or a runway. Mantle puts it on the flattest ground it finds ahead of you and tells you where.");
 	}
 	if (Spec.Helicopter.bSet)
 	{
@@ -886,6 +937,8 @@ bool FMantleVehicleShapeSession::HasFeel(const EMantleVehicleFeel Which) const
 	switch (FMantleVehicleShape::FamilyOf(Archetype))
 	{
 	case EMantleVehicleFamily::Ground:
+	case EMantleVehicleFamily::Tracked:
+		// A tracked vehicle's road wheels are wheels to the derivation: its grip, power, suspension and top speed move as a car's do.
 		return true;
 	case EMantleVehicleFamily::Hovercraft:
 		return Which == EMantleVehicleFeel::TopSpeed;
