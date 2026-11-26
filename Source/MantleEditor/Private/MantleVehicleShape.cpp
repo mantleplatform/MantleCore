@@ -805,7 +805,7 @@ FText FMantleVehicleShape::DriveAdvice(const FMantleChassisSpec& Spec)
 {
 	if (Spec.Aircraft.bSet)
 	{
-		// Take-off rolls (#379's flight model) of about 290 m for the light plane and the jet and 350 m for the warbird, with some to spare.
+		// Take-off rolls in #379's flight probe (light plane 314 m, warbird 406 m, jet 270 m) times 1.3, the builder's runs.
 		if (Spec.Id == TEXT("warbird"))
 		{
 			return LOCTEXT("AdviceWarbird", "A warbird needs a long, flat, open stretch to take off from, about 530 m, or a runway. Mantle puts it on the flattest ground it finds ahead of you and tells you where.");
