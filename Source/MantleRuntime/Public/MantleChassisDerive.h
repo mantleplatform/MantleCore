@@ -50,6 +50,9 @@ struct MANTLERUNTIME_API FMantleChassisHandling
 	double HoverThrustNewtons = 0.0;
 	double PadSpringRate = 0.0;
 	double HoverFinAreaM2 = 0.0;
+	/** A hovercraft's Grip slider, -1 to 1 (#381): how much its skirt holds its line, which FMantleVehicleChassisDocument turns into its slide
+	 *  dampers (-1 none, 0 the preset's real hovercraft, 1 a car-like hold). 0 for everything that is not a hovercraft. */
+	double HoverGrip = 0.0;
 	/**
 	 * What a limit held back when FMantleChassisDerive made this, one line each: the document path, the number the rule gave and what it was held to
 	 * ("brakes/handbrakeTorque 39321.6 held to 20000"). The rules do not stop at a limit quietly: a number that is not the rule's answer is here.
@@ -60,8 +63,10 @@ struct MANTLERUNTIME_API FMantleChassisHandling
 
 /**
  * The four feel sliders of a chassis, each from -1 to 1 and 0 for the archetype's own: grip scales the tire friction, power the
- * engine's power-to-weight, stiffness the ride frequency and topSpeed the top speed, each by up to 30 percent either way. Never
- * physics beyond that: customization does not change how a vehicle drives.
+ * engine's power-to-weight (a hovercraft's fan push), stiffness the ride frequency and topSpeed the top speed, each by up to 30 percent
+ * either way. Never physics beyond that: customization does not change how a vehicle drives. The one exception is a hovercraft's grip
+ * (#381), which runs from no slide assist at all (-1, a true hovercraft) through its preset's real hovercraft (0) to a car-like hold (1):
+ * FMantleVehicleChassisDocument::HovercraftSlide.
  */
 struct MANTLERUNTIME_API FMantleChassisFeel
 {

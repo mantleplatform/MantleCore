@@ -1221,6 +1221,7 @@
         "engine/torqueCurve/*/0": [0, 20000],
         "engine/torqueCurve/*/1": [0, 1],
         "engine/engineBraking": [0, 5],
+        "engine/displacement": [50, 2500],
         "transmission/gearRatios/*": [0.1, 10],
         "transmission/reverseRatio": [0.1, 10],
         "transmission/finalDrive": [0.1, 10],

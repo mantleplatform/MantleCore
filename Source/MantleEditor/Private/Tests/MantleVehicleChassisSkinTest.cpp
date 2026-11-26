@@ -474,6 +474,7 @@ bool FMantleVehicleChassisSkinGroundHandlingTest::RunTest(const FString& Paramet
 	}
 	TestTrue(TEXT("its own corner-named wheels fit the sedan"), FMantleVehicleBuilder::FitsOwnWheels(Body, TEXT("sedan")));
 	TestFalse(TEXT("but not a motorcycle's"), FMantleVehicleBuilder::FitsOwnWheels(Body, TEXT("motorcycle")));
+	TestFalse(TEXT("nor a quad's (#376 step 9d: its rider's grips ride the chassis's handlebar bone)"), FMantleVehicleBuilder::FitsOwnWheels(Body, TEXT("atv")));
 	TestFalse(TEXT("and not a plane's"), FMantleVehicleBuilder::FitsOwnWheels(Body, TEXT("plane")));
 	const FMantleVehicleBuildResult Built = FMantleVehicleBuilder::BuildAny(Body, TEXT("sedan"));
 	for (const FString& Problem : Built.Problems)
@@ -484,8 +485,11 @@ bool FMantleVehicleChassisSkinGroundHandlingTest::RunTest(const FString& Paramet
 	{
 		TestFalse(TEXT("that is the wheel fit, not the skin"), Built.bOnChassis);
 		const FMantleVehicleSourceTuning& Tuning = Built.Source->Tuning;
-		TestEqual(TEXT("the steering eases off with speed over four points"), Tuning.SteeringSpeedCurve.Num(), 4);
-		TestTrue(TEXT("with the full lock at a standstill and less at speed"), Tuning.SteeringSpeedCurve.Num() == 4 && Tuning.SteeringSpeedCurve[0].Y == 1.0 && Tuning.SteeringSpeedCurve[3].Y < 0.5);
+		// The built-in ground curve (#376 step 5: seven points since steering was tuned to the cars' peak grip angles).
+		const TArray<FVector2D> Ground = FMantleVehicleChassisDocument::GroundSteeringSpeedCurve();
+		TestEqual(TEXT("the steering eases off with speed over the ground curve's points"), Tuning.SteeringSpeedCurve.Num(), Ground.Num());
+		TestTrue(TEXT("with the full lock at a standstill and less at speed"), Tuning.SteeringSpeedCurve.Num() == Ground.Num() && Tuning.SteeringSpeedCurve[0].Y == 1.0
+			&& Tuning.SteeringSpeedCurve.Last().Y < 0.5);
 		TestTrue(TEXT("the rear tires grip more than the front"), Tuning.bTireRearFriction && Tuning.TireRearFriction > Tuning.TireFriction);
 		TestEqual(TEXT("it is a car: the wheeled movement type"), static_cast<int32>(Built.Source->MovementType), static_cast<int32>(EMantleVehicleMovementKind::Wheeled));
 	}
@@ -605,6 +609,10 @@ bool FMantleVehicleChassisSkinPanelTest::RunTest(const FString& Parameters)
 	Access::PickType(*Panel, TEXT("motorcycle"), TEXT("Motorcycle"));
 	TestTrue(TEXT("a car body is worn as a motorcycle's skin"), Access::UsesSkin(*Panel));
 	TestEqual(TEXT("the bike has its two wheels and its fork to point out"), Access::NumSlots(*Panel), 3);
+	// A quad (#376 step 9d): worn as a skin, with its four wheels and its handlebar to point out.
+	Access::PickType(*Panel, TEXT("atv"), TEXT("ATV (quad bike)"));
+	TestTrue(TEXT("a car body is worn as a quad's skin"), Access::UsesSkin(*Panel));
+	TestEqual(TEXT("the quad has its four wheels and its handlebar to point out"), Access::NumSlots(*Panel), 5);
 	// No model: no rows, and nothing breaks.
 	Access::SetMesh(*Panel, nullptr);
 	TestFalse(TEXT("clearing the model clears what was read"), Access::HaveModel(*Panel));

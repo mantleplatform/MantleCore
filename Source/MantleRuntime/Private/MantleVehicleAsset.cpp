@@ -52,6 +52,7 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("engine/torqueCurve/*/0"), 0.0, 20000.0 },
 		{ TEXT("engine/torqueCurve/*/1"), 0.0, 1.0 },
 		{ TEXT("engine/engineBraking"), 0.0, 5.0 },
+		{ TEXT("engine/displacement"), 50.0, 2500.0 },
 		{ TEXT("transmission/gearRatios/*"), 0.1, 10.0 },
 		{ TEXT("transmission/reverseRatio"), 0.1, 10.0 },
 		{ TEXT("transmission/finalDrive"), 0.1, 10.0 },
@@ -2422,7 +2423,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 
 	TSharedPtr<FJsonObject> Engine;
 	if (P.Ok() && P.Object(Root, TEXT(""), TEXT("engine"), Engine)
-		&& P.Keys(Engine, TEXT("/engine"), { TEXT("maxTorque"), TEXT("maxRPM"), TEXT("idleRPM"), TEXT("torqueCurve"), TEXT("tractionControl"), TEXT("engineBraking") },
+		&& P.Keys(Engine, TEXT("/engine"), { TEXT("maxTorque"), TEXT("maxRPM"), TEXT("idleRPM"), TEXT("torqueCurve"), TEXT("tractionControl"), TEXT("engineBraking"), TEXT("displacement") },
 			{ TEXT("maxTorque"), TEXT("maxRPM"), TEXT("idleRPM"), TEXT("torqueCurve") }))
 	{
 		P.Number(Engine, TEXT("/engine"), TEXT("maxTorque"), TEXT("engine/maxTorque"), D.MaxTorque);
@@ -2436,6 +2437,11 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 		if (P.Ok())
 		{
 			P.OptNumber(Engine, TEXT("/engine"), TEXT("engineBraking"), TEXT("engine/engineBraking"), D.EngineBraking);
+		}
+		// The engine's size (#378), optional: absent is not given (0).
+		if (P.Ok() && Engine->HasField(TEXT("displacement")))
+		{
+			P.Int(Engine, TEXT("/engine"), TEXT("displacement"), TEXT("engine/displacement"), D.Displacement);
 		}
 		const TArray<TSharedPtr<FJsonValue>>* Curve = nullptr;
 		if (P.Ok() && P.Array(Engine->TryGetField(TEXT("torqueCurve")), TEXT("/engine/torqueCurve"), 2, FMantleVehicleLimits::MaxTorqueCurvePoints, Curve))

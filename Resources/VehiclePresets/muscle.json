@@ -55,7 +55,7 @@
       "idleRPM": 700,
       "torqueCurve": [[0, 0.6], [1000, 0.72], [1500, 0.8], [2500, 0.9], [4200, 1], [6100, 0.879], [6400, 0.82]],
       "tractionControl": true,
-      "engineBraking": 0.08
+      "engineBraking": 0.1
     },
     "transmission": {
       "gearRatios": [4.71, 3.14, 2.1, 1.67, 1.29, 1.0, 0.84, 0.67],

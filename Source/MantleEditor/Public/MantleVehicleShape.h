@@ -267,7 +267,8 @@ struct MANTLEEDITOR_API FMantleVehicleShape
 	static FText SizeLabel();
 	static FText SizeHelp(EMantleVehicleFamily Family);
 	static FText FeelLabel(EMantleVehicleFeel Feel);
-	static FText FeelHelp(EMantleVehicleFeel Feel);
+	/** A feel slider's help; a hovercraft's grip and power say what they do to it (#381). */
+	static FText FeelHelp(EMantleVehicleFeel Feel, EMantleVehicleFamily Family = EMantleVehicleFamily::Ground);
 	static FText PassengerLabel();
 	static FText PassengerHelp();
 
@@ -316,6 +317,8 @@ public:
 	/** True for a type shaped by one Size (FMantleVehicleShape::UsesSize): it has no eight sizes to move. */
 	bool UsesSize() const { return bStarted && FMantleVehicleShape::UsesSize(Archetype); }
 	double GetSize() const { return Size; }
+	/** The archetype's family (FMantleVehicleShape::FamilyOf). */
+	EMantleVehicleFamily GetFamily() const { return FMantleVehicleShape::FamilyOf(Archetype); }
 	FMantleDimensionRange GetSizeRange() const { return FMantleDimensionRange{ MinSize, MaxSize }; }
 
 	/**

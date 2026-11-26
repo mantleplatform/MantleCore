@@ -3,7 +3,7 @@
   "id": "compact",
   "name": "Compact car",
   "description": "A small front-drive car: hatchbacks and compact city cars. Light and easy to place in traffic, with modest power.",
-  "comment": "A vehicle preset (#728); see sedan.json for the format. The real car is a 2022 Honda Civic Touring 1.5T with a CVT (#376 step 9b): Car and Driver's test 0-60 mph 7.5 s, 70-0 mph 174 ft, 0.83 g; 3077 lb curb; 240 Nm from 1700 to 4500 rpm (the turbo's spec-sheet curve), 180 hp; body and wheelbase of the Civic hatchback. The seven fixed gears stand in for the CVT (Mantle's gearbox has fixed ratios): seven even steps across a typical 2.53 to 0.41 belt span with an estimated 4.32 final drive. The 61/39 weight split, the 6500 rpm limit and the 200 km/h limit are estimates.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format. The real car is a 2022 Honda Civic Touring 1.5T with a CVT (#376 step 9b): Car and Driver's test 0-60 mph 7.5 s, 70-0 mph 174 ft, 0.83 g; 3077 lb curb; 240 Nm from 1700 to 4500 rpm (the turbo's spec-sheet curve), 180 hp; body and wheelbase of the Civic hatchback. The seven fixed gears stand in for the CVT (Mantle's gearbox has fixed ratios): seven even steps across a typical 2.53 to 0.41 belt span with an estimated 4.32 final drive. A CVT never breaks the drive to change ratio, so the steps change in 0.05 s, the shortest a shift may take. The 61/39 weight split, the 6500 rpm limit and the 200 km/h limit are estimates.",
   "movementType": "wheeled",
   "publishable": true,
   "type": "car",
@@ -63,7 +63,7 @@
       "finalDrive": 4.32,
       "changeUpRPM": 6000,
       "changeDownRPM": 1800,
-      "shiftTime": 0.3
+      "shiftTime": 0.05
     },
     "suspension": {
       "maxRaise": 10,
