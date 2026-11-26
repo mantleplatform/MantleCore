@@ -50,16 +50,16 @@
     "dragCoefficient": 0.4,
     "frontalArea": 3,
     "engine": {
-      "maxTorque": 800,
+      "maxTorque": 542,
       "maxRPM": 6000,
       "idleRPM": 800,
-      "torqueCurve": [[0, 0.6], [1500, 0.9], [3500, 1], [6000, 0.75]]
+      "torqueCurve": [[0, 0.55], [1000, 0.7], [2750, 1], [3500, 1], [5000, 0.854], [6000, 0.7]]
     },
     "transmission": {
-      "gearRatios": [4.25, 2.52, 1.66, 1.22, 1.0],
+      "gearRatios": [4.696, 2.985, 2.146, 1.52, 1.0, 0.854, 0.689, 0.636],
       "reverseRatio": 4.04,
-      "finalDrive": 3.4,
-      "changeUpRPM": 5200,
+      "finalDrive": 3.276,
+      "changeUpRPM": 5000,
       "changeDownRPM": 1800
     },
     "suspension": {
@@ -89,7 +89,7 @@
     "mass": [1500, 3500],
     "maxSpeed": [2000, 5500],
     "dragCoefficient": [0.3, 0.7],
-    "engine/maxTorque": [300, 1500],
+    "engine/maxTorque": [250, 1500],
     "engine/maxRPM": [3500, 7000],
     "engine/idleRPM": [500, 1100],
     "suspension/maxRaise": [5, 35],
