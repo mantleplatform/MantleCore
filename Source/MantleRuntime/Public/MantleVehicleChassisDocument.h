@@ -35,6 +35,8 @@ struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 	static constexpr double PlanePitchAuthority = 0.5;
 	/** How far to the side a bike's rider steps off, cm: a body-width, not a car's door (seat.exitSideDistance). */
 	static constexpr double BikeExitSideDistance = 100.0;
+	/** A quad rider (#376 step 9d) steps off this far beyond the quad's half-width (body or wheels, whichever is wider), cm. */
+	static constexpr double QuadExitClearance = 50.0;
 	/**
 	 * A car's (a ground chassis on more than two wheels) tire grip per axle, as shares of its preset's one friction: the steered front's and the rest's, 3.0 and 4.0
 	 * of a 3.5, the built-in sports car's balance. The front's is written as tires.friction and the rear's as tires.rearFriction. A bike's tires keep their own.
@@ -69,7 +71,8 @@ struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 	 * chassis on more than two wheels that is not a plane, a helicopter or a hovercraft, the steering eases off with speed (steering.speedCurve, the built-in
 	 * sports car's curve: mph, share of the lock) and the tires grip front and rear as the built-in sports car's do (tires.friction times FrontTireGripShare, and
 	 * tires.rearFriction times RearTireGripShare): at full lock at 100 km/h a tap of the key slid the front tires past their grip and spun the car, and equal
-	 * tires let the driven rear go first. Document's tires and steering objects must exist. Nothing for any other chassis.
+	 * tires let the driven rear go first. A preset whose defaults set tires.rearFriction (the drift car, rear under the front) keeps that rear instead, times
+	 * the friction over the preset's own, so a resized car keeps its balance. Document's tires and steering objects must exist. Nothing for any other chassis.
 	 */
 	static void ComposeGroundHandling(const FMantleChassisSpec& Spec, FJsonObject& Document, TArray<FString>* OutHeld = nullptr);
 

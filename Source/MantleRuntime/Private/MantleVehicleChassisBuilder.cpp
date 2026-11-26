@@ -152,6 +152,11 @@ FName FMantleVehicleChassisBuilder::FrontForkBoneName()
 	return FName(TEXT("fork_f"));
 }
 
+FName FMantleVehicleChassisBuilder::HandlebarBoneName()
+{
+	return FName(TEXT("handlebar"));
+}
+
 FName FMantleVehicleChassisBuilder::AileronBoneName(const bool bRight)
 {
 	return FName(bRight ? TEXT("aileron_r") : TEXT("aileron_l"));
@@ -353,6 +358,15 @@ bool FMantleVehicleChassisBuilder::MakeAsset(const FMantleChassisSpec& Spec, FMa
 		Body.Bones.Add({ Spec.WheelBone(Index), Parent });
 		Body.ReferencePose.Add(Pose);
 		Asset.WheelPositions.Add(Center);
+	}
+
+	// A quad's rider (#376 step 9d): the handlebar is a bone of its own under the root, midway between the grips on the centerline, which the
+	// wheel anim instance turns by the steered wheels' mean steering. No wheel hangs from it and the physics asset has no body on it.
+	if (!Spec.bCenterline && Spec.Rider.bSet)
+	{
+		Body.Bones.Add({ HandlebarBoneName(), 0 });
+		Body.ReferencePose.Add(FTransform(FVector(0.5 * (Spec.Rider.LeftGrip.X + Spec.Rider.RightGrip.X), 0.0,
+			0.5 * (Spec.Rider.LeftGrip.Z + Spec.Rider.RightGrip.Z))));
 	}
 
 	// A plane's control surfaces and engines: a bone each under the root, posed at the surface's hinge (its aerofoil), so a surface turns about its own

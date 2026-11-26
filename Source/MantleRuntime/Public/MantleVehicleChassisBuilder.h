@@ -84,7 +84,7 @@ struct FMantleVehicleChassisReference
 	FString DriverSeat = TEXT("car");
 	/** A steering wheel is drawn and held; a rider seat has handlebars instead and no steering wheel. */
 	bool bSteeringWheel = true;
-	/** The bone a steered centerline wheel hangs under (yawed by SteerBone); None when no wheel has one. */
+	/** The bone a steered centerline wheel hangs under (yawed by SteerBone), or a quad rider's handlebar (HandlebarBoneName); None otherwise. */
 	FName ForkBone;
 	FMantleVehicleChassisRider Rider;
 
@@ -128,6 +128,9 @@ struct MANTLERUNTIME_API FMantleVehicleChassisBuilder
 
 	/** The fork bone of the steered centerline axle of a two-axle chassis (fork_f), the parent of wheel_f. */
 	static FName FrontForkBoneName();
+
+	/** A quad rider's handlebar bone (#376 step 9d), under the root between the grips: its rider's fork bone, from which no wheel hangs. */
+	static FName HandlebarBoneName();
 
 	/**
 	 * A plane's bones (chassis.aircraft), each a child of the root posed at its surface's hinge, which is where the surface's block turns about: an aileron

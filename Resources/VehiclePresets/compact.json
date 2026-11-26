@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "id": "compact",
+  "name": "Compact car",
+  "description": "A small front-drive car: hatchbacks and compact city cars. Light and easy to place in traffic, with modest power.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format. The real car is a 2022 Honda Civic Touring 1.5T with a CVT (#376 step 9b): Car and Driver's test 0-60 mph 7.5 s, 70-0 mph 174 ft, 0.83 g; 3077 lb curb; 240 Nm from 1700 to 4500 rpm (the turbo's spec-sheet curve), 180 hp; body and wheelbase of the Civic hatchback. The seven fixed gears stand in for the CVT (Mantle's gearbox has fixed ratios): seven even steps across a typical 2.53 to 0.41 belt span with an estimated 4.32 final drive. A CVT never breaks the drive to change ratio, so the steps change in 0.05 s, the shortest a shift may take. The 61/39 weight split, the 6500 rpm limit and the 200 km/h limit are estimates.",
+  "movementType": "wheeled",
+  "publishable": true,
+  "type": "car",
+  "seats": {
+    "driver": "car",
+    "passenger": "car"
+  },
+  "fit": {
+    "wheelRadius": 31.7,
+    "trackWidth": 155,
+    "minScale": 0.5,
+    "maxScale": 2
+  },
+  "wheels": {
+    "min": 4,
+    "max": 6
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 273.6,
+      "track": 155,
+      "wheelRadius": 31.7,
+      "wheelWidth": 23,
+      "axles": [
+        { "steer": true, "drive": true },
+        { "steer": false, "drive": false, "handbrake": true }
+      ]
+    },
+    "body": { "length": 455, "width": 180, "height": 66, "groundClearance": 13 },
+    "centerOfMass": [30, 0, 46],
+    "seat": {
+      "location": [0, -36, 74],
+      "steeringWheel": { "location": [46.8, -36, 77], "radius": 18 }
+    }
+  },
+  "derive": {
+    "stability": 1.15,
+    "cameraArmPerLength": 0.63,
+    "cameraHeightPerHeight": 1.1
+  },
+  "defaults": {
+    "mass": 1396,
+    "maxSpeed": 5556,
+    "dragCoefficient": 0.29,
+    "frontalArea": 2.2,
+    "engine": {
+      "maxTorque": 240,
+      "maxRPM": 6500,
+      "idleRPM": 750,
+      "torqueCurve": [[0, 0.55], [1000, 0.75], [1700, 1], [4500, 1], [6000, 0.89], [6500, 0.8]],
+      "tractionControl": true,
+      "engineBraking": 0.064
+    },
+    "transmission": {
+      "gearRatios": [2.53, 1.867, 1.378, 1.017, 0.751, 0.554, 0.41],
+      "reverseRatio": 2.0,
+      "finalDrive": 4.32,
+      "changeUpRPM": 6000,
+      "changeDownRPM": 1800,
+      "shiftTime": 0.05
+    },
+    "suspension": {
+      "maxRaise": 10,
+      "maxDrop": 16,
+      "springRate": 135,
+      "springPreload": 50,
+      "damping": 0.51
+    },
+    "steering": {
+      "maxAngle": 38,
+      "ackermann": true
+    },
+    "brakes": {
+      "brakeTorque": 4000,
+      "handbrakeTorque": 5500,
+      "abs": true,
+      "frontShare": 0.65
+    },
+    "tires": {
+      "friction": 1.29
+    },
+    "camera": {
+      "armLength": 400,
+      "height": 150
+    }
+  },
+  "ranges": {
+    "mass": [800, 1800],
+    "maxSpeed": [2500, 6500],
+    "dragCoefficient": [0.2, 0.5],
+    "engine/maxTorque": [100, 900],
+    "engine/maxRPM": [4000, 9000],
+    "engine/idleRPM": [600, 1200],
+    "engine/engineBraking": [0, 0.3],
+    "transmission/shiftTime": [0.05, 1],
+    "suspension/maxRaise": [3, 20],
+    "suspension/maxDrop": [3, 25],
+    "suspension/springRate": [50, 800],
+    "suspension/damping": [0.2, 0.9],
+    "steering/maxAngle": [25, 50],
+    "brakes/brakeTorque": [800, 6000],
+    "brakes/frontShare": [0.5, 0.8],
+    "tires/friction": [0.8, 5],
+    "wheels/*/radius": [22, 40]
+  }
+}
