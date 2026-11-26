@@ -436,7 +436,8 @@ struct MANTLEEDITOR_API FMantleVehicleChassisSkin
 	 * its front edge (the bone's place when it is within a quarter of the door's length from the front, else the front edge at the outer side, halfway up) on an upright
 	 * axis; the hood about its rear edge and the trunk about its front edge, at the top, on a sideways one. A trunk whose bone sits at one side edge (BoneAtEdge on Y) and
 	 * not at its top is a side-hinged tailgate: it turns on an upright axis through the bone, swinging out away from the car's middle (+Z hinged on -Y, -Z on +Y), still
-	 * opened from behind the car. Flipped turns the axis the other way. Doors turn at 0.75, lids
+	 * opened from behind the car. An upright trunk (taller than deep) whose bone sits at its bottom edge (BoneAtEdge on Z), not at a side or its top, is a pickup's drop-down tailgate: it turns about
+	 * -Y through the bone, its top swinging back and down. Flipped turns the axis the other way. Doors turn at 0.75, lids
 	 * at 1. The character stands on the ground (Z = 0) 60 cm out from the body: at the door's side halfway along it, in front of the hood, behind the trunk, facing the car.
 	 * Every number is held to the document's +-1000 cm.
 	 */

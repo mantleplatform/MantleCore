@@ -791,4 +791,52 @@ bool FMantleVehicleSideHingedTailgateTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleDropDownTailgateTest,
+	"Mantle.Vehicle.Hinges.BottomHingedTailgateDropsDown",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleDropDownTailgateTest::RunTest(const FString& Parameters)
+{
+	using FSkin = FMantleVehicleChassisSkin;
+	// A pickup's gate, like the FiveM F-150's (GODz21F150: boot bone (-3.165, 0, 0.928) m, the gate's box 0.885 to 1.515 m high), in cm in the body's space (nose +X,
+	// driver -Y): the boot bone sits at the gate's bottom edge, in the middle, so the gate drops down about the bone. It lifted from the top (Joshua's review).
+	const FBox Body(FVector(-330.0, -100.0, 0.0), FVector(270.0, 100.0, 200.0));
+	const FBox Gate(FVector(-320.0, -80.0, 88.5), FVector(-311.0, 80.0, 151.5));
+	const FVector Bone(-316.5, 0.0, 92.8);
+	const auto Opened = [](const FMantleVehicleSkinnedHinge& Hinge, const FVector& Point, const double Degrees)
+	{
+		return Hinge.Pivot + FQuat(Hinge.Axis.GetSafeNormal(), FMath::DegreesToRadians(Degrees)).RotateVector(Point - Hinge.Pivot);
+	};
+	const FMantleVehicleSkinnedHinge Drop = FSkin::HingeFor(EMantleVehicleHingePart::Trunk, TEXT("boot"), Gate, Body, &Bone, false);
+	TestTrue(*FString::Printf(TEXT("a bone at the bottom edge turns the gate about -Y (%s)"), *Drop.Axis.ToString()), Drop.Axis.Equals(FVector(0, -1, 0)));
+	TestTrue(*FString::Printf(TEXT("through the bone (%s)"), *Drop.Pivot.ToString()), Drop.Pivot.Equals(Bone, 0.01));
+	TestTrue(*FString::Printf(TEXT("its stand stays behind the car (%s)"), *Drop.Stand.ToString()), Drop.Stand.X < Body.Min.X && FMath::IsNearlyZero(Drop.Stand.Z));
+	// The gate's top edge swings back out of the bed and down, never forward into it.
+	const FVector Top(Gate.Min.X, 0.0, Gate.Max.Z);
+	const FVector Open = Opened(Drop, Top, 85.0);
+	TestTrue(*FString::Printf(TEXT("its top swings back behind the gate (%s)"), *Open.ToString()), Open.X < Gate.Min.X - 40.0);
+	TestTrue(*FString::Printf(TEXT("and down (%s)"), *Open.ToString()), Open.Z < Gate.Max.Z - 40.0);
+	TestTrue(TEXT("flipped turns it about +Y"), FSkin::HingeFor(EMantleVehicleHingePart::Trunk, TEXT("boot"), Gate, Body, &Bone, true).Axis.Equals(FVector(0, 1, 0)));
+
+	// The side rule comes first: a bone low at one side edge (a swing-out door, like the G63 limo's) still swings out on an upright axis.
+	const FVector LowSide(-316.5, 78.0, 92.8);
+	const FMantleVehicleSkinnedHinge Side = FSkin::HingeFor(EMantleVehicleHingePart::Trunk, TEXT("boot"), Gate, Body, &LowSide, false);
+	TestTrue(*FString::Printf(TEXT("a low bone at a side edge still swings out about -Z (%s)"), *Side.Axis.ToString()), Side.Axis.Equals(FVector(0, 0, -1)));
+	// A bone at the top, or in the middle of the gate's height, keeps the lift about +Y at the top front edge.
+	const FVector Lift(Gate.Max.X, Gate.GetCenter().Y, Gate.Max.Z);
+	for (const FVector& Kept : { FVector(-316.5, 0.0, 148.0), FVector(-316.5, 0.0, 120.0) })
+	{
+		const FMantleVehicleSkinnedHinge Hinge = FSkin::HingeFor(EMantleVehicleHingePart::Trunk, TEXT("boot"), Gate, Body, &Kept, false);
+		TestTrue(*FString::Printf(TEXT("a bone at %s keeps the lift (%s, %s)"), *Kept.ToString(), *Hinge.Axis.ToString(), *Hinge.Pivot.ToString()),
+			Hinge.Axis.Equals(FVector(0, 1, 0)) && Hinge.Pivot.Equals(Lift, 0.01));
+	}
+	// A flat lid (a sedan's boot, like the GTA test car's: 100 cm long, 6 cm high) keeps the lift with its bone at its bottom: it isn't an upright gate.
+	const FBox Lid(FVector(-220.0, -70.0, 100.0), FVector(-120.0, 70.0, 106.0));
+	const FVector LidBone(-120.0, 0.0, 100.0);
+	const FMantleVehicleSkinnedHinge Flat = FSkin::HingeFor(EMantleVehicleHingePart::Trunk, TEXT("boot"), Lid, Body, &LidBone, false);
+	TestTrue(*FString::Printf(TEXT("a flat lid keeps the lift about +Y (%s)"), *Flat.Axis.ToString()), Flat.Axis.Equals(FVector(0, 1, 0)));
+	return true;
+}
+
 #endif

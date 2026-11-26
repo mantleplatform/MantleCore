@@ -1964,15 +1964,23 @@ FMantleVehicleSkinnedHinge FMantleVehicleChassisSkin::HingeFor(const EMantleVehi
 	{
 		// The trunk turns about its front edge, at the top; someone behind the car opens it. A tailgate whose bone sits at one side edge, not at its top (a Jeep's
 		// swing-out gate with the spare wheel), turns on an upright axis through the bone instead, swinging out away from the car's middle as a door does: hinged on
-		// the -Y side it turns about +Z, on the +Y side about -Z.
+		// the -Y side it turns about +Z, on the +Y side about -Z. An upright tailgate (taller than it is deep) whose bone sits at its bottom edge, not at a side or
+		// its top (a pickup's drop-down gate, the FiveM F-150's), turns about -Y through the bone, so its top swings back and down, out of the bed. A flat lid keeps the lift
+		// whatever its bone's height: its few cm of height put any bone near its bottom.
 		const FVector Size = Box.GetSize();
 		const bool bAtMinY = BonePosition && BoneAtEdge(BonePosition->Y, Box.Min.Y, Size.Y);
 		const bool bAtMaxY = BonePosition && BoneAtEdge(BonePosition->Y, Box.Max.Y, Size.Y);
 		const bool bAtTop = BonePosition && BoneAtEdge(BonePosition->Z, Box.Max.Z, Size.Z);
+		const bool bAtBottom = BonePosition && Size.Z > Size.X && BoneAtEdge(BonePosition->Z, Box.Min.Z, Size.Z);
 		if ((bAtMinY != bAtMaxY) && !bAtTop)
 		{
 			Out.Pivot = *BonePosition;
 			Out.Axis = FVector(0.0, 0.0, bAtMinY ? 1.0 : -1.0);
+		}
+		else if (bAtBottom && !bAtTop)
+		{
+			Out.Pivot = *BonePosition;
+			Out.Axis = FVector(0.0, -1.0, 0.0);
 		}
 		else
 		{
