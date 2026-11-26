@@ -22,8 +22,9 @@ struct FMantleChassisSpec;
  */
 struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 {
-	/** A helicopter's rigid-body linear damping, per second: the rotor's drag, which settles a hover and holds its top speed near 50 m/s (helicopter.linearDamping). */
-	static constexpr double HelicopterLinearDamping = 0.1;
+	/** A helicopter's rigid-body linear damping, per second (helicopter.linearDamping): none since #380. The chassis's speed-squared drag is its drag, the
+	 *  level assist stops a slow drift, and the assist's nose-down limit (or, with it off, the rotor's flapback) holds its top speed near its never-exceed speed. */
+	static constexpr double HelicopterLinearDamping = 0.0;
 	/** How fast a helicopter's collective moves, full travel per second (a plane's throttle takes two): helicopter.throttleLeverRate. */
 	static constexpr double HelicopterCollectiveRate = 1.0;
 	/** A hovercraft's rigid-body angular damping, per second, on the ground and in the air alike (default 0.5): hover.angularDamping. */

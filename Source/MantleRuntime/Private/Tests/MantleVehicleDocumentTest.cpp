@@ -211,7 +211,7 @@ namespace MantleVehicleDocumentTestPrivate
 	}
 
 	/**
-	 * What the chassis demo path (FMantleChassisDefinitions: ApplySeatKind, ApplyAircraft, ApplyHelicopter, ApplyHovercraft) sets from a spec, transcribed here as
+	 * What the chassis demo path (FMantleChassisDefinitions: ApplySeatKind, DeriveAircraft, DeriveHelicopter, DeriveHovercraft) sets from a spec, transcribed here as
 	 * expected values and compared field by field with the Desc a composed document reads as. Every comparison is of the float the definition holds.
 	 */
 	void CheckAgainstDevPath(FAutomationTestBase& Test, const FString& Label, const FMantleChassisSpec& Spec, const FMantleVehicleDesc& D)
@@ -830,12 +830,12 @@ bool FMantleVehicleDocumentDefaultsTest::RunTest(const FString& Parameters)
 	const FString Heli = Mutated(*this, TEXT("helicopter"), [](FJsonObject& Doc)
 	{
 		const TSharedPtr<FJsonObject> Block = Child(Doc, TEXT("helicopter"));
-		for (const TCHAR* Key : { TEXT("throttleLeverRate"), TEXT("linearDamping"), TEXT("angularDamping") })
+		for (const TCHAR* Key : { TEXT("throttleLeverRate"), TEXT("linearDamping"), TEXT("angularDamping"), TEXT("heightHold"), TEXT("yawHold"), TEXT("aerofoils") })
 		{
 			Block->RemoveField(Key);
 		}
 		const TSharedPtr<FJsonObject> Rotor = Item(*Block, TEXT("rotors"), 0);
-		for (const TCHAR* Key : { TEXT("axis"), TEXT("pitchAcceleration"), TEXT("rollAcceleration"), TEXT("yawAcceleration"), TEXT("stabilityAssist"), TEXT("stabilityStiffness"),
+		for (const TCHAR* Key : { TEXT("axis"), TEXT("diameter"), TEXT("pitchAcceleration"), TEXT("rollAcceleration"), TEXT("yawAcceleration"), TEXT("stabilityAssist"), TEXT("stabilityStiffness"),
 			TEXT("stabilityDamping"), TEXT("stabilityMaxAcceleration") })
 		{
 			Rotor->RemoveField(Key);
@@ -844,7 +844,10 @@ bool FMantleVehicleDocumentDefaultsTest::RunTest(const FString& Parameters)
 	if (TestTrue(*FString::Printf(TEXT("a helicopter with only its required keys reads (%s)"), *Error), ParseDesc(Heli, D, Error)))
 	{
 		TestEqual(TEXT("collective rate 1"), D.Helicopter.ThrottleLeverRate, 1.0);
-		TestEqual(TEXT("linear damping 0.1"), D.Helicopter.LinearDamping, 0.1);
+		TestEqual(TEXT("linear damping 0 (#380)"), D.Helicopter.LinearDamping, 0.0);
+		TestTrue(TEXT("height hold and the yaw assist on"), D.Helicopter.bHeightHold && D.Helicopter.bYawHold);
+		TestEqual(TEXT("no aerofoils"), D.Helicopter.Aerofoils.Num(), 0);
+		TestEqual(TEXT("the disc's size worked out later"), D.Helicopter.Rotors[0].Diameter, 0.0);
 		TestEqual(TEXT("angular damping 0"), D.Helicopter.AngularDamping, 0.0);
 		const FMantleVehicleRotorDesc& Rotor = D.Helicopter.Rotors[0];
 		TestTrue(TEXT("the rotor lifts along up"), Rotor.Axis.Equals(FVector::UpVector));
@@ -1609,8 +1612,24 @@ bool FMantleVehicleDocumentCookedHelicopterTest::RunTest(const FString& Paramete
 	C.Number(TEXT("helicopter/airSpeedLimit"), Block, TEXT("airSpeedLimit"), H.AirSpeedLimit, 0.0);
 	C.Number(TEXT("helicopter/hoverCollective"), Block, TEXT("hoverCollective"), H.HoverCollective, 0.0);
 	C.Number(TEXT("helicopter/throttleLeverRate"), Block, TEXT("throttleLeverRate"), H.ThrottleLeverRate, 1.0);
-	C.Number(TEXT("helicopter/linearDamping"), Block, TEXT("linearDamping"), H.LinearDamping, 0.1);
+	C.Number(TEXT("helicopter/linearDamping"), Block, TEXT("linearDamping"), H.LinearDamping, 0.0);
 	C.Number(TEXT("helicopter/angularDamping"), Block, TEXT("angularDamping"), H.AngularDamping, 0.0);
+	// #380: the creator's assists and the fin.
+	C.Flag(TEXT("helicopter/heightHold"), Block, TEXT("heightHold"), H.bHeightHold, true);
+	C.Flag(TEXT("helicopter/yawHold"), Block, TEXT("yawHold"), H.bYawHold, true);
+	const TArray<TSharedPtr<FJsonValue>>* Fins = nullptr;
+	const int32 FinCount = Block->TryGetArrayField(TEXT("aerofoils"), Fins) && Fins ? Fins->Num() : 0;
+	if (TestEqual(TEXT("helicopter aerofoil count"), H.Aerofoils.Num(), FinCount))
+	{
+		for (int32 I = 0; I < FinCount; ++I)
+		{
+			const TSharedPtr<FJsonObject> Fin = (*Fins)[I]->AsObject();
+			const FString At = FString::Printf(TEXT("helicopter/aerofoils/%d"), I);
+			C.Vec(At + TEXT("/location"), VectorAt(Fin, TEXT("location")), H.Aerofoils[I].Location);
+			C.Number(At + TEXT("/area"), Fin, TEXT("area"), H.Aerofoils[I].AreaM2, 0.0);
+			C.Number(At + TEXT("/maxControlAngle"), Fin, TEXT("maxControlAngle"), H.Aerofoils[I].MaxControlAngle, 12.0);
+		}
+	}
 	const TArray<TSharedPtr<FJsonValue>>& Rotors = ArrayAt(Block, TEXT("rotors"));
 	if (TestEqual(TEXT("rotor count"), H.Rotors.Num(), Rotors.Num()))
 	{
@@ -1627,6 +1646,7 @@ bool FMantleVehicleDocumentCookedHelicopterTest::RunTest(const FString& Paramete
 			C.Vec(At + TEXT("/location"), VectorAt(Rotor, TEXT("location")), R.Location);
 			C.Vec(At + TEXT("/axis"), Rotor->HasField(TEXT("axis")) ? VectorAt(Rotor, TEXT("axis")) : FVector::UpVector, R.Axis);
 			C.Number(At + TEXT("/maxThrust"), Rotor, TEXT("maxThrust"), R.MaxThrustNewtons, 0.0);
+			C.Number(At + TEXT("/diameter"), Rotor, TEXT("diameter"), R.Diameter, 0.0);
 			C.Number(At + TEXT("/pitchAcceleration"), Rotor, TEXT("pitchAcceleration"), R.PitchAcceleration, 1.5);
 			C.Number(At + TEXT("/rollAcceleration"), Rotor, TEXT("rollAcceleration"), R.RollAcceleration, 1.5);
 			C.Number(At + TEXT("/yawAcceleration"), Rotor, TEXT("yawAcceleration"), R.YawAcceleration, 1.0);
