@@ -67,10 +67,10 @@
     },
     "suspension": {
       "maxRaise": 14,
-      "maxDrop": 14,
-      "springRate": 200,
+      "maxDrop": 16,
+      "springRate": 175,
       "springPreload": 60,
-      "damping": 0.45
+      "damping": 0.78
     },
     "steering": {
       "maxAngle": 32,
@@ -83,7 +83,7 @@
       "frontShare": 0.65
     },
     "tires": {
-      "friction": 1.5
+      "friction": 1.1
     },
     "camera": {
       "armLength": 520,
@@ -101,7 +101,7 @@
     "transmission/shiftTime": [0.05, 1],
     "suspension/maxRaise": [5, 30],
     "suspension/maxDrop": [5, 30],
-    "suspension/springRate": [100, 600],
+    "suspension/springRate": [55, 600],
     "suspension/damping": [0.2, 0.9],
     "steering/maxAngle": [20, 45],
     "brakes/brakeTorque": [1500, 7000],
