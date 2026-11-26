@@ -1108,7 +1108,11 @@ bool FMantleVehicleBuilder::PlaceInLevel(UMantleVehicleSource& Source, FString& 
 		const double RunCm = MantleVehicleBuilderPrivate::TakeOffRunCm(Source);
 		if (RunCm > 0.0)
 		{
-			const FString Kind = Source.Preset == FName(TEXT("jet")) || !Source.MovementBlocks.Contains(TEXT("spinBones")) ? TEXT("jet") : TEXT("plane");
+			// The word follows TakeOffRunCm's choice: a preset names itself (#379: the light plane and the warbird are planes), a shaped chassis is a
+			// plane when it has a propeller to spin.
+			const bool bPropellerPreset = Source.Preset == FName(TEXT("plane")) || Source.Preset == FName(TEXT("warbird"));
+			const bool bJet = Source.Preset == FName(TEXT("jet")) || (!bPropellerPreset && !Source.MovementBlocks.Contains(TEXT("spinBones")));
+			const FString Kind = bJet ? TEXT("jet") : TEXT("plane");
 			const FVector Along = Facing.Vector();
 			double BestVariation = TNumericLimits<double>::Max();
 			double BestDistance = -1.0;

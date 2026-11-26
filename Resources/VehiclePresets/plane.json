@@ -8,7 +8,7 @@
   "publishable": true,
   "type": "plane",
   "seats": { "driver": "pilot" },
-  "fit": { "wheelRadius": 25, "trackWidth": 250, "minScale": 0.7, "maxScale": 1.15 },
+  "fit": { "wheelRadius": 25, "trackWidth": 250, "minScale": 0.85, "maxScale": 1.3 },
   "wheels": { "min": 3, "max": 3 },
   "chassis": {
     "layout": {
