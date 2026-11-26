@@ -87,7 +87,7 @@
       "handbrakeTorque": 4000
     },
     "tires": {
-      "friction": 2
+      "friction": 1.47
     },
     "camera": {
       "armLength": 1800,
