@@ -307,10 +307,10 @@ bool FMantleVehiclePresetDriverAidsTest::RunTest(const FString& Parameters)
 			const TSharedRef<FJsonObject> Document = FMantleVehicleConverter::MakeDocument(*Source, TMap<FString, FString>());
 			ExpectFragment(*this, TEXT("turbo"), Turbo.Defaults, Document);
 			// A preset without an induction takes it away again, with the boost settings.
-			FMantleVehiclePreset Plain;
-			if (TestTrue(TEXT("the inline plain preset parses"), FMantleVehiclePresets::Parse(PresetWithDefaults(TEXT("{ \"engine\": { \"maxTorque\": 300 } }")), Plain, Error)))
+			FMantleVehiclePreset PlainPreset;
+			if (TestTrue(TEXT("the inline plain preset parses"), FMantleVehiclePresets::Parse(PresetWithDefaults(TEXT("{ \"engine\": { \"maxTorque\": 300 } }")), PlainPreset, Error)))
 			{
-				TestTrue(TEXT("the plain preset applies"), FMantleVehiclePresets::ApplyDefaults(Plain, *Source, Notes));
+				TestTrue(TEXT("the plain preset applies"), FMantleVehiclePresets::ApplyDefaults(PlainPreset, *Source, Notes));
 				TestTrue(TEXT("no induction after a preset without one"), Source->Tuning.Induction == EMantleVehicleSourceInduction::None);
 				TestEqual(TEXT("and the boost back to its default"), Source->Tuning.MaxBoost, 10.f);
 			}

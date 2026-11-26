@@ -154,7 +154,7 @@ bool FMantleVehicleChassisPresetsMakeAssetsTest::RunTest(const FString& Paramete
 			TestTrue(*FString::Printf(TEXT("%s: wheel %d has a width"), *Id, Index), Desc.Wheels[Index].Width > 0.0);
 		}
 		// A fifth-wheel tractor (#446) collides as its cab and the frame under its fifth wheel.
-		TestEqual(*FString::Printf(TEXT("%s: one collision box (a tractor's cab and frame: two)"), *Id), Desc.Collision.Num(), Reference.HasTractorFrame() ? 2 : 1);
+		TestEqual(*FString::Printf(TEXT("%s: one collision box (a tractor's cab and frame: two)"), *Id), Desc.Collision.Num(), Spec.HasTractorFrame() ? 2 : 1);
 		TestTrue(*FString::Printf(TEXT("%s: it has a center of mass"), *Id), Desc.bCenterOfMass);
 		// A rider straddles a bike (on the centerline) or a quad (the ATV's wheels in pairs, #376 step 9d): on the centerline, no wheel, no passenger.
 		if (Reference.bCenterline || Reference.Rider.bSet)
@@ -165,7 +165,7 @@ bool FMantleVehicleChassisPresetsMakeAssetsTest::RunTest(const FString& Paramete
 			continue;
 		}
 		// A trailer (#446) keeps the document's driver seat (the hovercraft precedent: its movement type ignores it) and has no passenger.
-		if (Reference.bTrailer)
+		if (Spec.bTrailer)
 		{
 			TestFalse(*FString::Printf(TEXT("%s: a trailer has no passenger"), *Id), Desc.bPassengerSeat);
 			continue;
