@@ -46,7 +46,7 @@
     "cameraHeightPerHeight": 1.82
   },
   "defaults": {
-    "mass": 9000,
+    "mass": 9494,
     "maxSpeed": 2600,
     "dragCoefficient": 0.7,
     "frontalArea": 7,
