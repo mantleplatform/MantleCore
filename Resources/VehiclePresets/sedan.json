@@ -28,8 +28,8 @@
       "wheelRadius": 32,
       "wheelWidth": 21,
       "axles": [
-        { "steer": true, "drive": false },
-        { "steer": false, "drive": true, "handbrake": true }
+        { "steer": true, "drive": true },
+        { "steer": false, "drive": false, "handbrake": true }
       ]
     },
     "body": { "length": 470, "width": 182, "height": 70, "groundClearance": 20 },
@@ -53,7 +53,7 @@
       "maxTorque": 249,
       "maxRPM": 7000,
       "idleRPM": 900,
-      "torqueCurve": [[0, 0.5], [1500, 0.6], [3000, 0.75], [4000, 0.85], [4800, 1], [5500, 0.97], [6600, 0.877], [7000, 0.8]]
+      "torqueCurve": [[0, 0.6], [1000, 0.7], [2500, 0.88], [4800, 1], [6600, 0.877], [7000, 0.8]]
     },
     "transmission": {
       "gearRatios": [5.25, 3.028, 1.95, 1.456, 1.22, 1.0, 0.808, 0.673],
