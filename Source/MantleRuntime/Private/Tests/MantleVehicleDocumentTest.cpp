@@ -227,7 +227,9 @@ namespace MantleVehicleDocumentTestPrivate
 		const EMantleVehicleSeatKind WantKind = Spec.DriverSeat.Equals(TEXT("motorcycle"), ESearchCase::CaseSensitive) ? EMantleVehicleSeatKind::Motorcycle
 			: (Spec.DriverSeat.Equals(TEXT("pilot"), ESearchCase::CaseSensitive) ? EMantleVehicleSeatKind::Pilot : EMantleVehicleSeatKind::Car);
 		Test.TestTrue(*(Label + TEXT(": the seat kind")), D.SeatKind == WantKind);
-		Test.TestTrue(*(Label + TEXT(": the passenger seat is a car's")), D.PassengerSeatKind == EMantleVehicleSeatKind::Car);
+		const EMantleVehicleSeatKind WantPassengerKind = Spec.PassengerSeat.Equals(TEXT("motorcycle"), ESearchCase::CaseSensitive)
+			? EMantleVehicleSeatKind::Motorcycle : EMantleVehicleSeatKind::Car;
+		Test.TestTrue(*(Label + TEXT(": the passenger seat is the preset's (a car's; a jet ski's pillion a motorcycle's)")), D.PassengerSeatKind == WantPassengerKind);
 
 		// ApplySeatKind's rider branch.
 		Expect(TEXT("a rider fit exactly when the preset has one"), D.bRider, Spec.Rider.bSet);

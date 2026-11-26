@@ -257,6 +257,27 @@ namespace MantleChassisSpecTestPrivate
 		}
 	},
 	{
+		// A jet ski (#15): a boat's hidden wheels, its hull, its jet's pod past the stern, and the handlebar bone at the steering wheel hub.
+		TEXT("jetski"),
+		TEXT(R"MCS({"mass":400,"maxSpeed":3100,"dragCoefficient":0.5,"frontalArea":1.2,"engine":{"maxTorque":300,"maxRPM":8000,"idleRPM":1700,"torqueCurve":[[0,0.59999999999999998],[4000,1],[8000,0.80000000000000004]]},"transmission":{"gearRatios":[1],"reverseRatio":1,"finalDrive":1,"changeUpRPM":7000,"changeDownRPM":3000},"suspension":{"maxRaise":10,"maxDrop":10,"springRate":400,"springPreload":100,"damping":0.5},"steering":{"maxAngle":10,"ackermann":false},"brakes":{"brakeTorque":1500,"handbrakeTorque":3000},"tires":{"friction":2},"camera":{"armLength":450,"height":160},"schemaVersion":1,"wheels":[{"bone":"wheel_fl","steering":true,"driven":false,"handbrake":false,"radius":20,"width":10},{"bone":"wheel_fr","steering":true,"driven":false,"handbrake":false,"radius":20,"width":10},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":false,"radius":20,"width":10},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":false,"radius":20,"width":10}],"collision":[{"center":[0,0,45],"extent":[166,62.5,35]}],"centerOfMass":[-30,0,40],"seat":{"location":[-30,0,88],"steeringWheel":{"location":[55,0,100],"rotation":[-65,0,0],"radius":10,"bone":"handlebar"}},"passengerSeat":{"location":[-75,0,93]}})MCS"),
+		96, 48,
+		{ -172.5, -62.5, -22.5 }, { 166, 62.5, 105.5 },
+		{
+			{ TEXT("root"), -1, { 0, 0, 0 } },
+			{ TEXT("wheel_fl"), 0, { 110, -40, 20 } },
+			{ TEXT("wheel_fr"), 0, { 110, 40, 20 } },
+			{ TEXT("wheel_rl"), 0, { -110, -40, 20 } },
+			{ TEXT("wheel_rr"), 0, { -110, 40, 20 } },
+			{ TEXT("handlebar"), 0, { 55, 0, 100 } }
+		},
+		{
+			{ 110, -40, 20 },
+			{ 110, 40, 20 },
+			{ -110, -40, 20 },
+			{ -110, 40, 20 }
+		}
+	},
+	{
 		TEXT("jet"),
 		TEXT(R"MCS({"mass":10355,"maxSpeed":12000,"dragCoefficient":0.6,"frontalArea":3.1,"engine":{"maxTorque":300,"maxRPM":3000,"idleRPM":600,"torqueCurve":[[0,0.6],[1500,1],[3000,0.8]]},"transmission":{"gearRatios":[1.0],"reverseRatio":1.0,"finalDrive":1.0,"changeUpRPM":2500,"changeDownRPM":1000},"suspension":{"maxRaise":10,"maxDrop":15,"springRate":2360,"springPreload":670,"damping":0.85},"steering":{"maxAngle":25,"ackermann":false},"brakes":{"brakeTorque":5000,"handbrakeTorque":5000},"tires":{"friction":1.47},"camera":{"armLength":2150,"height":150},"schemaVersion":1,"wheels":[{"bone":"wheel_f","steering":true,"driven":false,"handbrake":false,"radius":40,"width":26},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":false,"radius":40,"width":26},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":false,"radius":40,"width":26}],"collision":[{"center":[-200.0,0.0,200.0],"extent":[750.0,60.0,90.0]},{"center":[-288.75,0.0,200.0],"extent":[147.5,472.5,18.4375]},{"center":[-870.0,0.0,215.0],"extent":[70.0,250.0,8.75]},{"center":[-850.0,0.0,440.0],"extent":[100.0,12.5,150.0]}],"centerOfMass":[-200,0,205],"seat":{"location":[250,0,273]}})MCS"),
 		414, 240,
