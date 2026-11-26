@@ -482,6 +482,10 @@ namespace MantleVehicleChassisDocumentPrivate
 			FinFoil.Camber = 0.0;
 			FinFoil.MaxControlAngle = 0.0;
 			FinFoil.StallAngle = 20.0;
+			// #379: twice a plain fin's side force per degree (FMantleFlightModel's slope is the peak lift over 0.9 of the stall): it stands in for the
+			// tail rotor's own weathervaning (its thrust changes with sideslip, which the rotor model leaves out), so a kick at 60 kt settles as #380's
+			// probe bar asks (Epic's aerofoil gave about that; the model's 1.2 swung back half as stiffly: 6.1 degrees left after 5 s).
+			FinFoil.MaxLift = 2.4;
 		}
 
 		// The main rotor, at its hub over the center of mass; the rotor's other numbers are its defaults, which act through the body's inertia, so at any size.
