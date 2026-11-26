@@ -130,7 +130,7 @@ namespace MantleChassisSpecTestPrivate
 		// A helicopter's wheels are not drawn: its body is sixteen boxes (the cabin, the mast, the boom, the fin, two skids, a leg at each skid end, two
 		// cross-tubes, and two blades on each rotor), its collision the cabin, the boom and the fin.
 		TEXT("helicopter"),
-		TEXT(R"MCS({"mass":2500,"maxSpeed":7000,"dragCoefficient":0.4,"frontalArea":2.5,"engine":{"maxTorque":300,"maxRPM":3000,"idleRPM":600,"torqueCurve":[[0,0.6],[1500,1],[3000,0.8]]},"transmission":{"gearRatios":[1.0],"reverseRatio":1.0,"finalDrive":1.0,"changeUpRPM":2500,"changeDownRPM":1000},"suspension":{"maxRaise":6,"maxDrop":6,"springRate":800,"springPreload":250,"damping":0.9},"steering":{"maxAngle":10,"ackermann":false},"brakes":{"brakeTorque":3000,"handbrakeTorque":6000},"tires":{"friction":1.47},"camera":{"armLength":1600,"height":250},"schemaVersion":1,"wheels":[{"bone":"wheel_fl","steering":true,"driven":false,"handbrake":true,"radius":20,"width":10},{"bone":"wheel_fr","steering":true,"driven":false,"handbrake":true,"radius":20,"width":10},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":true,"radius":20,"width":10},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":true,"radius":20,"width":10}],"collision":[{"center":[40.0,0.0,165.0],"extent":[210.0,75.0,95.0]},{"center":[-430.0,0.0,215.0],"extent":[260.0,20.0,22.5]},{"center":[-655.0,0.0,292.5],"extent":[35.0,4.375,55.0]}],"centerOfMass":[0,0,140],"seat":{"location":[130,0,243]}})MCS"),
+		TEXT(R"MCS({"mass":2193,"maxSpeed":8300,"dragCoefficient":0.4,"frontalArea":2.5,"engine":{"maxTorque":300,"maxRPM":3000,"idleRPM":600,"torqueCurve":[[0,0.6],[1500,1],[3000,0.8]]},"transmission":{"gearRatios":[1.0],"reverseRatio":1.0,"finalDrive":1.0,"changeUpRPM":2500,"changeDownRPM":1000},"suspension":{"maxRaise":6,"maxDrop":6,"springRate":800,"springPreload":250,"damping":0.9},"steering":{"maxAngle":10,"ackermann":false},"brakes":{"brakeTorque":3000,"handbrakeTorque":6000},"tires":{"friction":1.47},"camera":{"armLength":1600,"height":250},"schemaVersion":1,"wheels":[{"bone":"wheel_fl","steering":true,"driven":false,"handbrake":true,"radius":20,"width":10},{"bone":"wheel_fr","steering":true,"driven":false,"handbrake":true,"radius":20,"width":10},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":true,"radius":20,"width":10},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":true,"radius":20,"width":10}],"collision":[{"center":[40.0,0.0,165.0],"extent":[210.0,75.0,95.0]},{"center":[-430.0,0.0,215.0],"extent":[260.0,20.0,22.5]},{"center":[-655.0,0.0,292.5],"extent":[35.0,4.375,55.0]}],"centerOfMass":[0,0,140],"seat":{"location":[130,0,243]}})MCS"),
 		384, 192,
 		{ -735.0, -535.0, 5.0 }, { 535.0, 535.0, 353.0 },
 		{
@@ -147,6 +147,28 @@ namespace MantleChassisSpecTestPrivate
 			{ 120.0, 110.0, 20.0 },
 			{ -120.0, -110.0, 20.0 },
 			{ -120.0, 110.0, 20.0 }
+		}
+	},
+	{
+		// The light helicopter (#380, a Robinson R44): the same sixteen boxes on a smaller cabin, boom, fin and rotors.
+		TEXT("lighthelicopter"),
+		TEXT(R"MCS({"mass":1059,"maxSpeed":7700,"dragCoefficient":0.4,"frontalArea":1.9,"engine":{"maxTorque":300,"maxRPM":3000,"idleRPM":600,"torqueCurve":[[0,0.6],[1500,1],[3000,0.8]]},"transmission":{"gearRatios":[1.0],"reverseRatio":1.0,"finalDrive":1.0,"changeUpRPM":2500,"changeDownRPM":1000},"suspension":{"maxRaise":6,"maxDrop":6,"springRate":400,"springPreload":120,"damping":0.9},"steering":{"maxAngle":10,"ackermann":false},"brakes":{"brakeTorque":3000,"handbrakeTorque":6000},"tires":{"friction":1.47},"camera":{"armLength":1300,"height":220},"schemaVersion":1,"wheels":[{"bone":"wheel_fl","steering":true,"driven":false,"handbrake":true,"radius":20,"width":10},{"bone":"wheel_fr","steering":true,"driven":false,"handbrake":true,"radius":20,"width":10},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":true,"radius":20,"width":10},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":true,"radius":20,"width":10}],"collision":[{"center":[40.0,0.0,130.0],"extent":[150.0,64.0,75.0]},{"center":[-369.0,0.0,150.0],"extent":[259.0,15.0,17.5]},{"center":[-600.5,0.0,207.5],"extent":[27.5,3.4375,40.0]}],"centerOfMass":[0,0,110],"seat":{"location":[70,0,190]}})MCS"),
+		384, 192,
+		{ -674.0, -503.0, 5.0 }, { 503.0, 503.0, 303.0 },
+		{
+			{ TEXT("root"), -1, { 0.0, 0.0, 0.0 } },
+			{ TEXT("wheel_fl"), 0, { 110.0, -109.0, 20.0 } },
+			{ TEXT("wheel_fr"), 0, { 110.0, 109.0, 20.0 } },
+			{ TEXT("wheel_rl"), 0, { -110.0, -109.0, 20.0 } },
+			{ TEXT("wheel_rr"), 0, { -110.0, 109.0, 20.0 } },
+			{ TEXT("main_rotor"), 0, { 0.0, 0.0, 300.0 } },
+			{ TEXT("tail_rotor"), 0, { -600.5, -25.0, 150.0 } }
+		},
+		{
+			{ 110.0, -109.0, 20.0 },
+			{ 110.0, 109.0, 20.0 },
+			{ -110.0, -109.0, 20.0 },
+			{ -110.0, 109.0, 20.0 }
 		}
 	},
 	{
