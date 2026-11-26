@@ -1251,7 +1251,7 @@ void SMantleVehicleBuilder::RebuildModelRows()
 		const FString OwnName = OwnWords.IsEmpty() ? FString(TEXT("its own")) : OwnWords;
 		DriveChoices = { MakeShared<FString>(FString::Printf(TEXT("The type's own (%s)"), *OwnName)), MakeShared<FString>(TEXT("Front-wheel drive")),
 			MakeShared<FString>(TEXT("Rear-wheel drive")), MakeShared<FString>(TEXT("All-wheel drive")) };
-		const int32 Current = FMath::Clamp(static_cast<int32>(DriveChoice), 0, DriveChoices.Num() - 1);
+		const int32 DriveAt = FMath::Clamp(static_cast<int32>(DriveChoice), 0, DriveChoices.Num() - 1);
 		ModelRowsBox->AddSlot().AutoHeight().Padding(0, 0, 0, 6)
 		[
 			SNew(SHorizontalBox)
@@ -1268,7 +1268,7 @@ void SMantleVehicleBuilder::RebuildModelRows()
 			[
 				SNew(SComboBox<TSharedPtr<FString>>)
 					.OptionsSource(&DriveChoices)
-					.InitiallySelectedItem(DriveChoices[Current])
+					.InitiallySelectedItem(DriveChoices[DriveAt])
 					.OnGenerateWidget_Lambda([](TSharedPtr<FString> Item) { return SNew(STextBlock).Text(FText::FromString(*Item)); })
 					.OnSelectionChanged_Lambda([this](TSharedPtr<FString> Item, ESelectInfo::Type)
 					{

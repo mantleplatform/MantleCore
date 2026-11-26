@@ -1693,13 +1693,13 @@ bool FMantleChassisSpec::ApplyDrive(const EMantleVehicleDrive Choice)
 	}
 	if (Before > 0 && After > 0 && Before != After)
 	{
-		const double Scale = static_cast<double>(Before) / static_cast<double>(After);
-		Archetype.EngineBraking *= Scale;
+		const double BrakingScale = static_cast<double>(Before) / static_cast<double>(After);
+		Archetype.EngineBraking *= BrakingScale;
 		if (Derived.IsSet())
 		{
-			Derived.GetValue().EngineBraking *= Scale;
+			Derived.GetValue().EngineBraking *= BrakingScale;
 		}
-		DriveEngineBrakingScale *= Scale;
+		DriveEngineBrakingScale *= BrakingScale;
 	}
 	return true;
 }
