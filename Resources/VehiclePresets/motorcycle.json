@@ -114,8 +114,8 @@
       "ackermann": false
     },
     "brakes": {
-      "brakeTorque": 610,
-      "handbrakeTorque": 305,
+      "brakeTorque": 435,
+      "handbrakeTorque": 220,
       "abs": true,
       "frontShare": 0.75
     },
@@ -176,8 +176,8 @@
           "shiftTime": 0.25
         },
         "brakes": {
-          "brakeTorque": 520,
-          "handbrakeTorque": 260,
+          "brakeTorque": 370,
+          "handbrakeTorque": 185,
           "abs": true,
           "frontShare": 0.75
         },
@@ -225,8 +225,8 @@
           "shiftTime": 0.25
         },
         "brakes": {
-          "brakeTorque": 570,
-          "handbrakeTorque": 285,
+          "brakeTorque": 410,
+          "handbrakeTorque": 205,
           "abs": true,
           "frontShare": 0.75
         },
@@ -274,8 +274,8 @@
           "shiftTime": 0.15
         },
         "brakes": {
-          "brakeTorque": 610,
-          "handbrakeTorque": 305,
+          "brakeTorque": 435,
+          "handbrakeTorque": 220,
           "abs": true,
           "frontShare": 0.75
         },
@@ -323,8 +323,8 @@
           "shiftTime": 0.08
         },
         "brakes": {
-          "brakeTorque": 650,
-          "handbrakeTorque": 325,
+          "brakeTorque": 475,
+          "handbrakeTorque": 240,
           "abs": true,
           "frontShare": 0.75
         },
@@ -372,10 +372,17 @@
           "shiftTime": 0.3
         },
         "brakes": {
-          "brakeTorque": 1180,
-          "handbrakeTorque": 590,
+          "brakeTorque": 820,
+          "handbrakeTorque": 410,
           "abs": true,
           "frontShare": 0.75
+        },
+        "suspension": {
+          "maxRaise": 8.1,
+          "maxDrop": 8.1,
+          "springRate": 307,
+          "springPreload": 50,
+          "damping": 0.5
         }
       },
       "chassis": {

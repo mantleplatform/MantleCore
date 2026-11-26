@@ -878,12 +878,14 @@ TArray<FVector2D> FMantleVehicleChassisDocument::GroundSteeringSpeedCurve()
 
 TArray<FVector2D> FMantleVehicleChassisDocument::TwoWheelerSteeringSpeedCurve()
 {
-	// #378, from the drive probe's steering sweeps on the bike at its real grip: at each speed 1.3x the road-wheel angle that gives its peak
-	// sideways g, as a share of its 40 deg lock (this tyre model has no camber thrust, so the front tyre's slip angle turns the bike, as on a car).
-	// Measured on the default 600 (#378 probe round 1's diagnosis, the balanced bike): 20 km/h 0.68, 40 km/h 0.35, 60 km/h 0.19, 90 km/h 0.08,
-	// 120 km/h 0.05. Full lock at walking pace, for parking turns. From 56 mph it holds at the document's floor, 0.1 (steering/speedCurve/*/1
-	// is 0.1-1): 4 deg, above the 1.6-2.3 deg peak there, which the lean grip cap still bounds.
-	return { FVector2D(0.0, 1.0), FVector2D(5.0, 1.0), FVector2D(12.4, 0.68), FVector2D(24.9, 0.35), FVector2D(37.3, 0.19), FVector2D(55.9, 0.1) };
+	// #378, from the drive probe's steering sweeps on the default 600 at grip 2.0 (probe round 5): at each speed the road-wheel angle that gives
+	// its peak sideways g, as a share of its 40 deg lock (this tyre model has no camber thrust, so the front tyre's slip angle turns the bike, as on
+	// a car). Not the cars' 1.3x: past the peak the front tyre lets go, the yaw rate drops, the lean target follows it and the bike weaves and hops
+	// (round 5's full-lock turn at 52 km/h, 1.27x its peak: roll 11-38 deg, yaw rate 2-46 deg/s). Peaks: 40 km/h 10.9 deg, 60 km/h past the
+	// 8 deg the old curve gave (0.93 g at 7.6), 90 km/h past 4 deg (0.88 g there), 120 km/h 2.2 deg. Walking pace and 20 km/h keep the old lock
+	// for parking and town turns, where the lean is small. From 75 mph it holds at the document's floor, 0.1 (steering/speedCurve/*/1 is 0.1-1).
+	return { FVector2D(0.0, 1.0), FVector2D(5.0, 1.0), FVector2D(12.4, 0.68), FVector2D(24.9, 0.3), FVector2D(37.3, 0.22), FVector2D(55.9, 0.14),
+		FVector2D(74.6, 0.1) };
 }
 
 void FMantleVehicleChassisDocument::ComposeGroundHandling(const FMantleChassisSpec& Spec, FJsonObject& Document, TArray<FString>* OutHeld)
