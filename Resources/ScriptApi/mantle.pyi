@@ -1736,6 +1736,8 @@ class _VehiclesService:
     fuel_changed: Signal
     fuel_empty: Signal
     ready: Signal
+    sprint_started: Signal
+    sprint_stopped: Signal
     uncoupled: Signal
     def couple(self, vehicle: Entity, trailer: Entity, snap: bool = ..., /) -> bool:
         """Couple a trailer to the vehicle's hitch. With snap true, the trailer is first moved straight behind the vehicle with its coupler on the hitch: use it to spawn a ready rig. Without snap the trailer is coupled where it stands and drawn onto the hitch over a moment, so put it close behind first. Returns false, changing nothing, when the vehicle has no hitch, the trailer is not a trailer, the hitch and the trailer's coupler are different kinds (a fifth wheel and a ball: see GetHitchType and GetCouplerType), either one is coupled already, or the loaded trailer weighs more than five times the vehicle. A script can couple a locked coupling (SetCouplingLocked). Fires Vehicles.Coupled."""
@@ -1743,11 +1745,20 @@ class _VehiclesService:
     def damage(self, vehicle: Entity, amount: float, /) -> float:
         """Take amount of health off the car (never below 0) and return the health it has left. Fires Vehicles.Damaged, and Vehicles.Destroyed if it reaches 0. Turn health on first with SetHealthEnabled."""
         ...
+    def drop_anchor(self, vehicle: Entity, /) -> bool:
+        """Drop the boat's anchor where its bow is: it then holds its spot, swinging a little on 3 m of slack, until it is raised. Its driver can also drop and raise it from the seat (R / right shoulder). A place can anchor its boats when it spawns them. Returns false, and nothing changes, when the entity is not a boat, is out of the water, or is moving at 5 km/h or faster; true also when it was already anchored."""
+        ...
     def eject(self, player: Player, /) -> bool:
         """Put the player back on foot beside the car they are driving. Returns false when they are not driving, the car is still moving, or there is nowhere beside it to stand."""
         ...
     def get_articulation(self, vehicle: Entity, /) -> float:
         """How far the trailer has swung from straight behind, in degrees: 0 straight, positive with the trailer to the right, negative to the left. Give it the towing vehicle or the trailer; 0 when not coupled. Watch it for a jackknife warning. Errors if the entity is not a vehicle or no longer exists."""
+        ...
+    def get_axle_lock(self, vehicle: Entity, /) -> str:
+        """Which of the car's differentials its driver has locked: 'off', 'rear', 'front' or 'frontAndRear'. Errors if the entity is not a vehicle or no longer exists."""
+        ...
+    def get_battery_capacity(self, vehicle: Entity, /) -> Optional[float]:
+        """An electric car's usable battery, in kWh: what a full tank (MaxFuel) stands for. nil on a combustion car."""
         ...
     def get_boost(self, vehicle: Entity, /) -> float:
         """The boost the car has left, from 0 to MaxBoost."""
@@ -1755,20 +1766,35 @@ class _VehiclesService:
     def get_boost_drain(self, vehicle: Entity, /) -> float:
         """How much boost is used each second while the driver boosts (25 unless you change it)."""
         ...
+    def get_boost_pressure(self, vehicle: Entity, /) -> float:
+        """The turbo's or supercharger's boost now, in psi: 0 at idle or with the throttle shut, up to GetMaxBoostPressure at full throttle from the car's spool rpm up (a turbo takes a moment to get there). 0 for a car without one. For a boost gauge on the driver's screen read GetLocalBoostPressure in a client script instead."""
+        ...
     def get_boost_regen(self, vehicle: Entity, /) -> float:
         """How much boost comes back each second while the driver is not boosting (10 unless you change it)."""
         ...
     def get_boost_strength(self, vehicle: Entity, /) -> float:
         """How hard the boost pushes, from 0 (nothing) to 1 (the hardest it can; about 18 m/s of extra speed every second). 0.5 unless you change it."""
         ...
+    def get_cadence(self, vehicle: Entity, /) -> Optional[float]:
+        """How fast the rider of a pedalled vehicle (a bicycle) turns the cranks now, in rpm (turns a minute). 0 while they freewheel (roll without pedalling) or walk it backwards. nil for a vehicle that is not pedalled. Errors if the entity is not a vehicle or no longer exists."""
+        ...
     def get_cargo_mass(self, trailer: Entity, /) -> float:
         """The cargo a trailer carries, in kg; 0 for a vehicle that is not a trailer. Errors if the entity is not a vehicle or no longer exists."""
+        ...
+    def get_charge_percent(self, vehicle: Entity, /) -> Optional[float]:
+        """How full the car's tank is, from 0 to 100: Fuel over MaxFuel. On an electric car that is its battery's charge. nil while the car has no fuel (SetFuelEnabled). Example: print(math.floor(Vehicles:GetChargePercent(car)) .. '%')"""
         ...
     def get_coupler_type(self, trailer: Entity, /) -> Optional[str]:
         """A trailer's coupler: 'fifthWheel' (a semi trailer's kingpin) or 'ball' (a ball socket), or nil when the vehicle is not a trailer. It couples only to a hitch of the same kind (GetHitchType). Errors if the entity is not a vehicle or no longer exists."""
         ...
     def get_coupling_break_force(self, vehicle: Entity, /) -> Optional[float]:
         """The break force set with SetCouplingBreakForce, in newtons, or nil when the coupling never breaks. Errors if the entity is not a vehicle or no longer exists."""
+        ...
+    def get_drive_type(self, vehicle: Entity, /) -> str:
+        """What turns the car's wheels: 'combustion' (an engine and a gearbox) or 'electric' (a motor with full pull from a standstill, one gear, regenerative braking and a battery)."""
+        ...
+    def get_engine_rpm(self, vehicle: Entity, /) -> float:
+        """The engine's revs per minute now, or an electric car's motor's (0 at a standstill: a motor has no idle). For a rev counter."""
         ...
     def get_engine_size(self, vehicle: Entity, /) -> Optional[float]:
         """The vehicle's engine size in cc (cubic centimeters), as its creator picked it: a motorcycle's 125, 300, 600, 1000 or 1800 cc engine. nil when the vehicle does not give one (cars, aircraft). Errors if the entity is not a vehicle or no longer exists."""
@@ -1780,7 +1806,10 @@ class _VehiclesService:
         """The fuel in the tank, from 0 to MaxFuel."""
         ...
     def get_fuel_consumption(self, vehicle: Entity, /) -> float:
-        """How much fuel the car burns each second while it is driven and moving (1 unless you change it)."""
+        """How much fuel the car burns each second while it is driven and moving (1 unless you change it). An electric car ignores it: its battery drains by the power its motor gives (see GetChargePercent)."""
+        ...
+    def get_gear(self, vehicle: Entity, /) -> float:
+        """The car's gear as the simulation has it: -1 reverse, 0 neutral (also mid-shift), 1 and up forward; 0 for an aircraft or a hovercraft. Errors if the entity is not a vehicle or no longer exists."""
         ...
     def get_headlight_color(self, vehicle: Entity, /) -> Optional[str]:
         """The headlight color set with SetHeadlightColor as '#RRGGBB'. Nil when the car has its own headlights or the entity is not a car."""
@@ -1791,6 +1820,9 @@ class _VehiclesService:
     def get_hitch_type(self, vehicle: Entity, /) -> Optional[str]:
         """The vehicle's hitch: 'fifthWheel' (a semi truck's) or 'ball' (a tow ball), or nil when it has none and cannot tow. A vehicle only couples a trailer whose coupler is the same kind (GetCouplerType). Errors if the entity is not a vehicle or no longer exists."""
         ...
+    def get_induction(self, vehicle: Entity, /) -> str:
+        """The car's engine induction: 'turbo' (boost that builds with the revs and takes a moment to arrive), 'supercharger' (boost that follows the revs at once) or 'none'. It is part of the car (engine.induction in its vehicle file). Errors if the entity is not a vehicle."""
+        ...
     def get_lean_angle(self, vehicle: Entity, /) -> Optional[float]:
         """How far a motorcycle leans now, in degrees: positive leaning right, negative left, 0 upright. A motorcycle leans into the turn it makes, as far as its speed and the turn need, up to its max lean. nil for a vehicle that is not a motorcycle. Errors if the entity is not a vehicle or no longer exists."""
         ...
@@ -1800,23 +1832,53 @@ class _VehiclesService:
     def get_liveries(self, vehicle: Entity, /) -> list[str]:
         """The names of the car's liveries, in the order SetLivery counts them: the first name is livery index 0, the next is 1, and so on. A name is what the vehicle's creator called it, or 'Livery 1', 'Livery 2' and so on for one without a name. The list is empty for a car published with no liveries, for the built-in cars, and for an entity that is not a car."""
         ...
+    def get_local_axle_lock(self) -> Optional[str]:
+        """Which differentials the local player has locked in the car they drive: 'off', 'rear', 'front' or 'frontAndRear'. 'off' in a car without lockable differentials. nil while the local player is not driving."""
+        ...
+    def get_local_boost_pressure(self) -> Optional[float]:
+        """The boost of the car the local player is driving, in psi: 0 at idle or off the throttle, up to GetLocalMaxBoostPressure at full throttle once the revs are up (a turbo takes a moment to build it; a supercharger has it at once). Read it every frame to draw a boost gauge. nil while the local player is not driving, or drives a car without a turbo or supercharger."""
+        ...
+    def get_local_cadence(self) -> Optional[float]:
+        """How fast the local player turns the cranks of the pedalled vehicle (a bicycle) they ride, in rpm (Vehicles:GetCadence's unit): 0 while they freewheel or walk it backwards. nil while the local player is not riding a pedalled vehicle. Works on a client script; read it every frame for a cadence readout."""
+        ...
     def get_local_coupling_state(self) -> str:
         """For the vehicle the local player is driving: 'coupled' when it tows a trailer, 'inRange' when a trailer is in place and the couple key would couple it now, and 'none' otherwise, also on foot. There is no built-in prompt: read this every frame to draw your own."""
         ...
     def get_local_flight_info(self) -> Optional[dict[str, Any]]:
         """GetFlightInfo for the plane or helicopter the local player is flying, for a place that draws its own instruments. Nil while the local player is not flying one."""
         ...
+    def get_local_gear(self) -> Optional[float]:
+        """The gear of the car the local player is driving: -1 reverse, 0 neutral (also for the moment a shift goes through neutral), 1 and up forward. Works whether the car shifts itself or the player shifts by hand, so a place can draw its own gear readout. nil while the local player is not driving, or drives an aircraft or a hovercraft (no gearbox)."""
+        ...
     def get_local_lean_angle(self) -> Optional[float]:
         """How far the motorcycle the local player is riding leans now, in degrees (Vehicles:GetLeanAngle's sign: positive right). nil while the local player is not riding a motorcycle. Works on a client script; read it every frame for a lean readout."""
+        ...
+    def get_local_low_range(self) -> Optional[bool]:
+        """Whether the car the local player drives is in low range (its transfer case's low gearing, for crawling and steep climbs). false in a car without a low range, an aircraft or a hovercraft. nil while the local player is not driving."""
+        ...
+    def get_local_max_boost_pressure(self) -> Optional[float]:
+        """The most boost the local player's car makes, in psi (its own, or what a server script set with SetMaxBoostPressure): the top of a boost gauge's scale. nil while the local player is not driving, or drives a car without a turbo or supercharger."""
         ...
     def get_local_speed(self) -> Optional[float]:
         """The speed of the vehicle the local player is driving, in centimeters per second (Vehicles:GetSpeed's unit; multiply by 0.036 for km/h): its whole velocity, so it is not negative in reverse. nil while the local player is not driving a vehicle. Works on a client script, where Vehicles:GetSpeed does not; read it every frame to draw a speedometer."""
         ...
+    def get_local_sprint_reserve(self) -> Optional[float]:
+        """How much sprint the local player has left on the pedalled vehicle (a bicycle) they ride, from 0 to 100 (percent of a full reserve, Vehicles:GetSprintReserve's unit; 0 for a vehicle with no sprint). nil while the local player is not riding a pedalled vehicle. Works on a client script; read it every frame for a sprint bar."""
+        ...
     def get_local_throttle(self) -> Optional[float]:
         """The throttle of the aircraft the local player is flying, from 0 to 1; for a helicopter it is the collective. nil while the local player is not flying a plane or a helicopter (a car has no throttle lever; read its speed instead)."""
         ...
+    def get_local_track_speed(self, side: str, /) -> Optional[float]:
+        """How fast one track of the tank or bulldozer the local player is driving is running, in centimeters per second (Vehicles:GetSpeed's unit): side is 'left' or 'right'. Positive while the belt runs forward and negative while it runs backward; the same numbers as the server's Vehicles:GetTrackSpeed. nil while the local player is not driving a vehicle, or drives one without tracks. Errors if side is not 'left' or 'right'."""
+        ...
+    def get_low_range(self, vehicle: Entity, /) -> bool:
+        """Whether the car is in low range, as its driver set it; false for a car without a low range. Errors if the entity is not a vehicle or no longer exists."""
+        ...
     def get_max_boost(self, vehicle: Entity, /) -> float:
         """The most boost the car can store (100 unless you change it)."""
+        ...
+    def get_max_boost_pressure(self, vehicle: Entity, /) -> float:
+        """The most boost the car's turbo or supercharger makes now, in psi: the car's own unless a script changed it with SetMaxBoostPressure. 0 for a car without one."""
         ...
     def get_max_cargo_mass(self, trailer: Entity, /) -> float:
         """The most cargo the trailer takes, in kg: its own limit, or less while it is coupled to a vehicle too light to pull that much. 0 for a vehicle that is not a trailer. Errors if the entity is not a vehicle or no longer exists."""
@@ -1848,20 +1910,41 @@ class _VehiclesService:
     def get_part_stand_spot(self, vehicle: Entity, part: str, /) -> Optional[dict[str, Any]]:
         """Where someone stands to open one of the car's parts, where the car is now: position is on the ground beside the part, and yaw (degrees) the way they face it. In front of the hood, behind the trunk, a step out from a door. Use it to check that a player is at the part, or to walk an NPC there. Nil when the entity is not a car or the car does not have that part."""
         ...
+    def get_regen_braking(self, vehicle: Entity, /) -> Optional[float]:
+        """How hard an electric car slows itself when its driver lets off the throttle, in g (0.2 is a firm lift-off; 0 coasts). The car's own unless SetRegenBraking changed it. nil on a combustion car."""
+        ...
+    def get_rider_power(self, vehicle: Entity, /) -> Optional[float]:
+        """How hard the rider of a pedalled vehicle (a bicycle) pushes now, in watts: 0 while they freewheel, up to GetRiderPowerLimit while they pedal at full effort, and more while they sprint. nil for a vehicle that is not pedalled. Errors if the entity is not a vehicle or no longer exists."""
+        ...
+    def get_rider_power_limit(self, vehicle: Entity, /) -> Optional[float]:
+        """The power the rider of a pedalled vehicle (a bicycle) keeps up at full effort, in watts: the one a script set with SetRiderPowerLimit, or the vehicle's own. A sprint goes above it while the sprint reserve lasts. nil for a vehicle that is not pedalled. Errors if the entity is not a vehicle or no longer exists."""
+        ...
     def get_slide_assist(self, vehicle: Entity, /) -> Optional[float]:
         """A hovercraft's slide assist scale (SetSlideAssist; 1 unless a script changed it), or nil for anything but a hovercraft."""
         ...
     def get_speed(self, vehicle: Entity, /) -> float:
         """The car's speed in centimeters per second, as the simulation reports it. Errors if the entity is not a car or no longer exists."""
         ...
+    def get_sprint_reserve(self, vehicle: Entity, /) -> Optional[float]:
+        """How much sprint the rider of a pedalled vehicle (a bicycle) has left, from 0 to 100 (percent of a full reserve). It runs down while they sprint and fills again while they ride under their power limit; 0 for a vehicle with no sprint. nil for a vehicle that is not pedalled. Errors if the entity is not a vehicle or no longer exists."""
+        ...
+    def get_submerged_share(self, vehicle: Entity, /) -> Optional[float]:
+        """How much of the boat's hull is under the water, from 0 (out of it: aground, or in the air off a wave) to 1 (afloat at rest). It drops as the boat gets up on plane. nil when the entity is not a boat."""
+        ...
     def get_towing_vehicle(self, trailer: Entity, /) -> Optional[Entity]:
         """The vehicle towing this trailer, or nil when it is not coupled. Errors if the entity is not a vehicle or no longer exists."""
+        ...
+    def get_track_speed(self, vehicle: Entity, side: str, /) -> float:
+        """How fast one track of a tank or a bulldozer is running, in centimeters per second (Vehicles:GetSpeed's unit): side is 'left' or 'right'. Positive while the belt runs forward and negative while it runs backward, so the two differ while the vehicle turns, and are opposite while it spins on the spot. Errors if side is not 'left' or 'right', the entity is not a vehicle or no longer exists, or the vehicle is not tracked (check with Vehicles:IsTracked)."""
         ...
     def get_trailer(self, vehicle: Entity, /) -> Optional[Entity]:
         """The trailer the vehicle is towing, or nil when it tows nothing. Errors if the entity is not a vehicle or no longer exists."""
         ...
     def get_underglow(self, vehicle: Entity, /) -> Optional[str]:
         """The underglow color set with SetUnderglow as '#RRGGBB'. Nil when the underglow is off or the entity is not a car."""
+        ...
+    def get_water_speed(self, vehicle: Entity, /) -> Optional[float]:
+        """The boat's speed through the water along its hull, in centimeters per second (Vehicles:GetSpeed's unit; multiply by 0.036 for km/h): a river's current is taken off, so a boat drifting with the current reads 0, and it is negative going astern. nil when the entity is not a boat."""
         ...
     def get_wheel_options(self, vehicle: Entity, /) -> list[str]:
         """The names of the wheels the car can wear: 'stock' (its own wheels) first, then the wheels in the place's Storage, in Storage order. A car whose wheels are part of its body cannot swap and lists only 'stock'. Empty when the entity is not a car."""
@@ -1874,6 +1957,9 @@ class _VehiclesService:
         ...
     def has_paint_layer(self, vehicle: Entity, layer: str, /) -> bool:
         """Whether the car has paint on the layer ('primary', 'secondary', 'pearl', 'wheels', 'interior' or 'dashboard'). The pearl is part of the primary paint. Cars differ: only layers their model gives color to exist, so ask before offering a color picker."""
+        ...
+    def is_anchored(self, vehicle: Entity, /) -> Optional[bool]:
+        """Whether the boat's anchor is down. nil when the entity is not a boat."""
         ...
     def is_boost_enabled(self, vehicle: Entity, /) -> bool:
         """Whether the car has a boost (SetBoostEnabled)."""
@@ -1899,8 +1985,17 @@ class _VehiclesService:
     def is_light_on(self, vehicle: Entity, light: str, /) -> bool:
         """Whether a light is lit now, whoever decided it: the script's word, the J key, night, braking, reverse or the driver's signal keys. A signal counts as lit through its whole blink. light is 'head', 'rear', 'reverse', 'left', 'right' or 'signals' (either side). Errors if the entity is not a car or no longer exists."""
         ...
+    def is_local_anchored(self) -> Optional[bool]:
+        """Whether the boat the local player is driving has its anchor down (its driver drops and raises it with R or the right shoulder button). nil while the local player is not driving a boat."""
+        ...
+    def is_local_boat(self) -> Optional[bool]:
+        """Whether the vehicle the local player is driving is a boat or a jet ski (true), rather than a car or an aircraft (false). nil while the local player is not driving a vehicle."""
+        ...
     def is_local_helicopter(self) -> Optional[bool]:
         """Whether the vehicle the local player is driving is a helicopter (true), rather than a car or a plane (false); a readout uses it to label GetLocalThrottle 'collective' instead of 'throttle'. nil while the local player is not driving a vehicle."""
+        ...
+    def is_local_manual(self) -> Optional[bool]:
+        """Whether the local player shifts gears by hand in the car they drive: their Manual shifting setting is on and the place and the car allow it (SetManualShiftingAllowed). false in an automatic car, an aircraft or a hovercraft. nil while the local player is not driving."""
         ...
     def is_local_reversing(self) -> Optional[bool]:
         """Whether the local player is holding reverse in the vehicle they drive: true as soon as reverse engages, even at a standstill, so a gear readout (D, N, R) can show R. false in an aircraft, which has no reverse. nil while the local player is not driving a vehicle."""
@@ -1908,8 +2003,17 @@ class _VehiclesService:
     def is_locked(self, vehicle: Entity, /) -> bool:
         """Whether the car is locked. A locked car opens only for the last player who drove it: anyone else's vehicle key rattles the door, and holding the key breaks in -- the window on that side breaks, the car unlocks, and it must be hotwired before it starts. The lock stays when the driver gets out, and its driver can also lock and unlock it from the seat (L / D-pad left). Errors if the entity is not a car or no longer exists."""
         ...
+    def is_manual_shifting_allowed(self, vehicle: Entity, /) -> bool:
+        """Whether the car's driver may shift gears by hand: the place's rule and the car's (SetManualShiftingAllowed) together. Errors if the entity is not a vehicle or no longer exists."""
+        ...
+    def is_on_plane(self, vehicle: Entity, /) -> Optional[bool]:
+        """Whether the boat is fully up on plane: in the water and at or past its planing speed, riding on top of the water instead of pushing through it. nil when the entity is not a boat."""
+        ...
     def is_part_open(self, vehicle: Entity, part: str, /) -> Optional[bool]:
         """Whether one of the car's parts is open (see SetPartOpen). Nil when the entity is not a car or the car does not have that part."""
+        ...
+    def is_tracked(self, vehicle: Entity, /) -> bool:
+        """Whether the vehicle runs on tracks: true for a tank or a bulldozer, false for any other vehicle (a car, a plane, a helicopter). Errors if the entity is not a vehicle or no longer exists."""
         ...
     def is_trailer(self, vehicle: Entity, /) -> bool:
         """Whether the vehicle is a trailer (its vehicle was made with the trailer movement type). Errors if the entity is not a vehicle or no longer exists."""
@@ -1917,8 +2021,11 @@ class _VehiclesService:
     def lock(self, vehicle: Entity, /) -> bool:
         """Lock the car. A locked car opens only for the last player who drove it: anyone else's vehicle key rattles the door, and holding the key breaks in -- the window on that side breaks, the car unlocks, and it must be hotwired before it starts. The lock stays when the driver gets out, and its driver can also lock and unlock it from the seat (L / D-pad left). Returns false when the entity is not a car."""
         ...
+    def raise_anchor(self, vehicle: Entity, /) -> bool:
+        """Raise the boat's anchor, so it drifts with the water again. Returns false when the entity is not a boat; true also when the anchor was already up."""
+        ...
     def refuel(self, vehicle: Entity, amount: float = ..., /) -> float:
-        """Put amount of fuel in the tank (never above MaxFuel), or fill it when you leave amount out. Returns the fuel in the tank now. Example: Vehicles:Refuel(car, 20)"""
+        """Put amount of fuel in the tank (never above MaxFuel), or fill it when you leave amount out. Returns the fuel in the tank now. On an electric car this charges its battery. Example: Vehicles:Refuel(car, 20)"""
         ...
     def repair(self, vehicle: Entity, amount: float = ..., /) -> float:
         """Give the car amount of health back (never above MaxHealth), or all of it when you leave amount out. Returns the health it has now. A destroyed car drives again once it has any health."""
@@ -1957,7 +2064,7 @@ class _VehiclesService:
         """Set how much fuel the car burns each second while it is driven and moving, from 0 up. 0 means it never runs dry."""
         ...
     def set_fuel_enabled(self, vehicle: Entity, enabled: bool, /) -> None:
-        """Give the car a fuel tank (true) or take it away (false). Off for every car until you turn it on. With fuel on, the car burns FuelConsumption units a second while someone drives it and it is moving, and with none left it cannot accelerate (it rolls to a stop). It starts full (MaxFuel, 100 unless you change it)."""
+        """Give the car a fuel tank (true) or take it away (false). Off for every car until you turn it on. With fuel on, the car burns FuelConsumption units a second while someone drives it and it is moving, and with none left it cannot accelerate (it rolls to a stop). It starts full (MaxFuel, 100 unless you change it). On an electric car the tank is its battery: it drains by the power the motor gives (a full battery of GetBatteryCapacity kWh is MaxFuel), comes back by regenerative braking as it slows with the throttle up, and Refuel charges it."""
         ...
     def set_headlight_color(self, vehicle: Entity, color: Optional[str] = ..., /) -> bool:
         """Color the car's headlights: color is '#RRGGBB', for the beams and a little in the lens. Nil gives the car's own headlights back. Every player sees the change. Returns false when the entity is not a car."""
@@ -1974,8 +2081,26 @@ class _VehiclesService:
     def set_livery(self, vehicle: Entity, index: float, /) -> bool:
         """Put one of the car's liveries on it: index counts from 0 in the liveries its vehicle was published with, and -1 takes the livery off. Every player sees the change. Returns false when the entity is not a car or the car has no livery at that index (the built-in cars have none)."""
         ...
+    def set_local_axle_lock(self, lock: str, /) -> bool:
+        """Lock the differentials of the car the local player drives, as the K key does: 'off', 'rear', 'front' or 'frontAndRear' (only the ones the car can lock count). Locking works at 16 km/h or less and, in a car with a low range, only in low range; returns false, and nothing changes, otherwise. 'off' always works. Errors on any other string."""
+        ...
+    def set_local_gear(self, gear: float, /) -> bool:
+        """Shift the car the local player drives to gear (0 neutral, 1 and up forward), as the shift keys do: for a place's own shift buttons or shifter. Works only while the player shifts by hand (IsLocalManual). Returns false, and nothing changes, when they don't, the gear is not one the car has, or the car is going too fast for it (the engine would pass its rev limit). Reverse is not a gear to ask for: holding the brake at a stop reverses, as in an automatic car. Errors if gear is not a whole number."""
+        ...
+    def set_local_low_range(self, on: bool, /) -> bool:
+        """Put the car the local player drives into low range (true) or out of it (false), as the G key does: for a place's own 4x4 switch. Returns false, and nothing changes, when the car has no low range or is moving faster than 5 km/h. Taking it out unlocks the differentials."""
+        ...
+    def set_local_track_input(self, left: Optional[float] = ..., right: Optional[float] = ..., /) -> bool:
+        """Drive the tank or bulldozer the local player is driving with your own controls (two levers, a dual stick, on-screen buttons): left and right are the two tracks, each from -1 (full backward) to 1 (full forward); a number past either end is held to it. The vehicle goes forward by the average of the two and turns by half their difference, so (1, 1) drives straight, (1, -1) turns it right on the spot, and pulling both back brakes, then reverses once stopped, as the keys do. It is sent to the server like the keys, so every player sees the same drive. It lasts until you call it again: send new numbers whenever your controls change. If one of the two is nil it counts as 0; SetLocalTrackInput(nil, nil) hands the vehicle back to the keys. Returns false, and changes nothing, while the local player is not driving a tracked vehicle (check with Vehicles:GetLocalTrackSpeed, which is nil then)."""
+        ...
+    def set_manual_shifting_allowed(self, allowed: bool, vehicle: Optional[Entity] = ..., /) -> bool:
+        """Let drivers shift gears by hand (true, the default) or keep cars automatic (false), so everyone drives on the same footing. With a vehicle it is that car's rule; left out, it is the place's rule for every car, now and later. A car allows manual shifting only when both say so. A driver shifting by hand when it is turned off is put back on automatic at once. Each player still picks manual or automatic for themselves in Settings > Controls where it is allowed. Returns false when the entity is not a vehicle."""
+        ...
     def set_max_boost(self, vehicle: Entity, max: float, /) -> None:
         """Set the most boost the car can store, from 1 to 1,000,000."""
+        ...
+    def set_max_boost_pressure(self, vehicle: Entity, psi: float, /) -> bool:
+        """Change the most boost the car's turbo or supercharger makes, in psi, held to 0..40: for a tuning shop. The car's torque curve is its engine at its own max boost, so more than that adds power, less takes it away, and 0 leaves the engine without boost. Returns false, and nothing changes, for a car without a turbo or supercharger (GetInduction is 'none'). Example: a 'Stage 2' tune, Vehicles:SetMaxBoostPressure(car, Vehicles:GetMaxBoostPressure(car) + 5)"""
         ...
     def set_max_fuel(self, vehicle: Entity, max: float, /) -> None:
         """Set the tank's size, from 1 to 1,000,000. Lowering it below the fuel lowers the fuel too; raising it does not fill the tank."""
@@ -2001,8 +2126,17 @@ class _VehiclesService:
     def set_part_open(self, vehicle: Entity, part: str, open: bool, player: Optional[Player] = ..., /) -> bool:
         """Open or shut one of the car's parts: part is 'driverDoor', 'passengerDoor', 'rearLeftDoor', 'rearRightDoor', 'hood' or 'trunk'. Without a player the part swings there by itself (a remote, a script's own timing). With a player, their character walks round the car to the part's stand spot (GetPartStandSpot), faces it and lifts or pushes it with their hands, the part moving with them; that works for the trunk, the hood and the rear doors, and passing a player for a front door is an error (a front door swings as someone gets in or out, and shuts behind them). If the walk cannot be made or is cut short (the player is too far to walk there, is blocked, or walks off), the part still opens or shuts, by itself. Either way it stays, and every player sees it, also one who joins later. The newest call for a part wins: shutting it while a player is still on the way to open it stops them. Returns false when the entity is not a car, the car does not have that part (see GetOpenableParts), or the player is not on foot and alive; returns true at once, with nobody walking, when the part is already open or shut as asked. Example: Interaction.Interacted:Connect(function(car, player, part) if part == 'hood' or part == 'trunk' then Vehicles:SetPartOpen(car, part, not Vehicles:IsPartOpen(car, part), player) end end)"""
         ...
+    def set_regen_braking(self, vehicle: Entity, g: float, /) -> bool:
+        """Set how hard an electric car slows itself when its driver lets off the throttle, in g, from 0 (it coasts) to 0.3 (close to one-pedal driving). The energy goes back into its battery. Returns false, and changes nothing, on a combustion car. Example: a 'Chill' mode button: Vehicles:SetRegenBraking(car, 0.1)"""
+        ...
+    def set_rider_power_limit(self, vehicle: Entity, watts: float, /) -> bool:
+        """Set the power the rider of a pedalled vehicle (a bicycle) keeps up at full effort, in watts, from 50 (a gentle ride) to 600 (a racer); a number outside that is held to it, and 0 gives the vehicle's own back. A stronger rider climbs faster and reaches a higher top speed. It stays with the vehicle, whoever rides it. Returns false when the vehicle is not pedalled. A negative number is an error."""
+        ...
     def set_slide_assist(self, vehicle: Entity, scale: float, /) -> bool:
         """How much a hovercraft's skirt holds its line in turns, as a scale on its own: 1 is the hovercraft as it was built, 0 lets it slide like a real hovercraft on ice, and up to 5 grips almost like a car (for an arcade level or a power-up). Clamped to 0..5; it stays until you set it again, and a new vehicle starts at 1. Returns false, and changes nothing, for anything but a hovercraft."""
+        ...
+    def set_sprint_reserve(self, vehicle: Entity, percent: float, /) -> bool:
+        """Set how much sprint the rider of a pedalled vehicle (a bicycle) has left, from 0 to 100 (percent of a full reserve); a number outside that is held to it. 100 fills it, as an energy drink would; 0 empties it, and the rider cannot sprint again until it has filled back to 10. Returns false when the vehicle is not pedalled or has no sprint."""
         ...
     def set_underglow(self, vehicle: Entity, color: Optional[str] = ..., /) -> bool:
         """Neon underglow: color is '#RRGGBB', a glowing strip under the car and a soft glow on the ground beneath it (no real light, so it costs almost nothing). Nil turns it off. Every player sees the change. Returns false when the entity is not a car."""
