@@ -630,8 +630,21 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	static const TCHAR* TypeName(EMantleChassisType Kind);
 	static bool ParseType(const FString& Name, EMantleChassisType& OutType);
 
-	/** Whether Text is a preset id: the name of a preset file, a lowercase letter and then lowercase letters, digits and dashes, so it names nothing outside the presets' directory. */
+	/**
+	 * Whether Text is a preset id: the name of a preset file, a lowercase letter and then lowercase letters, digits and dashes, so it names nothing
+	 * outside the presets' directory; optionally followed by '+' and one of the preset's engines (#378: "motorcycle+600"), lowercase letters, digits and dashes.
+	 */
 	static bool IsPresetId(const FString& Text);
+	/** Splits a preset id into its file's id and its engine ("motorcycle+600" -> "motorcycle", "600"; "sedan" -> "sedan", ""). Pure. */
+	static void SplitPresetId(const FString& Text, FString& OutFileId, FString& OutEngine);
+	/**
+	 * A preset with one of its engines (#378) applied: the preset's `engines` entry whose id is EngineId is merged over the preset itself, its
+	 * defaults, ranges and chassis keys over the preset's (an object into an object, key by key; a null removes the key; anything else replaces it).
+	 * The merged preset keeps its own id and the engine's id in `engine`. False, with the reason, when the preset has no such engine. Pure.
+	 */
+	static bool ApplyEngine(const TSharedPtr<FJsonObject>& InOutPreset, const FString& EngineId, FString& OutError);
+	/** ApplyEngine on a preset's text. */
+	static bool ApplyEngine(const FString& PresetJsonText, const FString& EngineId, FString& OutText, FString& OutError);
 
 	/** Reads a preset's text (schema/vehicle-preset.schema.json) into OutSpec. False, with the reason, when it is not a whole preset. */
 	static bool Parse(const FString& PresetJsonText, FMantleChassisSpec& OutSpec, FString& OutError);
@@ -665,7 +678,8 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	static bool Trim(FMantleChassisSpec& InOutSpec);
 
 	/**
-	 * Splits a selector into a preset id and a scale. A selector is a preset id, or an id then '@' then a scale: "sedan", "sedan@0.7". The
+	 * Splits a selector into a preset id (IsPresetId: an engine rides in it, "motorcycle+600") and a scale. A selector is a preset id, or an id then '@'
+	 * then a scale: "sedan", "sedan@0.7", "motorcycle+125@0.8". The
 	 * scale is plain decimal digits with at most three after the point, MinScale to MaxScale; a selector names exactly one chassis on every
 	 * machine, whatever its locale, and names nothing but a preset the plugin carries. False, with the reason, for anything else.
 	 */

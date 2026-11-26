@@ -173,7 +173,7 @@ namespace MantleChassisSpecTestPrivate
 		// A helicopter's wheels are not drawn: its body is sixteen boxes (the cabin, the mast, the boom, the fin, two skids, a leg at each skid end, two
 		// cross-tubes, and two blades on each rotor), its collision the cabin, the boom and the fin.
 		TEXT("helicopter"),
-		TEXT(R"MCS({"mass":2500,"maxSpeed":7000,"dragCoefficient":0.4,"frontalArea":2.5,"engine":{"maxTorque":300,"maxRPM":3000,"idleRPM":600,"torqueCurve":[[0,0.6],[1500,1],[3000,0.8]]},"transmission":{"gearRatios":[1.0],"reverseRatio":1.0,"finalDrive":1.0,"changeUpRPM":2500,"changeDownRPM":1000},"suspension":{"maxRaise":6,"maxDrop":6,"springRate":800,"springPreload":250,"damping":0.9},"steering":{"maxAngle":10,"ackermann":false},"brakes":{"brakeTorque":3000,"handbrakeTorque":6000},"tires":{"friction":1.47},"camera":{"armLength":1600,"height":250},"schemaVersion":1,"wheels":[{"bone":"wheel_fl","steering":true,"driven":false,"handbrake":true,"radius":20,"width":10},{"bone":"wheel_fr","steering":true,"driven":false,"handbrake":true,"radius":20,"width":10},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":true,"radius":20,"width":10},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":true,"radius":20,"width":10}],"collision":[{"center":[40.0,0.0,165.0],"extent":[210.0,75.0,95.0]},{"center":[-430.0,0.0,215.0],"extent":[260.0,20.0,22.5]},{"center":[-655.0,0.0,292.5],"extent":[35.0,4.375,55.0]}],"centerOfMass":[0,0,140],"seat":{"location":[130,0,243]}})MCS"),
+		TEXT(R"MCS({"mass":2193,"maxSpeed":8300,"dragCoefficient":0.4,"frontalArea":2.5,"engine":{"maxTorque":300,"maxRPM":3000,"idleRPM":600,"torqueCurve":[[0,0.6],[1500,1],[3000,0.8]]},"transmission":{"gearRatios":[1.0],"reverseRatio":1.0,"finalDrive":1.0,"changeUpRPM":2500,"changeDownRPM":1000},"suspension":{"maxRaise":6,"maxDrop":6,"springRate":800,"springPreload":250,"damping":0.9},"steering":{"maxAngle":10,"ackermann":false},"brakes":{"brakeTorque":3000,"handbrakeTorque":6000},"tires":{"friction":1.47},"camera":{"armLength":1600,"height":250},"schemaVersion":1,"wheels":[{"bone":"wheel_fl","steering":true,"driven":false,"handbrake":true,"radius":20,"width":10},{"bone":"wheel_fr","steering":true,"driven":false,"handbrake":true,"radius":20,"width":10},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":true,"radius":20,"width":10},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":true,"radius":20,"width":10}],"collision":[{"center":[40.0,0.0,165.0],"extent":[210.0,75.0,95.0]},{"center":[-430.0,0.0,215.0],"extent":[260.0,20.0,22.5]},{"center":[-655.0,0.0,292.5],"extent":[35.0,4.375,55.0]}],"centerOfMass":[0,0,140],"seat":{"location":[130,0,243]}})MCS"),
 		384, 192,
 		{ -735.0, -535.0, 5.0 }, { 535.0, 535.0, 353.0 },
 		{
@@ -193,12 +193,34 @@ namespace MantleChassisSpecTestPrivate
 		}
 	},
 	{
+		// The light helicopter (#380, a Robinson R44): the same sixteen boxes on a smaller cabin, boom, fin and rotors.
+		TEXT("lighthelicopter"),
+		TEXT(R"MCS({"mass":1059,"maxSpeed":7700,"dragCoefficient":0.4,"frontalArea":1.9,"engine":{"maxTorque":300,"maxRPM":3000,"idleRPM":600,"torqueCurve":[[0,0.6],[1500,1],[3000,0.8]]},"transmission":{"gearRatios":[1.0],"reverseRatio":1.0,"finalDrive":1.0,"changeUpRPM":2500,"changeDownRPM":1000},"suspension":{"maxRaise":6,"maxDrop":6,"springRate":400,"springPreload":120,"damping":0.9},"steering":{"maxAngle":10,"ackermann":false},"brakes":{"brakeTorque":3000,"handbrakeTorque":6000},"tires":{"friction":1.47},"camera":{"armLength":1300,"height":220},"schemaVersion":1,"wheels":[{"bone":"wheel_fl","steering":true,"driven":false,"handbrake":true,"radius":20,"width":10},{"bone":"wheel_fr","steering":true,"driven":false,"handbrake":true,"radius":20,"width":10},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":true,"radius":20,"width":10},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":true,"radius":20,"width":10}],"collision":[{"center":[40.0,0.0,130.0],"extent":[150.0,64.0,75.0]},{"center":[-369.0,0.0,150.0],"extent":[259.0,15.0,17.5]},{"center":[-600.5,0.0,207.5],"extent":[27.5,3.4375,40.0]}],"centerOfMass":[0,0,110],"seat":{"location":[70,0,190]}})MCS"),
+		384, 192,
+		{ -674.0, -503.0, 5.0 }, { 503.0, 503.0, 303.0 },
+		{
+			{ TEXT("root"), -1, { 0.0, 0.0, 0.0 } },
+			{ TEXT("wheel_fl"), 0, { 110.0, -109.0, 20.0 } },
+			{ TEXT("wheel_fr"), 0, { 110.0, 109.0, 20.0 } },
+			{ TEXT("wheel_rl"), 0, { -110.0, -109.0, 20.0 } },
+			{ TEXT("wheel_rr"), 0, { -110.0, 109.0, 20.0 } },
+			{ TEXT("main_rotor"), 0, { 0.0, 0.0, 300.0 } },
+			{ TEXT("tail_rotor"), 0, { -600.5, -25.0, 150.0 } }
+		},
+		{
+			{ 110.0, -109.0, 20.0 },
+			{ 110.0, 109.0, 20.0 },
+			{ -110.0, -109.0, 20.0 },
+			{ -110.0, 109.0, 20.0 }
+		}
+	},
+	{
 		// A hovercraft's wheels are where its pads lift and are not drawn: its body is four boxes (the hull, the skirt under it, the fan's pod behind it
 		// and the fin on its top), its collision the hull alone.
 		TEXT("hovercraft"),
-		TEXT(R"MCS({"mass":600,"maxSpeed":2500,"dragCoefficient":0.5,"frontalArea":2,"engine":{"maxTorque":300,"maxRPM":3000,"idleRPM":600,"torqueCurve":[[0,0.6],[1500,1],[3000,0.8]]},"transmission":{"gearRatios":[1.0],"reverseRatio":1.0,"finalDrive":1.0,"changeUpRPM":2500,"changeDownRPM":1000},"suspension":{"maxRaise":10,"maxDrop":10,"springRate":400,"springPreload":100,"damping":0.5},"steering":{"maxAngle":10,"ackermann":false},"brakes":{"brakeTorque":1500,"handbrakeTorque":3000},"tires":{"friction":2},"camera":{"armLength":500,"height":170},"schemaVersion":1,"wheels":[{"bone":"wheel_fl","steering":true,"driven":false,"handbrake":false,"radius":20,"width":10},{"bone":"wheel_fr","steering":true,"driven":false,"handbrake":false,"radius":20,"width":10},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":false,"radius":20,"width":10},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":false,"radius":20,"width":10}],"collision":[{"center":[0.0,0.0,60.0],"extent":[200.0,110.0,30.0]}],"centerOfMass":[0,0,50],"seat":{"location":[30,-40,96],"steeringWheel":{"location":[76.8,-40,99],"rotation":[-20.0,0.0,0.0],"radius":18}},"passengerSeat":{"location":[30,40,96]}})MCS"),
+		TEXT(R"MCS({"mass":600,"maxSpeed":2600,"dragCoefficient":0.5,"frontalArea":2,"engine":{"maxTorque":300,"maxRPM":3000,"idleRPM":600,"torqueCurve":[[0,0.6],[1500,1],[3000,0.8]]},"transmission":{"gearRatios":[1.0],"reverseRatio":1.0,"finalDrive":1.0,"changeUpRPM":2500,"changeDownRPM":1000},"suspension":{"maxRaise":10,"maxDrop":10,"springRate":400,"springPreload":100,"damping":0.5},"steering":{"maxAngle":10,"ackermann":false},"brakes":{"brakeTorque":1500,"handbrakeTorque":3000},"tires":{"friction":2},"camera":{"armLength":500,"height":170},"schemaVersion":1,"wheels":[{"bone":"wheel_fl","steering":true,"driven":false,"handbrake":false,"radius":20,"width":10},{"bone":"wheel_fr","steering":true,"driven":false,"handbrake":false,"radius":20,"width":10},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":false,"radius":20,"width":10},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":false,"radius":20,"width":10}],"collision":[{"center":[0.0,0.0,50.0],"extent":[200.0,110.0,30.0]}],"centerOfMass":[0,0,40],"seat":{"location":[30,-40,86],"steeringWheel":{"location":[76.8,-40,89],"rotation":[-20.0,0.0,0.0],"radius":18}},"passengerSeat":{"location":[30,40,86]}})MCS"),
 		96, 48,
-		{ -240.0, -120.0, 8.0 }, { 210.0, 120.0, 190.0 },
+		{ -240.0, -120.0, 8.0 }, { 210.0, 120.0, 180.0 },
 		{
 			{ TEXT("root"), -1, { 0.0, 0.0, 0.0 } },
 			{ TEXT("wheel_fl"), 0, { 160.0, -88.0, 20.0 } },
@@ -277,7 +299,7 @@ namespace MantleChassisSpecTestPrivate
 	},
 	{
 		TEXT("motorcycle"),
-		TEXT(R"MCS({"mass":350,"maxSpeed":9722,"dragCoefficient":0.31,"frontalArea":1.72,"engine":{"maxTorque":549,"maxRPM":7000,"idleRPM":900,"torqueCurve":[[0,0.5],[2000,0.8],[4500,1],[7000,0.8]],"tractionControl":true},"transmission":{"gearRatios":[4.25,2.52,1.66,1.22,1.0],"reverseRatio":4.04,"finalDrive":2.81,"changeUpRPM":6000,"changeDownRPM":2000},"suspension":{"maxRaise":8.1,"maxDrop":8.1,"springRate":307,"springPreload":50,"damping":0.5},"steering":{"maxAngle":40,"ackermann":false},"brakes":{"brakeTorque":3662,"handbrakeTorque":1220,"abs":true,"frontShare":0.5},"tires":{"friction":2.94},"camera":{"armLength":380,"height":130},"schemaVersion":1,"wheels":[{"bone":"wheel_f","steering":true,"driven":false,"handbrake":false,"radius":35,"width":30},{"bone":"wheel_r","steering":false,"driven":true,"handbrake":true,"radius":35,"width":30}],"collision":[{"center":[0.0,0.0,57.5],"extent":[90.0,20.0,22.5]}],"centerOfMass":[0,0,38],"seat":{"location":[-1.4,0,89.4]}})MCS"),
+		TEXT(R"MCS({"mass":265,"maxSpeed":8620,"dragCoefficient":0.55,"frontalArea":0.535,"engine":{"displacement":599,"maxTorque":61.7,"maxRPM":16500,"idleRPM":1300,"torqueCurve":[[0,0.85],[8700,0.85],[10500,1],[14500,0.93],[16500,0.79]],"tractionControl":true,"engineBraking":0.0084},"transmission":{"gearRatios":[5.355,4.146,3.456,2.993,2.666,2.384],"reverseRatio":1.18,"finalDrive":3.126,"changeUpRPM":14500,"changeDownRPM":9000,"shiftTime":0.15},"suspension":{"maxRaise":8.1,"maxDrop":10.0,"springRate":180,"springPreload":50,"damping":0.38},"steering":{"maxAngle":40,"ackermann":false},"brakes":{"brakeTorque":435,"handbrakeTorque":220,"abs":true,"frontShare":0.75},"tires":{"friction":2.0},"camera":{"armLength":380,"height":130},"schemaVersion":1,"wheels":[{"bone":"wheel_f","steering":true,"driven":false,"handbrake":false,"radius":35,"width":30},{"bone":"wheel_r","steering":false,"driven":true,"handbrake":true,"radius":35,"width":30}],"collision":[{"center":[0.0,0.0,57.5],"extent":[90.0,20.0,22.5]}],"centerOfMass":[0,0,38],"seat":{"location":[-1.4,0,89.4]}})MCS"),
 		172, 108,
 		{ -105.0, -20.0, 0.0 }, { 105.0, 20.0, 80.0 },
 		{

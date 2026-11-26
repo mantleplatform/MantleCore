@@ -96,7 +96,9 @@ namespace MantleVehicleBuilderPrivate
 	bool ApplyChosenPreset(const FMantleVehiclePreset& Preset, UMantleVehicleSource& Source, FMantleVehicleBuildResult& Out)
 	{
 		const FName ChosenPreset(*Preset.Id);
-		if (Source.Preset == ChosenPreset)
+		// #378: a type's engine is part of the choice: the same type with another engine starts again from that engine's numbers.
+		const FName ChosenEngine = Preset.EngineId.IsEmpty() ? NAME_None : FName(*Preset.EngineId);
+		if (Source.Preset == ChosenPreset && Source.PresetEngine == ChosenEngine)
 		{
 			Out.Notes.Add(FString::Printf(TEXT("Kept your earlier settings for this %s. Pick a different vehicle type to start again from its defaults."), *Preset.Name));
 			return true;
@@ -116,6 +118,7 @@ namespace MantleVehicleBuilderPrivate
 		}
 		Source.Modify();
 		Source.Preset = ChosenPreset;
+		Source.PresetEngine = ChosenEngine;
 		if (bHadOwnSettings)
 		{
 			Out.Notes.Add(FString::Printf(TEXT("This vehicle had its own settings from before; they were replaced by the %s's. Undo (Ctrl+Z) brings them back."), *Preset.Name));
@@ -331,8 +334,10 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::Build(USkeletalMesh* Mesh, cons
 	// Defaults are applied (and the Size proposed) for a new vehicle or a different type; the same type again keeps the creator's, unless the model's
 	// wheels are not the ones it was fitted to (the creator moved, renamed or resized them and pressed Build again): its Size and chassis are then fitted again.
 	const bool bWheelsChanged = Before && WheelsBefore != MantleVehicleBuilderPrivate::WheelSignature(Source->Wheels);
-	const bool bAppliesDefaults = Source->Preset != FName(*Preset->Id) || bWheelsChanged;
-	if (bWheelsChanged && Source->Preset == FName(*Preset->Id))
+	// #378: another engine of the same type (a motorcycle's size) is a different start too.
+	const bool bSameType = Source->Preset == FName(*Preset->Id) && Source->PresetEngine == (Preset->EngineId.IsEmpty() ? NAME_None : FName(*Preset->EngineId));
+	const bool bAppliesDefaults = !bSameType || bWheelsChanged;
+	if (bWheelsChanged && bSameType)
 	{
 		Out.Notes.Add(TEXT("Your model's wheels changed since the last build, so Mantle fitted the chassis and the size to them again."));
 	}
@@ -347,7 +352,7 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::Build(USkeletalMesh* Mesh, cons
 	{
 		FString ChassisText;
 		FString ChassisError;
-		if (!FMantleVehicleChassisBuilder::LoadPresetText(Preset->Id, ChassisText, ChassisError)
+		if (!FMantleVehicleChassisBuilder::LoadPresetText(Preset->SelectorId(), ChassisText, ChassisError)
 			|| !FMantleVehicleChassisBuilder::ReadReference(ChassisText, Chassis, ChassisError))
 		{
 			Out.Problems.Add(FString::Printf(TEXT("The %s chassis could not be read: %s."), *Preset->Name, *ChassisError));
@@ -411,7 +416,7 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::Build(USkeletalMesh* Mesh, cons
 		// and the movement part (a motorcycle's rider fit, stretched with the chassis).
 		FMantleChassisSpec Spec;
 		FString SpecError;
-		if (FMantleVehicleChassisBuilder::LoadSpec(Preset->Id, Spec, SpecError))
+		if (FMantleVehicleChassisBuilder::LoadSpec(Preset->SelectorId(), Spec, SpecError))
 		{
 			if (Spec.Rider.bSet)
 			{
@@ -457,7 +462,7 @@ FVector FMantleVehicleBuilder::DefaultDriverSeat(const USkeletalMesh& Model, con
 	FString Error;
 	FMantleVehicleChassisReference Chassis;
 	TArray<FMantleVehicleFitWheel> Wheels;
-	if (!Source.Preset.IsNone() && FMantleVehicleChassisBuilder::LoadPresetText(Source.Preset.ToString(), Text, Error)
+	if (!Source.Preset.IsNone() && FMantleVehicleChassisBuilder::LoadPresetText(FMantleVehiclePresets::SelectorIdOf(Source.Preset, Source.PresetEngine), Text, Error)
 		&& FMantleVehicleChassisBuilder::ReadReference(Text, Chassis, Error) && FMantleVehicleFitter::WheelsFromMesh(Model, Source, Wheels))
 	{
 		const FMantleChassisLayout Layout = FMantleVehicleChassisFit::LayoutFromWheels(Wheels);
@@ -618,7 +623,7 @@ namespace MantleVehicleBuilderPrivate
 			{
 				FMantleChassisSpec Archetype;
 				FMantleVehicleAsset Gray;
-				if (!FMantleVehicleChassisBuilder::LoadSpec(Preset->Id, Archetype, Error) || !FMantleVehicleChassisBuilder::MakeAsset(Archetype, Gray, Error))
+				if (!FMantleVehicleChassisBuilder::LoadSpec(Preset->SelectorId(), Archetype, Error) || !FMantleVehicleChassisBuilder::MakeAsset(Archetype, Gray, Error))
 				{
 					continue;
 				}

@@ -1769,6 +1769,11 @@ class _VehiclesService:
         ...
     def get_coupling_break_force(self, vehicle: Entity, /) -> Optional[float]:
         """The break force set with SetCouplingBreakForce, in newtons, or nil when the coupling never breaks. Errors if the entity is not a vehicle or no longer exists."""
+    def get_engine_size(self, vehicle: Entity, /) -> Optional[float]:
+        """The vehicle's engine size in cc (cubic centimeters), as its creator picked it: a motorcycle's 125, 300, 600, 1000 or 1800 cc engine. nil when the vehicle does not give one (cars, aircraft). Errors if the entity is not a vehicle or no longer exists."""
+        ...
+    def get_flight_info(self, vehicle: Entity, /) -> Optional[dict[str, Any]]:
+        """What a plane or helicopter is doing: airspeed and verticalSpeed (cm/s, up positive), altitude (its height in the world, cm: the air thins with it, from world height 0), heightAboveGround (a helicopter's rotor over the ground, cm; nil past one rotor diameter), throttle (0 to 1; a helicopter's collective), a helicopter's inGroundEffect (the ground cushion is helping lift) and inVortexRing (it is sinking into its own downwash and losing lift), and assists (a helicopter's level, heightHold and yawHold, as its creator set them). A plane's (1.104): angleOfAttack (its wing's, degrees), stalled (past its stall angle), stallWarning (past 90% of it: draw your own warning), thrust (0 to 1, what its engines make: a jet spools up behind the throttle), afterburner (a jet with one: lit) and assists stallProtection and coordinatedTurns. Nil when the entity is not a plane or a helicopter."""
         ...
     def get_fuel(self, vehicle: Entity, /) -> float:
         """The fuel in the tank, from 0 to MaxFuel."""
@@ -1784,6 +1789,8 @@ class _VehiclesService:
         ...
     def get_hitch_type(self, vehicle: Entity, /) -> Optional[str]:
         """The vehicle's hitch: 'fifthWheel' (a semi truck's) or 'ball' (a tow ball), or nil when it has none and cannot tow. A vehicle only couples a trailer whose coupler is the same kind (GetCouplerType). Errors if the entity is not a vehicle or no longer exists."""
+    def get_lean_angle(self, vehicle: Entity, /) -> Optional[float]:
+        """How far a motorcycle leans now, in degrees: positive leaning right, negative left, 0 upright. A motorcycle leans into the turn it makes, as far as its speed and the turn need, up to its max lean. nil for a vehicle that is not a motorcycle. Errors if the entity is not a vehicle or no longer exists."""
         ...
     def get_lights(self, vehicle: Entity, light: str, /) -> str:
         """The script's word on a light: 'on', 'off' or 'auto' (the game decides). light is 'head', 'rear', 'reverse', 'left' or 'right'. Errors if the entity is not a car or no longer exists."""
@@ -1793,6 +1800,11 @@ class _VehiclesService:
         ...
     def get_local_coupling_state(self) -> str:
         """For the vehicle the local player is driving: 'coupled' when it tows a trailer, 'inRange' when a trailer is in place and the couple key would couple it now, and 'none' otherwise, also on foot. There is no built-in prompt: read this every frame to draw your own."""
+    def get_local_flight_info(self) -> Optional[dict[str, Any]]:
+        """GetFlightInfo for the plane or helicopter the local player is flying, for a place that draws its own instruments. Nil while the local player is not flying one."""
+        ...
+    def get_local_lean_angle(self) -> Optional[float]:
+        """How far the motorcycle the local player is riding leans now, in degrees (Vehicles:GetLeanAngle's sign: positive right). nil while the local player is not riding a motorcycle. Works on a client script; read it every frame for a lean readout."""
         ...
     def get_local_speed(self) -> Optional[float]:
         """The speed of the vehicle the local player is driving, in centimeters per second (Vehicles:GetSpeed's unit; multiply by 0.036 for km/h): its whole velocity, so it is not negative in reverse. nil while the local player is not driving a vehicle. Works on a client script, where Vehicles:GetSpeed does not; read it every frame to draw a speedometer."""
@@ -1832,6 +1844,9 @@ class _VehiclesService:
         ...
     def get_part_stand_spot(self, vehicle: Entity, part: str, /) -> Optional[dict[str, Any]]:
         """Where someone stands to open one of the car's parts, where the car is now: position is on the ground beside the part, and yaw (degrees) the way they face it. In front of the hood, behind the trunk, a step out from a door. Use it to check that a player is at the part, or to walk an NPC there. Nil when the entity is not a car or the car does not have that part."""
+        ...
+    def get_slide_assist(self, vehicle: Entity, /) -> Optional[float]:
+        """A hovercraft's slide assist scale (SetSlideAssist; 1 unless a script changed it), or nil for anything but a hovercraft."""
         ...
     def get_speed(self, vehicle: Entity, /) -> float:
         """The car's speed in centimeters per second, as the simulation reports it. Errors if the entity is not a car or no longer exists."""
@@ -1982,6 +1997,9 @@ class _VehiclesService:
         ...
     def set_part_open(self, vehicle: Entity, part: str, open: bool, player: Optional[Player] = ..., /) -> bool:
         """Open or shut one of the car's parts: part is 'driverDoor', 'passengerDoor', 'rearLeftDoor', 'rearRightDoor', 'hood' or 'trunk'. Without a player the part swings there by itself (a remote, a script's own timing). With a player, their character walks round the car to the part's stand spot (GetPartStandSpot), faces it and lifts or pushes it with their hands, the part moving with them; that works for the trunk, the hood and the rear doors, and passing a player for a front door is an error (a front door swings as someone gets in or out, and shuts behind them). If the walk cannot be made or is cut short (the player is too far to walk there, is blocked, or walks off), the part still opens or shuts, by itself. Either way it stays, and every player sees it, also one who joins later. The newest call for a part wins: shutting it while a player is still on the way to open it stops them. Returns false when the entity is not a car, the car does not have that part (see GetOpenableParts), or the player is not on foot and alive; returns true at once, with nobody walking, when the part is already open or shut as asked. Example: Interaction.Interacted:Connect(function(car, player, part) if part == 'hood' or part == 'trunk' then Vehicles:SetPartOpen(car, part, not Vehicles:IsPartOpen(car, part), player) end end)"""
+        ...
+    def set_slide_assist(self, vehicle: Entity, scale: float, /) -> bool:
+        """How much a hovercraft's skirt holds its line in turns, as a scale on its own: 1 is the hovercraft as it was built, 0 lets it slide like a real hovercraft on ice, and up to 5 grips almost like a car (for an arcade level or a power-up). Clamped to 0..5; it stays until you set it again, and a new vehicle starts at 1. Returns false, and changes nothing, for anything but a hovercraft."""
         ...
     def set_underglow(self, vehicle: Entity, color: Optional[str] = ..., /) -> bool:
         """Neon underglow: color is '#RRGGBB', a glowing strip under the car and a soft glow on the ground beneath it (no real light, so it costs almost nothing). Nil turns it off. Every player sees the change. Returns false when the entity is not a car."""

@@ -3979,6 +3979,11 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 	{
 		Engine->SetField(TEXT("engineBraking"), VehicleNumber(T.EngineBraking));
 	}
+	// #378: the engine's size, only when the vehicle has one (a motorcycle's engine pick); sound and scripts read it.
+	if (T.EngineDisplacement > 0)
+	{
+		Engine->SetNumberField(TEXT("displacement"), T.EngineDisplacement);
+	}
 	Doc->SetObjectField(TEXT("engine"), Engine);
 
 	TSharedRef<FJsonObject> Transmission = MakeShared<FJsonObject>();
@@ -4642,6 +4647,10 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 	VehicleCheckRange(Subject, TEXT("Max RPM"), TEXT("engine/maxRPM"), T.MaxRPM, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Idle RPM"), TEXT("engine/idleRPM"), T.IdleRPM, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Engine Braking"), TEXT("engine/engineBraking"), T.EngineBraking, OutIssues);
+	if (T.EngineDisplacement > 0)
+	{
+		VehicleCheckRange(Subject, TEXT("Engine Size"), TEXT("engine/displacement"), T.EngineDisplacement, OutIssues);
+	}
 	if (T.IdleRPM >= T.MaxRPM)
 	{
 		AddError(FString::Printf(TEXT("idles at %d RPM, not below its Max RPM (%d)."), T.IdleRPM, T.MaxRPM), TEXT("Lower Idle RPM or raise Max RPM."));

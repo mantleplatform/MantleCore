@@ -388,6 +388,11 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "0", ClampMax = "5"))
 	float EngineBraking = 0.f;
 
+	/** The engine's size in cc (engine.displacement, #378), as the vehicle builder's engine pick sets it on a motorcycle. Sound and scripts read it;
+	 *  the driving never does. 0: not given (written only when set). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "0", ClampMax = "2500", DisplayName = "Engine Size (cc)"))
+	int32 EngineDisplacement = 0;
+
 	/** A helicopter's level assist (helicopter rotors' stabilityAssist, #380): the stick asks for a lean, letting go levels the helicopter and a slow
 	 *  drift stops by itself. Off: the stick tilts the rotor and the pilot has to level it. Part of the helicopter; scripts don't change it. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Helicopter", meta = (DisplayName = "Level assist"))
@@ -927,6 +932,13 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vehicle")
 	FName Preset;
+
+	/**
+	 * The engine picked inside the preset (#378: a motorcycle's "125", "300", "600", "1000" or "1800"), whose numbers the vehicle started from.
+	 * None for a type without engines. Picking another engine in the vehicle builder starts again from that engine's numbers.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vehicle")
+	FName PresetEngine;
 
 	/**
 	 * The uniform size applied to the whole vehicle on export so the Mantle character fits it. The vehicle builder proposes it

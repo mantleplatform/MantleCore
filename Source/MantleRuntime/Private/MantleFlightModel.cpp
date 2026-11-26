@@ -114,7 +114,7 @@ double FMantleFlightModel::DragCoefficient(const double AngleDegrees, const doub
 {
 	using namespace MantleFlightModelPrivate;
 	const double Aspect = FMath::Max(Finite(Surface.AspectRatio, 7.0), 0.1);
-	const double FromLift = ProfileDrag + Lift * Lift / (PI * SpanEfficiency * Aspect);
+	const double FromLift = ProfileDrag + Lift * Lift / (UE_DOUBLE_PI * SpanEfficiency * Aspect);
 	const double Sine = FMath::Sin(FMath::DegreesToRadians(Wrap(AngleDegrees)));
 	return FMath::Max(FromLift, 1.2 * Sine * Sine);
 }
