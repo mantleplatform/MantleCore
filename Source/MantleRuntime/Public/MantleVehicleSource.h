@@ -380,6 +380,14 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine")
 	TArray<FVector2D> TorqueCurve = { FVector2D(0.0, 0.6), FVector2D(3000.0, 1.0), FVector2D(6000.0, 0.8) };
 
+	/** Traction control (engine.tractionControl): a driven wheel never pushes harder than its tyre's grip, so it does not spin up under power. Part of the car; scripts don't change it. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine")
+	bool bTractionControl = true;
+
+	/** Engine braking with the throttle released (engine.engineBraking): brake torque, Nm, per engine RPM on each driven wheel. 0: none. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "0", ClampMax = "5"))
+	float EngineBraking = 0.f;
+
 	/** Forward gears, first gear first, 1 to 8. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission")
 	TArray<float> GearRatios = { 3.2f, 2.1f, 1.4f, 1.0f };
@@ -431,6 +439,14 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Brakes", meta = (ClampMin = "0", ClampMax = "20000"))
 	float HandbrakeTorque = 3000.f;
+
+	/** Anti-lock brakes (brakes.abs): a braked wheel holds at its tyre's grip instead of locking. The handbrake still locks its wheels. Part of the car; scripts don't change it. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Brakes", meta = (DisplayName = "ABS"))
+	bool bABS = true;
+
+	/** Brake balance (brakes.frontShare): the share of the total brake torque (Brake Torque x the wheel count) on the steered wheels; the rest is on the others. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Brakes", meta = (ClampMin = "0", ClampMax = "1"))
+	float BrakeFrontShare = 0.65f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tires", meta = (ClampMin = "0.1", ClampMax = "5"))
 	float TireFriction = 2.f;

@@ -3939,6 +3939,13 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 		Curve.Add(MakeShared<FJsonValueArray>(Pair));
 	}
 	Engine->SetArrayField(TEXT("torqueCurve"), Curve);
+	// The driver aids (#376), part of the car: traction control always written, so the creator's document says it; engine braking only when the car
+	// has some (absent: none).
+	Engine->SetBoolField(TEXT("tractionControl"), T.bTractionControl);
+	if (T.EngineBraking > 0.f)
+	{
+		Engine->SetField(TEXT("engineBraking"), VehicleNumber(T.EngineBraking));
+	}
 	Doc->SetObjectField(TEXT("engine"), Engine);
 
 	TSharedRef<FJsonObject> Transmission = MakeShared<FJsonObject>();
@@ -3987,6 +3994,9 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 	TSharedRef<FJsonObject> Brakes = MakeShared<FJsonObject>();
 	Brakes->SetField(TEXT("brakeTorque"), VehicleNumber(T.BrakeTorque));
 	Brakes->SetField(TEXT("handbrakeTorque"), VehicleNumber(T.HandbrakeTorque));
+	// ABS and the brake balance (#376), part of the car.
+	Brakes->SetBoolField(TEXT("abs"), T.bABS);
+	Brakes->SetField(TEXT("frontShare"), VehicleNumber(T.BrakeFrontShare));
 	Doc->SetObjectField(TEXT("brakes"), Brakes);
 
 	TSharedRef<FJsonObject> Tires = MakeShared<FJsonObject>();
@@ -4588,6 +4598,7 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 	VehicleCheckRange(Subject, TEXT("Max Torque"), TEXT("engine/maxTorque"), T.MaxTorque, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Max RPM"), TEXT("engine/maxRPM"), T.MaxRPM, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Idle RPM"), TEXT("engine/idleRPM"), T.IdleRPM, OutIssues);
+	VehicleCheckRange(Subject, TEXT("Engine Braking"), TEXT("engine/engineBraking"), T.EngineBraking, OutIssues);
 	if (T.IdleRPM >= T.MaxRPM)
 	{
 		AddError(FString::Printf(TEXT("idles at %d RPM, not below its Max RPM (%d)."), T.IdleRPM, T.MaxRPM), TEXT("Lower Idle RPM or raise Max RPM."));
@@ -4668,6 +4679,7 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 	VehicleCheckRange(Subject, TEXT("Max Steering Angle"), TEXT("steering/maxAngle"), T.MaxSteeringAngle, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Brake Torque"), TEXT("brakes/brakeTorque"), T.BrakeTorque, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Handbrake Torque"), TEXT("brakes/handbrakeTorque"), T.HandbrakeTorque, OutIssues);
+	VehicleCheckRange(Subject, TEXT("Brake Front Share"), TEXT("brakes/frontShare"), T.BrakeFrontShare, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Tire Friction"), TEXT("tires/friction"), T.TireFriction, OutIssues);
 	if (T.bSeatLocation)
 	{

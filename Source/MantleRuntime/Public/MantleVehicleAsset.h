@@ -478,6 +478,10 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	int32 IdleRPM = 900;
 	/** (rpm, fraction of MaxTorque), rpm strictly rising. */
 	TArray<FVector2D> TorqueCurve;
+	/** engine.tractionControl: a driven wheel never pushes harder than its grip. Absent: on. */
+	bool bTractionControl = true;
+	/** engine.engineBraking: brake torque (Nm) per engine RPM on each driven wheel with the throttle released. Absent: 0. */
+	double EngineBraking = 0.0;
 
 	/** Forward gears, first gear first. */
 	TArray<float> GearRatios;
@@ -502,6 +506,10 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 
 	double BrakeTorque = 1500.0;
 	double HandbrakeTorque = 3000.0;
+	/** brakes.abs: a braked wheel holds at its grip instead of locking (the handbrake still locks). Absent: on. */
+	bool bABS = true;
+	/** brakes.frontShare: the share of the total brake torque (BrakeTorque x wheel count) on the steered wheels. Absent: 0.65. */
+	double BrakeFrontShare = 0.65;
 	double TireFriction = 2.0;
 	/** The grip of every wheel that does not steer (tires.rearFriction), where TireFriction is the steered wheels'; unset, TireFriction is every wheel's. */
 	bool bTireRearFriction = false;

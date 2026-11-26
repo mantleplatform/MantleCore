@@ -50,6 +50,7 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("engine/idleRPM"), 300.0, 5000.0 },
 		{ TEXT("engine/torqueCurve/*/0"), 0.0, 20000.0 },
 		{ TEXT("engine/torqueCurve/*/1"), 0.0, 1.0 },
+		{ TEXT("engine/engineBraking"), 0.0, 5.0 },
 		{ TEXT("transmission/gearRatios/*"), 0.1, 10.0 },
 		{ TEXT("transmission/reverseRatio"), 0.1, 10.0 },
 		{ TEXT("transmission/finalDrive"), 0.1, 10.0 },
@@ -65,6 +66,7 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("steering/speedCurve/*/1"), 0.1, 1.0 },
 		{ TEXT("brakes/brakeTorque"), 0.0, 20000.0 },
 		{ TEXT("brakes/handbrakeTorque"), 0.0, 20000.0 },
+		{ TEXT("brakes/frontShare"), 0.0, 1.0 },
 		{ TEXT("tires/friction"), 0.1, 5.0 },
 		{ TEXT("tires/rearFriction"), 0.1, 10.0 },
 		{ TEXT("wheels/*/radius"), 5.0, 150.0 },
@@ -2272,12 +2274,21 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 
 	TSharedPtr<FJsonObject> Engine;
 	if (P.Ok() && P.Object(Root, TEXT(""), TEXT("engine"), Engine)
-		&& P.Keys(Engine, TEXT("/engine"), { TEXT("maxTorque"), TEXT("maxRPM"), TEXT("idleRPM"), TEXT("torqueCurve") },
+		&& P.Keys(Engine, TEXT("/engine"), { TEXT("maxTorque"), TEXT("maxRPM"), TEXT("idleRPM"), TEXT("torqueCurve"), TEXT("tractionControl"), TEXT("engineBraking") },
 			{ TEXT("maxTorque"), TEXT("maxRPM"), TEXT("idleRPM"), TEXT("torqueCurve") }))
 	{
 		P.Number(Engine, TEXT("/engine"), TEXT("maxTorque"), TEXT("engine/maxTorque"), D.MaxTorque);
 		P.Int(Engine, TEXT("/engine"), TEXT("maxRPM"), TEXT("engine/maxRPM"), D.MaxRPM);
 		P.Int(Engine, TEXT("/engine"), TEXT("idleRPM"), TEXT("engine/idleRPM"), D.IdleRPM);
+		// The driver aids (#376) are optional: absent (a vehicle cooked before they existed) is traction control on and no engine braking.
+		if (P.Ok() && Engine->HasField(TEXT("tractionControl")))
+		{
+			P.Bool(Engine, TEXT("/engine"), TEXT("tractionControl"), D.bTractionControl);
+		}
+		if (P.Ok())
+		{
+			P.OptNumber(Engine, TEXT("/engine"), TEXT("engineBraking"), TEXT("engine/engineBraking"), D.EngineBraking);
+		}
 		const TArray<TSharedPtr<FJsonValue>>* Curve = nullptr;
 		if (P.Ok() && P.Array(Engine->TryGetField(TEXT("torqueCurve")), TEXT("/engine/torqueCurve"), 2, FMantleVehicleLimits::MaxTorqueCurvePoints, Curve))
 		{
@@ -2371,10 +2382,19 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 
 	TSharedPtr<FJsonObject> Brakes;
 	if (P.Ok() && P.Object(Root, TEXT(""), TEXT("brakes"), Brakes)
-		&& P.Keys(Brakes, TEXT("/brakes"), { TEXT("brakeTorque"), TEXT("handbrakeTorque") }, { TEXT("brakeTorque"), TEXT("handbrakeTorque") }))
+		&& P.Keys(Brakes, TEXT("/brakes"), { TEXT("brakeTorque"), TEXT("handbrakeTorque"), TEXT("abs"), TEXT("frontShare") }, { TEXT("brakeTorque"), TEXT("handbrakeTorque") }))
 	{
 		P.Number(Brakes, TEXT("/brakes"), TEXT("brakeTorque"), TEXT("brakes/brakeTorque"), D.BrakeTorque);
 		P.Number(Brakes, TEXT("/brakes"), TEXT("handbrakeTorque"), TEXT("brakes/handbrakeTorque"), D.HandbrakeTorque);
+		// Optional (#376): absent is ABS on and 0.65 of the braking on the steered wheels.
+		if (P.Ok() && Brakes->HasField(TEXT("abs")))
+		{
+			P.Bool(Brakes, TEXT("/brakes"), TEXT("abs"), D.bABS);
+		}
+		if (P.Ok())
+		{
+			P.OptNumber(Brakes, TEXT("/brakes"), TEXT("frontShare"), TEXT("brakes/frontShare"), D.BrakeFrontShare);
+		}
 	}
 
 	TSharedPtr<FJsonObject> Tires;

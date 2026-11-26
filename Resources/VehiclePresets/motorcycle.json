@@ -73,7 +73,8 @@
       "maxTorque": 549,
       "maxRPM": 7000,
       "idleRPM": 900,
-      "torqueCurve": [[0, 0.5], [2000, 0.8], [4500, 1], [7000, 0.8]]
+      "torqueCurve": [[0, 0.5], [2000, 0.8], [4500, 1], [7000, 0.8]],
+      "tractionControl": true
     },
     "transmission": {
       "gearRatios": [4.25, 2.52, 1.66, 1.22, 1.0],
@@ -95,7 +96,9 @@
     },
     "brakes": {
       "brakeTorque": 3662,
-      "handbrakeTorque": 1220
+      "handbrakeTorque": 1220,
+      "abs": true,
+      "frontShare": 0.5
     },
     "tires": {
       "friction": 4
@@ -118,6 +121,7 @@
     "suspension/damping": [0.2, 0.9],
     "steering/maxAngle": [20, 50],
     "brakes/brakeTorque": [500, 6000],
+    "brakes/frontShare": [0.3, 0.8],
     "tires/friction": [1.5, 5],
     "wheels/*/radius": [25, 45]
   }

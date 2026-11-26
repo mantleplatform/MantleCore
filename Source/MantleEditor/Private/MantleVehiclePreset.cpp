@@ -121,12 +121,13 @@ namespace MantleVehiclePresetPrivate
 		static const TSet<FString> Known = {
 			TEXT("mass"), TEXT("maxSpeed"), TEXT("centerOfMass"), TEXT("dragCoefficient"), TEXT("frontalArea"),
 			TEXT("engine/maxTorque"), TEXT("engine/maxRPM"), TEXT("engine/idleRPM"), TEXT("engine/torqueCurve"),
+			TEXT("engine/tractionControl"), TEXT("engine/engineBraking"),
 			TEXT("transmission/gearRatios"), TEXT("transmission/reverseRatio"), TEXT("transmission/finalDrive"),
 			TEXT("transmission/changeUpRPM"), TEXT("transmission/changeDownRPM"),
 			TEXT("suspension/maxRaise"), TEXT("suspension/maxDrop"), TEXT("suspension/springRate"),
 			TEXT("suspension/springPreload"), TEXT("suspension/damping"),
 			TEXT("steering/maxAngle"), TEXT("steering/ackermann"), TEXT("steering/speedCurve"),
-			TEXT("brakes/brakeTorque"), TEXT("brakes/handbrakeTorque"),
+			TEXT("brakes/brakeTorque"), TEXT("brakes/handbrakeTorque"), TEXT("brakes/abs"), TEXT("brakes/frontShare"),
 			TEXT("tires/friction"), TEXT("tires/rearFriction"),
 			TEXT("camera/armLength"), TEXT("camera/height") };
 		return Known;
@@ -587,6 +588,11 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 
 	Reader.Float(TEXT("brakes/brakeTorque"), T.BrakeTorque);
 	Reader.Float(TEXT("brakes/handbrakeTorque"), T.HandbrakeTorque);
+	// #376: the driver aids and brake balance, part of the car; absent, the tuning keeps its own (ABS and traction control on, 0.65, none).
+	Reader.Bool(TEXT("brakes/abs"), T.bABS);
+	Reader.Float(TEXT("brakes/frontShare"), T.BrakeFrontShare);
+	Reader.Bool(TEXT("engine/tractionControl"), T.bTractionControl);
+	Reader.Float(TEXT("engine/engineBraking"), T.EngineBraking);
 
 	Reader.Float(TEXT("tires/friction"), T.TireFriction);
 	if (Reader.Float(TEXT("tires/rearFriction"), T.TireRearFriction))

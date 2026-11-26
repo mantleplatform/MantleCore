@@ -234,4 +234,66 @@ bool FMantleVehiclePresetApplyRejectsUnknownTest::RunTest(const FString& Paramet
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehiclePresetDriverAidsTest,
+	"Mantle.Vehicle.Presets.DriverAids",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehiclePresetDriverAidsTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehiclePresetApplyTestPrivate;
+	// Cars step 7 (#376): ABS, traction control, brake balance and engine braking are part of the car. A preset's are read in and written out.
+	FMantleVehiclePreset Preset;
+	FString Error;
+	const TCHAR* Defaults = TEXT("{ \"brakes\": { \"abs\": false, \"frontShare\": 0.55 }, \"engine\": { \"tractionControl\": false, \"engineBraking\": 0.3 } }");
+	if (TestTrue(TEXT("the inline preset parses"), FMantleVehiclePresets::Parse(PresetWithDefaults(Defaults), Preset, Error)))
+	{
+		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		TArray<FString> Notes;
+		TestTrue(TEXT("the driver aids are known keys"), FMantleVehiclePresets::ApplyDefaults(Preset, *Source, Notes));
+		const FMantleVehicleSourceTuning& T = Source->Tuning;
+		TestFalse(TEXT("abs read in"), T.bABS);
+		TestEqual(TEXT("frontShare read in"), T.BrakeFrontShare, 0.55f);
+		TestFalse(TEXT("tractionControl read in"), T.bTractionControl);
+		TestEqual(TEXT("engineBraking read in"), T.EngineBraking, 0.3f);
+		const TSharedRef<FJsonObject> Document = FMantleVehicleConverter::MakeDocument(*Source, TMap<FString, FString>());
+		ExpectFragment(*this, TEXT("driver aids"), Preset.Defaults, Document);
+	}
+
+	// Absent: ABS and traction control on, 0.65 on the steered wheels, no engine braking; the document says the first three and leaves engine braking out.
+	UMantleVehicleSource* Fresh = NewObject<UMantleVehicleSource>(GetTransientPackage());
+	const FMantleVehicleSourceTuning& F = Fresh->Tuning;
+	TestTrue(TEXT("absent: ABS on"), F.bABS);
+	TestTrue(TEXT("absent: traction control on"), F.bTractionControl);
+	TestEqual(TEXT("absent: 0.65 on the front"), F.BrakeFrontShare, 0.65f);
+	TestEqual(TEXT("absent: no engine braking"), F.EngineBraking, 0.f);
+	const TSharedRef<FJsonObject> Plain = FMantleVehicleConverter::MakeDocument(*Fresh, TMap<FString, FString>());
+	const TSharedPtr<FJsonObject>* Brakes = nullptr;
+	const TSharedPtr<FJsonObject>* Engine = nullptr;
+	if (TestTrue(TEXT("the document has brakes and an engine"), Plain->TryGetObjectField(TEXT("brakes"), Brakes) && Brakes && Plain->TryGetObjectField(TEXT("engine"), Engine) && Engine))
+	{
+		bool bABS = false, bTC = false;
+		double Share = 0.0;
+		TestTrue(TEXT("the document says ABS on"), (*Brakes)->TryGetBoolField(TEXT("abs"), bABS) && bABS);
+		TestTrue(TEXT("the document says traction control on"), (*Engine)->TryGetBoolField(TEXT("tractionControl"), bTC) && bTC);
+		TestTrue(TEXT("the document says 0.65 on the front"), (*Brakes)->TryGetNumberField(TEXT("frontShare"), Share) && FMath::IsNearlyEqual(Share, 0.65, 1e-4));
+		TestFalse(TEXT("no engine braking is left out"), (*Engine)->HasField(TEXT("engineBraking")));
+	}
+
+	// Out of range: the check says so, by name.
+	UMantleVehicleSource* Wild = NewObject<UMantleVehicleSource>(GetTransientPackage());
+	Wild->Tuning.BrakeFrontShare = 1.5f;
+	Wild->Tuning.EngineBraking = 6.f;
+	TArray<FMantleValidationIssue> Issues;
+	FMantleVehicleConverter::CheckSource(Wild, FString(), Issues);
+	for (const TCHAR* What : { TEXT("Brake Front Share"), TEXT("Engine Braking") })
+	{
+		TestTrue(FString::Printf(TEXT("%s out of range is an error"), What), Issues.ContainsByPredicate([What](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(What) && Issue.Problem.Contains(TEXT("outside what a vehicle may have"));
+		}));
+	}
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

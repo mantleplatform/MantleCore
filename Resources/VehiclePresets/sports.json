@@ -33,7 +33,7 @@
       ]
     },
     "body": { "length": 450, "width": 190, "height": 58, "groundClearance": 14 },
-    "centerOfMass": [0, 0, 38],
+    "centerOfMass": [-31, 0, 38],
     "seat": {
       "location": [-42, -37, 58],
       "steeringWheel": { "location": [4.8, -37, 61], "radius": 19 }
@@ -53,7 +53,8 @@
       "maxTorque": 529,
       "maxRPM": 7500,
       "idleRPM": 900,
-      "torqueCurve": [[0, 0.5], [1000, 0.65], [2300, 1], [5000, 1], [6500, 0.917], [7500, 0.78]]
+      "torqueCurve": [[0, 0.5], [1000, 0.65], [2300, 1], [5000, 1], [6500, 0.917], [7500, 0.78]],
+      "tractionControl": true
     },
     "transmission": {
       "gearRatios": [4.89, 3.17, 2.15, 1.56, 1.18, 0.94, 0.76, 0.61],
@@ -75,7 +76,9 @@
     },
     "brakes": {
       "brakeTorque": 4500,
-      "handbrakeTorque": 7000
+      "handbrakeTorque": 7000,
+      "abs": true,
+      "frontShare": 0.65
     },
     "tires": {
       "friction": 1.9
@@ -98,6 +101,7 @@
     "suspension/damping": [0.3, 0.9],
     "steering/maxAngle": [25, 50],
     "brakes/brakeTorque": [1500, 8000],
+    "brakes/frontShare": [0.5, 0.8],
     "tires/friction": [1, 5],
     "wheels/*/radius": [28, 40]
   }
