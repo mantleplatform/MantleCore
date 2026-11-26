@@ -485,8 +485,11 @@ bool FMantleVehicleChassisSkinGroundHandlingTest::RunTest(const FString& Paramet
 	{
 		TestFalse(TEXT("that is the wheel fit, not the skin"), Built.bOnChassis);
 		const FMantleVehicleSourceTuning& Tuning = Built.Source->Tuning;
-		TestEqual(TEXT("the steering eases off with speed over four points"), Tuning.SteeringSpeedCurve.Num(), 4);
-		TestTrue(TEXT("with the full lock at a standstill and less at speed"), Tuning.SteeringSpeedCurve.Num() == 4 && Tuning.SteeringSpeedCurve[0].Y == 1.0 && Tuning.SteeringSpeedCurve[3].Y < 0.5);
+		// The built-in ground curve (#376 step 5: seven points since steering was tuned to the cars' peak grip angles).
+		const TArray<FVector2D> Ground = FMantleVehicleChassisDocument::GroundSteeringSpeedCurve();
+		TestEqual(TEXT("the steering eases off with speed over the ground curve's points"), Tuning.SteeringSpeedCurve.Num(), Ground.Num());
+		TestTrue(TEXT("with the full lock at a standstill and less at speed"), Tuning.SteeringSpeedCurve.Num() == Ground.Num() && Tuning.SteeringSpeedCurve[0].Y == 1.0
+			&& Tuning.SteeringSpeedCurve.Last().Y < 0.5);
 		TestTrue(TEXT("the rear tires grip more than the front"), Tuning.bTireRearFriction && Tuning.TireRearFriction > Tuning.TireFriction);
 		TestEqual(TEXT("it is a car: the wheeled movement type"), static_cast<int32>(Built.Source->MovementType), static_cast<int32>(EMantleVehicleMovementKind::Wheeled));
 	}

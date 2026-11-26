@@ -273,9 +273,10 @@ namespace MantleVehicleDocumentTestPrivate
 			Eq(TEXT("auto center roll"), O.AutoCenterRollStrength, C.AutoCenterRollStrength);
 			Eq(TEXT("auto center pitch"), O.AutoCenterPitchStrength, C.AutoCenterPitchStrength);
 			Eq(TEXT("auto center yaw"), O.AutoCenterYawStrength, C.AutoCenterYawStrength);
-			// A bike is narrow: the rider steps off the side a body-width out, not a car's door.
+			// A bike is narrow: the rider steps off the side a body-width out, not a car's door. A quad (#376 step 9d) is wider: clear of its half-width.
 			Expect(TEXT("a bike sets its exit distance"), D.bSeatExitSideDistance, true);
-			Eq(TEXT("the bike's exit distance"), D.SeatExitSideDistance, 100.0);
+			Eq(TEXT("the bike's exit distance"), D.SeatExitSideDistance, Spec.bCenterline ? 100.0
+				: FMath::Max(100.0, 0.5 * FMath::Max(Spec.Width, Spec.Track + Spec.WheelWidth) + FMantleVehicleChassisDocument::QuadExitClearance));
 		}
 
 		const bool bFlier = Spec.Aircraft.bSet || Spec.Helicopter.bSet;
@@ -494,8 +495,8 @@ bool FMantleVehicleDocumentGoldenTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleDocumentTestPrivate;
 	const TArray<FString> Selectors = MantleVehicleDocumentTestPrivate::Selectors();
-	// The sixteen presets at scale 1 and at 0.7.
-	TestEqual(TEXT("sixteen presets, two sizes each"), Selectors.Num(), 32);
+	// The nineteen presets at scale 1 and at 0.7.
+	TestEqual(TEXT("nineteen presets, two sizes each"), Selectors.Num(), 38);
 	for (const FString& Selector : Selectors)
 	{
 		FMantleChassisSpec Spec;
@@ -677,9 +678,12 @@ bool FMantleVehicleDocumentHeldTest::RunTest(const FString& Parameters)
 			if (LoadSpec(*this, Selector, Spec))
 			{
 				// A body past the collision box's range (the six-wheeler at 2.5) is refused for that, as it was before the movement keys existed
-				// (Mantle.Vehicle.Chassis.ScaledChassisMakesValidAssets): the movement part is not what refuses it.
+				// (Mantle.Vehicle.Chassis.ScaledChassisMakesValidAssets): the movement part is not what refuses it. So is a bus at 2.5 (#376 step 9c),
+				// 31 m long with its driver 11.75 m forward: its seat is read before its collision, and both are past what a document can say (its
+				// fit stops at 1.6).
 				const bool bRead = ParseDesc(FMantleChassisSpec::ComposeDocument(Spec), Read, Error);
-				TestTrue(*FString::Printf(TEXT("%s: the document reads (%s)"), *Selector, *Error), bRead || Error.StartsWith(TEXT("/collision/")));
+				TestTrue(*FString::Printf(TEXT("%s: the document reads (%s)"), *Selector, *Error), bRead || Error.StartsWith(TEXT("/collision/"))
+					|| (Id == TEXT("bus") && Scale > 2.0 && Error.StartsWith(TEXT("/seat/location/"))));
 			}
 		}
 	}
