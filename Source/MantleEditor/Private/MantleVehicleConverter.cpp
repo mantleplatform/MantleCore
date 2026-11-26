@@ -3981,6 +3981,11 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 		// A belt drive (ATV follow-on): reverse and the final drive, and the belt. It never shifts: no change points or shift time.
 		Transmission->SetField(TEXT("reverseRatio"), VehicleNumber(T.ReverseRatio));
 		Transmission->SetField(TEXT("finalDrive"), VehicleNumber(T.FinalDrive));
+		// A transfer case's low range behind the belt (#376 off-road; the ATV's), only when it has one.
+		if (T.LowRange > 0.f)
+		{
+			Transmission->SetField(TEXT("lowRange"), VehicleNumber(T.LowRange));
+		}
 		TSharedRef<FJsonObject> Belt = MakeShared<FJsonObject>();
 		Belt->SetField(TEXT("lowRatio"), VehicleNumber(T.CvtLowRatio));
 		Belt->SetField(TEXT("highRatio"), VehicleNumber(T.CvtHighRatio));
@@ -4001,6 +4006,30 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 		}
 		// Each gear change's time (#376), part of the car: always written, so the creator's document says it (absent, the game takes 0.5 s).
 		Transmission->SetField(TEXT("shiftTime"), VehicleNumber(T.ShiftTime));
+		// A transfer case's low range (#376 off-road), only when it has one (never on an electric car).
+		if (T.LowRange > 0.f)
+		{
+			Transmission->SetField(TEXT("lowRange"), VehicleNumber(T.LowRange));
+		}
+	}
+	// The axles' differentials (#376 off-road), only those set: none keeps Mantle's equal split.
+	if (T.FrontDifferential != EMantleVehicleDifferential::None || T.RearDifferential != EMantleVehicleDifferential::None)
+	{
+		TSharedRef<FJsonObject> Differentials = MakeShared<FJsonObject>();
+		const auto Side = [&Differentials](const TCHAR* Name, const EMantleVehicleDifferential Type, const float Bias)
+		{
+			if (Type == EMantleVehicleDifferential::None) return;
+			TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+			Entry->SetStringField(TEXT("type"), MantleDifferentialName(Type));
+			if (Type == EMantleVehicleDifferential::LimitedSlip)
+			{
+				Entry->SetField(TEXT("biasRatio"), VehicleNumber(Bias));
+			}
+			Differentials->SetObjectField(Name, Entry);
+		};
+		Side(TEXT("front"), T.FrontDifferential, T.FrontDifferentialBias);
+		Side(TEXT("rear"), T.RearDifferential, T.RearDifferentialBias);
+		Transmission->SetObjectField(TEXT("differentials"), Differentials);
 	}
 	Doc->SetObjectField(TEXT("transmission"), Transmission);
 
@@ -4727,6 +4756,10 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 			AddError(FString::Printf(TEXT("holds %d RPM on its belt, not above idle (%d) and at most Max RPM (%d)."), T.CvtShiftRPM, T.IdleRPM, T.MaxRPM),
 				TEXT("Set Belt Held RPM between Idle RPM and Max RPM (usually the power peak)."));
 		}
+		if (T.LowRange > 0.f)
+		{
+			VehicleCheckRange(Subject, TEXT("Low Range"), TEXT("transmission/lowRange"), T.LowRange, OutIssues);
+		}
 	}
 	// An electric car (#445) has no reverse ratio, shift points or shift time.
 	else if (!T.bElectric)
@@ -4751,6 +4784,19 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 			}
 		}
 		VehicleCheckRange(Subject, TEXT("Shift Time"), TEXT("transmission/shiftTime"), T.ShiftTime, OutIssues);
+		// #376 off-road: 0 is none.
+		if (T.LowRange > 0.f)
+		{
+			VehicleCheckRange(Subject, TEXT("Low Range"), TEXT("transmission/lowRange"), T.LowRange, OutIssues);
+		}
+	}
+	if (T.FrontDifferential == EMantleVehicleDifferential::LimitedSlip)
+	{
+		VehicleCheckRange(Subject, TEXT("Front Differential Bias"), TEXT("transmission/differentials/front/biasRatio"), T.FrontDifferentialBias, OutIssues);
+	}
+	if (T.RearDifferential == EMantleVehicleDifferential::LimitedSlip)
+	{
+		VehicleCheckRange(Subject, TEXT("Rear Differential Bias"), TEXT("transmission/differentials/rear/biasRatio"), T.RearDifferentialBias, OutIssues);
 	}
 	VehicleCheckRange(Subject, TEXT("Suspension Max Raise"), TEXT("suspension/maxRaise"), T.SuspensionMaxRaise, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Suspension Max Drop"), TEXT("suspension/maxDrop"), T.SuspensionMaxDrop, OutIssues);

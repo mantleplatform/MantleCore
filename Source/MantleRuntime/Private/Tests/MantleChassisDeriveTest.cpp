@@ -38,6 +38,7 @@ namespace MantleChassisDeriveTestPrivate
 			{ TEXT("centerOfMass.y"), D.CenterOfMass.Y, H.CenterOfMass.Y },
 			{ TEXT("centerOfMass.z"), D.CenterOfMass.Z, H.CenterOfMass.Z },
 			{ TEXT("maxTorque"), D.MaxTorque, H.MaxTorque },
+			{ TEXT("peakPower"), D.PeakPower, H.PeakPower },
 			{ TEXT("finalDrive"), D.FinalDrive, H.FinalDrive },
 			{ TEXT("maxRaise"), D.MaxRaise, H.MaxRaise },
 			{ TEXT("maxDrop"), D.MaxDrop, H.MaxDrop },

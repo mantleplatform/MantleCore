@@ -66,6 +66,15 @@ struct MANTLERUNTIME_API FMantleVehicleSourceWheel
 	float RimRadius = 0.f;
 };
 
+/** A creator's engine induction (#444, engine.induction): none, a turbo or a supercharger. */
+UENUM(BlueprintType)
+enum class EMantleVehicleSourceInduction : uint8
+{
+	None,
+	Turbo,
+	Supercharger
+};
+
 /** A paint layer beyond the primary (the document's paint.layers): a second paint color, the rims, the interior's trim or the dashboard. */
 UENUM(BlueprintType)
 enum class EMantleVehicleSourcePaintLayer : uint8
@@ -408,6 +417,24 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "0", ClampMax = "5", EditCondition = "!bElectric"))
 	float EngineBraking = 0.f;
 
+	/** A turbo or a supercharger (engine.induction). With one, Max Torque and the Torque Curve are the engine at full boost (its spec sheet's numbers);
+	 *  below full boost it makes less. A turbo's boost builds with the revs and takes Spool Time to arrive; a supercharger's follows the revs at once. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (EditCondition = "!bElectric"))
+	EMantleVehicleSourceInduction Induction = EMantleVehicleSourceInduction::None;
+
+	/** psi of boost at full throttle from Spool RPM up (engine.maxBoost): the boost the torque curve was measured at. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "0", ClampMax = "40", EditCondition = "Induction != EMantleVehicleSourceInduction::None"))
+	float MaxBoost = 10.f;
+
+	/** rpm full boost arrives at (engine.spoolRPM), above idle and at most Max RPM; the boost builds from idle up to it. For a turbo engine, the start of
+	 *  its published torque plateau. 0: 40% of Max RPM. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "0", ClampMax = "20000", EditCondition = "Induction != EMantleVehicleSourceInduction::None"))
+	int32 SpoolRPM = 0;
+
+	/** Seconds a turbo takes from no boost to full boost with the revs already above Spool RPM: its lag (engine.spoolTime). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "0.1", ClampMax = "3", EditCondition = "Induction == EMantleVehicleSourceInduction::Turbo"))
+	float SpoolTime = 0.8f;
+
 	/** Forward gears, first gear first, 1 to 8. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission")
 	TArray<float> GearRatios = { 3.2f, 2.1f, 1.4f, 1.0f };
@@ -449,6 +476,28 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	/** The rpm the engine holds at full throttle while the belt shifts (usually its power peak). Above idle, at most Max RPM. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "1000", ClampMax = "20000", EditCondition = "bCvt && !bElectric", DisplayName = "Belt Held RPM"))
 	int32 CvtShiftRPM = 6500;
+	/** A transfer case's low range (transmission.lowRange, #376 off-road): this ratio times the final drive while the driver has low range in (G, or
+	 *  Back + D-pad Up). 0: none. Not on an electric car. The Jeep Wrangler Rubicon's is 4.0. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0", ClampMax = "6", EditCondition = "!bElectric"))
+	float LowRange = 0.f;
+
+	/** The front axle's differential (transmission.differentials.front, #376 off-road). None: Mantle's equal split. Selectable: open until the driver
+	 *  locks it (K, or Back + D-pad Right). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission")
+	EMantleVehicleDifferential FrontDifferential = EMantleVehicleDifferential::None;
+
+	/** A limited-slip front differential's torque bias ratio (an Eaton Truetrac's is up to 3.5). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission",
+		meta = (ClampMin = "1.5", ClampMax = "10", EditCondition = "FrontDifferential == EMantleVehicleDifferential::LimitedSlip"))
+	float FrontDifferentialBias = 3.5f;
+
+	/** Every other axle's differential (transmission.differentials.rear). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission")
+	EMantleVehicleDifferential RearDifferential = EMantleVehicleDifferential::None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission",
+		meta = (ClampMin = "1.5", ClampMax = "10", EditCondition = "RearDifferential == EMantleVehicleDifferential::LimitedSlip"))
+	float RearDifferentialBias = 3.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Suspension", meta = (ClampMin = "0", ClampMax = "50", Units = "cm"))
 	float SuspensionMaxRaise = 10.f;
@@ -955,6 +1004,13 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vehicle", meta = (ClampMin = 0.25, ClampMax = 4.0, DisplayName = "Size"))
 	float FitScale = 1.f;
+
+	/**
+	 * Which axles a vehicle built from a type drives (#376 off-road follow-on): the type's own, or front, rear or all-wheel drive. The builder writes
+	 * the wheels' Driven from it on every build, so a rebuild keeps it; a type where the drive isn't a choice (bikes, aircraft, hovercraft) ignores it.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vehicle")
+	EMantleVehicleDrive Drive = EMantleVehicleDrive::Type;
 
 	/** 2 to 8 wheels, each on a bone of the body. At least one steers and one is driven. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vehicle")

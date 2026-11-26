@@ -261,9 +261,9 @@ bool FMantleVehiclePreview::Make(const UMantleVehicleSource& Source, FMantleVehi
 		Entry->SetField(TEXT("location"), PreviewTriple(FVector(FMath::Clamp(Seat.X, Min, Max), FMath::Clamp(Seat.Y, Min, Max), FMath::Clamp(Seat.Z, Min, Max))));
 		Document->SetObjectField(TEXT("seat"), Entry);
 	}
-	// Shift points: 85% and 40% of the engine's top revs, the lower one under the upper.
+	// Shift points: 85% and 40% of the engine's top revs, the lower one under the upper. An electric car (#445) has one gear and none.
 	const TSharedPtr<FJsonObject>* Transmission = nullptr;
-	if (Document->TryGetObjectField(TEXT("transmission"), Transmission) && Transmission && Transmission->IsValid())
+	if (!Source.Tuning.bElectric && Document->TryGetObjectField(TEXT("transmission"), Transmission) && Transmission && Transmission->IsValid())
 	{
 		const int32 MaxRPM = Source.Tuning.MaxRPM;
 		double DownMin = 0.0;

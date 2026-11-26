@@ -2,6 +2,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "MantleVehicleDifferential.h"
 
 class FJsonObject;
 class UMantleVehicleSource;
@@ -38,6 +39,10 @@ struct FMantleVehiclePreset
 	int32 MinWheels = 0;
 	int32 MaxWheels = 0;
 
+	/** Which axles the type drives (#376 off-road follow-on), from its chassis.layout.axles: Front, Rear or All, or Type where the drive isn't a
+	 *  creator's choice (FMantleChassisSpec::DefaultDrive). Its card names it. */
+	EMantleVehicleDrive DefaultDrive = EMantleVehicleDrive::Type;
+
 	/** A vehicle document fragment the plugin writes into a new vehicle; may be null. */
 	TSharedPtr<FJsonObject> Defaults;
 
@@ -66,9 +71,13 @@ struct MANTLEEDITOR_API FMantleVehiclePresets
 	/**
 	 * What a card says about the preset: the first sentence of its description, so every card is one plain sentence however much the file says
 	 * after it. Ends with a full stop; empty when the preset has no description. The pickup, the van and the truck would each name vans first, so their cards
-	 * say their own line instead, and a creator picking between them can tell them apart.
+	 * say their own line instead, and a creator picking between them can tell them apart. A type whose drive is a creator's choice names its own drive in
+	 * brackets before the full stop ("... (front-wheel drive).").
 	 */
 	static FString CardSentence(const FMantleVehiclePreset& Preset);
+
+	/** "front-wheel drive", "rear-wheel drive", "all-wheel drive", or empty for Type. */
+	static FString DriveWords(EMantleVehicleDrive Drive);
 
 	/** The plugin's Resources/VehiclePresets folder; empty when the plugin is not found. */
 	static FString Directory();
