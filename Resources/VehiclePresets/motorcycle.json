@@ -45,7 +45,7 @@
       "height": 45,
       "groundClearance": 35
     },
-    "centerOfMass": [0, 0, 62],
+    "centerOfMass": [0, 0, 38],
     "seat": {
       "location": [-1.4, 0, 89.4]
     },
@@ -120,7 +120,7 @@
       "frontShare": 0.75
     },
     "tires": {
-      "friction": 1.32
+      "friction": 1.8
     },
     "camera": {
       "armLength": 380,
@@ -183,7 +183,7 @@
         }
       },
       "chassis": {
-        "centerOfMass": [0, 0, 60],
+        "centerOfMass": [0, 0, 38],
         "rider": {
           "rotationControl": {
             "rollMaxAngle": 50
@@ -225,7 +225,7 @@
         }
       },
       "chassis": {
-        "centerOfMass": [0, 0, 60],
+        "centerOfMass": [0, 0, 38],
         "rider": {
           "rotationControl": {
             "rollMaxAngle": 50
@@ -267,7 +267,7 @@
         }
       },
       "chassis": {
-        "centerOfMass": [0, 0, 62],
+        "centerOfMass": [0, 0, 38],
         "rider": {
           "rotationControl": {
             "rollMaxAngle": 50
@@ -309,7 +309,7 @@
         }
       },
       "chassis": {
-        "centerOfMass": [0, 0, 62],
+        "centerOfMass": [0, 0, 38],
         "rider": {
           "rotationControl": {
             "rollMaxAngle": 50
@@ -351,7 +351,7 @@
         }
       },
       "chassis": {
-        "centerOfMass": [-4.2, 0, 55],
+        "centerOfMass": [-4.2, 0, 38],
         "rider": {
           "rotationControl": {
             "rollMaxAngle": 31
