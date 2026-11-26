@@ -1052,9 +1052,10 @@ TArray<FVector2D> FMantleVehicleChassisDocument::TwoWheelerSteeringSpeedCurve()
 {
 	// #378, from the drive probe's steering sweeps on the bike at its real grip: at each speed 1.3x the road-wheel angle that gives its peak
 	// sideways g, as a share of its 40 deg lock (this tyre model has no camber thrust, so the front tyre's slip angle turns the bike, as on a car).
-	// Full lock to 20 mph for walking-pace turns.
-	return { FVector2D(0.0, 1.0), FVector2D(20.0, 0.8), FVector2D(25.0, 0.75), FVector2D(37.5, 0.53), FVector2D(56.0, 0.35), FVector2D(75.0, 0.27),
-		FVector2D(120.0, 0.24) };
+	// Measured on the default 600 (#378 probe round 1's diagnosis, the balanced bike): 20 km/h 0.68, 40 km/h 0.35, 60 km/h 0.19, 90 km/h 0.08,
+	// 120 km/h 0.05. Full lock at walking pace, for parking turns.
+	return { FVector2D(0.0, 1.0), FVector2D(5.0, 1.0), FVector2D(12.4, 0.68), FVector2D(24.9, 0.35), FVector2D(37.3, 0.19), FVector2D(55.9, 0.08),
+		FVector2D(74.6, 0.05) };
 }
 
 void FMantleVehicleChassisDocument::ComposeGroundHandling(const FMantleChassisSpec& Spec, FJsonObject& Document, TArray<FString>* OutHeld)
