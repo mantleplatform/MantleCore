@@ -10,8 +10,8 @@ class FJsonObject;
 
 /**
  * What kind of vehicle a preset is (schema/vehicle-preset.schema.json `type`): the family whose derive block it shares. A type selects
- * only that block, the stability target and the two camera constants. The cars are the sedan, sports car, limousine, pickup and van; the
- * trucks the truck and the six-wheeler; a motorcycle has one wheel on each axle, on the centerline, and balances itself; a plane flies on a
+ * only that block, the stability target and the two camera constants. The cars are the sedan, sports car, limousine, pickup, van, compact,
+ * muscle car, drift car, supercar, off-road 4x4 and ATV (a quad, whose rider straddles it); the trucks the truck, the six-wheeler and the bus; a motorcycle has one wheel on each axle, on the centerline, and balances itself; a plane flies on a
  * wing, a tailplane and a fin (chassis.aircraft) and stands on tricycle gear, its nose wheel on the centerline; a helicopter is lifted and steered
  * by its main rotor (chassis.helicopter) and stands on two skids, each a pair of hidden wheels that are always braked; a hovercraft floats on four
  * pads (chassis.hovercraft), suspensions with no wheel at the layout's hidden wheel points, and is pushed by a fan.

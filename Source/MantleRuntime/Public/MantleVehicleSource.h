@@ -424,6 +424,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Suspension", meta = (ClampMin = "1", ClampMax = "5000"))
 	float SpringRate = 250.f;
 
+	/** Kept in the format but has no effect: the physics engine ignores spring preload. Each wheel's spring follows the weight it carries instead. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Suspension", meta = (ClampMin = "0", ClampMax = "5000"))
 	float SpringPreload = 50.f;
 

@@ -734,7 +734,8 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 		return false;
 	}
 	Body->TryGetNumberField(TEXT("x"), Spec.BodyX);
-	// Which seat it is: a car's driver has a steering wheel, a rider's (a centerline chassis) handlebars and a pilot's a stick and a throttle.
+	// Which seat it is: a car's driver has a steering wheel, a rider's (a motorcycle on its centerline, or a quad on pairs) handlebars and a
+	// pilot's a stick and a throttle.
 	Layout->TryGetBoolField(TEXT("centerline"), Spec.bCenterline);
 	const TSharedPtr<FJsonObject>* Seats = nullptr;
 	Spec.bPassenger = Root->TryGetObjectField(TEXT("seats"), Seats) && Seats && (*Seats)->HasField(TEXT("passenger"));
@@ -743,7 +744,8 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 	{
 		Spec.DriverSeat = DriverKind;
 	}
-	Spec.bSteeringWheel = !Spec.bCenterline && !Spec.DriverSeat.Equals(TEXT("pilot"), ESearchCase::CaseSensitive);
+	Spec.bSteeringWheel = !Spec.bCenterline && !Spec.DriverSeat.Equals(TEXT("pilot"), ESearchCase::CaseSensitive)
+		&& !Spec.DriverSeat.Equals(TEXT("motorcycle"), ESearchCase::CaseSensitive);
 	if (Spec.bSteeringWheel
 		&& (!GetObject(SeatJson, TEXT("steeringWheel"), TEXT("chassis.seat.steeringWheel"), WheelJson, OutError)
 			|| !GetVector(WheelJson, TEXT("location"), TEXT("chassis.seat.steeringWheel.location"), Spec.Hub, OutError)
@@ -789,6 +791,11 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 	if (Spec.bCenterline && Spec.Axles[0].bSteer)
 	{
 		Spec.ForkBone = CenterlineForkBoneName(AxleCount, 0);
+	}
+	else if (!Spec.bCenterline && Spec.DriverSeat.Equals(TEXT("motorcycle"), ESearchCase::CaseSensitive))
+	{
+		// A quad's rider (#376 step 9d): its grips ride a handlebar bone that no wheel hangs from; its wheels steer themselves.
+		Spec.ForkBone = FMantleVehicleChassisBuilder::HandlebarBoneName();
 	}
 	if (Spec.DriverSeat.Equals(TEXT("motorcycle"), ESearchCase::CaseSensitive) && !ParseRider(Chassis, Spec.Rider, OutError))
 	{

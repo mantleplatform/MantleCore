@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "id": "drift",
+  "name": "Drift car",
+  "description": "A light rear-drive coupe set up to slide: drift and street-tuner builds. Less grip at the back, extra steering lock and the driver aids off, so it holds a slide on the throttle.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format. The base car is a 2022 Toyota GR86 automatic (#376 step 9b): 2851 lb curb, 53/47, 250 Nm at 3700 rpm and 228 hp at 7000, the 6-speed automatic's ratios and 3.90 axle; Car and Driver's test of the base car (6.1 s, 153 ft, 0.95 g) is reported, not judged. The drift setup: rear tires that grip no more than the front (tires.rearFriction, kept as the preset gives it rather than the cars' 8/7 of the friction: other cars' rears grip a third more than their fronts), so full throttle in a low gear breaks the rear loose, 55 degrees of steering lock (the real car has about 33), traction control and ABS off, and the brakes biased 75/25 to the front so a locked stop stays straight. The drive probe judges it on its own drift bars. Mantle has no limited-slip differential: every driven wheel gets the same torque, and a wheel never spins up on its own, so the outside rear keeps its half in a slide. The 7400 rpm limit and the torque curve between its two published points are estimates.",
+  "movementType": "wheeled",
+  "publishable": true,
+  "type": "car",
+  "seats": {
+    "driver": "car",
+    "passenger": "car"
+  },
+  "fit": {
+    "wheelRadius": 31.5,
+    "trackWidth": 154,
+    "minScale": 0.5,
+    "maxScale": 2
+  },
+  "wheels": {
+    "min": 4,
+    "max": 6
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 257.5,
+      "track": 154,
+      "wheelRadius": 31.5,
+      "wheelWidth": 22,
+      "axles": [
+        { "steer": true, "drive": false },
+        { "steer": false, "drive": true, "handbrake": true }
+      ]
+    },
+    "body": { "length": 426, "width": 178, "height": 56, "groundClearance": 13 },
+    "centerOfMass": [8, 0, 40],
+    "seat": {
+      "location": [-25, -35, 56],
+      "steeringWheel": { "location": [21.8, -35, 59], "radius": 18 }
+    }
+  },
+  "derive": {
+    "stability": 1.15,
+    "cameraArmPerLength": 0.63,
+    "cameraHeightPerHeight": 1.1
+  },
+  "defaults": {
+    "mass": 1293,
+    "maxSpeed": 6250,
+    "dragCoefficient": 0.28,
+    "frontalArea": 1.9,
+    "engine": {
+      "maxTorque": 250,
+      "maxRPM": 7400,
+      "idleRPM": 800,
+      "torqueCurve": [[0, 0.6], [1000, 0.7], [2500, 0.9], [3700, 1], [6000, 0.96], [7000, 0.93], [7400, 0.85]],
+      "tractionControl": false,
+      "engineBraking": 0.044
+    },
+    "transmission": {
+      "gearRatios": [3.54, 2.06, 1.4, 1.0, 0.71, 0.58],
+      "reverseRatio": 3.17,
+      "finalDrive": 3.9,
+      "changeUpRPM": 7000,
+      "changeDownRPM": 2500,
+      "shiftTime": 0.3
+    },
+    "suspension": {
+      "maxRaise": 8,
+      "maxDrop": 10,
+      "springRate": 240,
+      "springPreload": 70,
+      "damping": 0.52
+    },
+    "steering": {
+      "maxAngle": 55,
+      "ackermann": true
+    },
+    "brakes": {
+      "brakeTorque": 4500,
+      "handbrakeTorque": 8000,
+      "abs": false,
+      "frontShare": 0.75
+    },
+    "tires": {
+      "friction": 1.47,
+      "rearFriction": 1.26
+    },
+    "camera": {
+      "armLength": 400,
+      "height": 140
+    }
+  },
+  "ranges": {
+    "mass": [900, 1800],
+    "maxSpeed": [3000, 8000],
+    "dragCoefficient": [0.2, 0.45],
+    "engine/maxTorque": [150, 1200],
+    "engine/maxRPM": [5000, 10000],
+    "engine/idleRPM": [600, 1200],
+    "engine/engineBraking": [0, 0.3],
+    "transmission/shiftTime": [0.05, 1],
+    "suspension/maxRaise": [3, 15],
+    "suspension/maxDrop": [3, 15],
+    "suspension/springRate": [100, 900],
+    "suspension/damping": [0.3, 0.9],
+    "steering/maxAngle": [30, 65],
+    "brakes/brakeTorque": [1500, 7000],
+    "brakes/frontShare": [0.5, 0.8],
+    "tires/friction": [0.8, 5],
+    "tires/rearFriction": [0.5, 5],
+    "wheels/*/radius": [26, 40]
+  }
+}

@@ -277,9 +277,11 @@ FMantleChassisHandling FMantleChassisDerive::Derive(const FMantleChassisSpec& Sp
 	// Brakes: the same deceleration, so each wheel's torque follows the mass it carries and its radius; the handbrake follows the brakes.
 	H.BrakeTorque = Limited(H.Clamped, DocPath::BrakeTorque, Arch.BrakeTorque * MassRatio * (BaseWheels / Wheels) * RadiusRatio);
 	H.HandbrakeTorque = Limited(H.Clamped, DocPath::HandbrakeTorque, Arch.HandbrakeTorque * SizeRatio(H.BrakeTorque, Arch.BrakeTorque));
-	// Engine braking: the same lift-off deceleration, so like the brakes it follows the mass each wheel carries and its radius (the final drive keeps
-	// the engine's rpm at a given speed, so the rpm it multiplies does not change with the size).
-	H.EngineBraking = Limited(H.Clamped, DocPath::EngineBraking, Arch.EngineBraking * MassRatio * (BaseWheels / Wheels) * RadiusRatio);
+	// Engine braking: the same lift-off deceleration. Its torque is engineBraking x the engine's rpm, and at a given road speed the rpm follows the final
+	// drive over the wheel's radius, which is 1 / the top speed's ratio (above). So it follows the mass each wheel carries and its radius, like the
+	// brakes, and the top speed's ratio: a smaller car's engine turns faster at the same speed (#376 step 10: without it a 0.7 sedan slowed 0.18 g).
+	H.EngineBraking = Limited(H.Clamped, DocPath::EngineBraking,
+		Arch.EngineBraking * MassRatio * (BaseWheels / Wheels) * RadiusRatio * SizeRatio(H.MaxSpeed, Arch.MaxSpeed));
 
 	// Tires and drag: the archetype's tire and drag coefficient; the frontal area is the body's face against its own.
 	H.TireFriction = Limited(H.Clamped, DocPath::TireFriction, Arch.TireFriction * (1.0 + Reach * Grip));

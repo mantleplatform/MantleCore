@@ -317,7 +317,9 @@ namespace MantleVehicleChassisDocumentPrivate
 		C.AutoCenterYawStrength = Control.AutoCenterYawStrength;
 		D.bRider = true;
 		D.bSeatExitSideDistance = true;
-		D.SeatExitSideDistance = FMantleVehicleChassisDocument::BikeExitSideDistance;
+		// A quad (#376 step 9d) is as wide as a small car, not a bike's 40 cm: its rider steps off clear of its wheels and fenders.
+		const double QuadHalfWidth = Spec.bCenterline ? 0.0 : 0.5 * FMath::Max(Spec.Width, Spec.Track + Spec.WheelWidth);
+		D.SeatExitSideDistance = FMath::Max(FMantleVehicleChassisDocument::BikeExitSideDistance, QuadHalfWidth + FMantleVehicleChassisDocument::QuadExitClearance);
 	}
 
 	/** A plane's airframe (ApplyAircraft): the wing's two halves, the elevator and the rudder, the engines and their propellers, the pilot's hands. */
@@ -927,8 +929,18 @@ void FMantleVehicleChassisDocument::ComposeGroundHandling(const FMantleChassisSp
 			}
 			return Clamped;
 		};
+		// A preset that sets its own rear grip (the drift car's, under its front) keeps it, scaled with the friction so a resized or re-gripped car
+		// keeps the preset's balance; every other preset's rear is RearTireGripShare of the friction.
+		double Rear = Friction * RearTireGripShare;
+		const TSharedPtr<FJsonObject>* PresetTires = nullptr;
+		double PresetRear = 0.0;
+		if (Spec.Defaults.IsValid() && Spec.Defaults->TryGetObjectField(TEXT("tires"), PresetTires) && PresetTires && (*PresetTires)->TryGetNumberField(TEXT("rearFriction"), PresetRear)
+			&& Spec.Archetype.TireFriction > 0.0)
+		{
+			Rear = PresetRear * Friction / Spec.Archetype.TireFriction;
+		}
 		Tires->SetNumberField(TEXT("friction"), Held(TEXT("tires/friction"), Friction * FrontTireGripShare));
-		Tires->SetNumberField(TEXT("rearFriction"), Held(TEXT("tires/rearFriction"), Friction * RearTireGripShare));
+		Tires->SetNumberField(TEXT("rearFriction"), Held(TEXT("tires/rearFriction"), Rear));
 	}
 }
 

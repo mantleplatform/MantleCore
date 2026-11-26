@@ -1422,7 +1422,10 @@ bool FMantleVehicleBuilder::FitsOwnWheels(UObject* Model, const FString& PresetI
 	FString Text;
 	FString Error;
 	FMantleVehicleChassisReference Chassis;
-	if (!FMantleVehicleChassisBuilder::LoadPresetText(PresetId, Text, Error) || !FMantleVehicleChassisBuilder::ReadReference(Text, Chassis, Error) || Chassis.bCenterline)
+	// A rider's chassis (a bike's, or a quad's, #376 step 9d) is always worn as a skin: its grips ride the chassis's fork or handlebar bone, which a model's
+	// own skeleton doesn't have by that name.
+	if (!FMantleVehicleChassisBuilder::LoadPresetText(PresetId, Text, Error) || !FMantleVehicleChassisBuilder::ReadReference(Text, Chassis, Error) || Chassis.bCenterline
+		|| Chassis.Rider.bSet)
 	{
 		return false;
 	}
