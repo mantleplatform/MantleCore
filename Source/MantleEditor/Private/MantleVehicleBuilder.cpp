@@ -1335,7 +1335,7 @@ namespace MantleVehicleBuilderPrivate
 		}
 		// Also the movement part, which ApplyMovement puts in the vehicle's own fields: the type and its block, and the camera's boom.
 		const TCHAR* const Written[] = { TEXT("schemaVersion"), TEXT("wheels"), TEXT("collision"), TEXT("seat"), TEXT("passengerSeat"), TEXT("movementType"), TEXT("flight"),
-			TEXT("helicopter"), TEXT("hover") };
+			TEXT("helicopter"), TEXT("hover"), TEXT("trailer"), TEXT("hitch") };
 		for (const TCHAR* Key : Written)
 		{
 			Document->RemoveField(Key);

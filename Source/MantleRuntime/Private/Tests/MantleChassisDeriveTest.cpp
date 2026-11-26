@@ -238,8 +238,9 @@ bool FMantleChassisDeriveExactAtArchetypeTest::RunTest(const FString& Parameters
 			TestEqual(*FString::Printf(TEXT("%s: the derived document is the preset's"), *Id), FirstDifference(DerivedInDocument, InDocument), FString());
 		}
 	}
-	// One bit per type (EMantleChassisType's order): car, truck, motorcycle, plane, helicopter and hovercraft.
-	TestEqual(TEXT("the presets are cars, trucks, a motorcycle, planes, a helicopter and a hovercraft"), TypesSeen, 63);
+	// One bit per type (EMantleChassisType's order): car, truck, motorcycle, plane, helicopter, hovercraft, boat, jet ski (no preset yet) and
+	// trailer (#446).
+	TestEqual(TEXT("the presets are cars, trucks, a motorcycle, planes, a helicopter, a hovercraft, a boat and trailers"), TypesSeen, 383);
 	return true;
 }
 
@@ -407,6 +408,18 @@ bool FMantleChassisScaledSpecScalesGeometryTest::RunTest(const FString& Paramete
 				{
 					TestTrue(*FString::Printf(TEXT("%s: a helicopter has three boxes, the first its scaled cabin"), *Label), Boxes && Boxes->Num() == 3 && Scales(2.0 * Length, Spec.Length, S));
 				}
+				else if (Spec.HasTractorFrame())
+				{
+					// A fifth-wheel tractor (#446) collides as its cab and its frame under the fifth wheel: the two boxes end to end are the scaled body.
+					double FrameLength = 0.0;
+					const TArray<TSharedPtr<FJsonValue>>* FrameExtent = nullptr;
+					if (Boxes && Boxes->Num() == 2 && (*Boxes)[1]->AsObject()->TryGetArrayField(TEXT("extent"), FrameExtent) && FrameExtent && FrameExtent->Num() == 3)
+					{
+						(*FrameExtent)[0]->TryGetNumber(FrameLength);
+					}
+					TestTrue(*FString::Printf(TEXT("%s: the cab's and the frame's boxes are the scaled body's"), *Label),
+						Boxes && Boxes->Num() == 2 && Scales(2.0 * (Length + FrameLength), Spec.Length, S));
+				}
 				else if (!Spec.Aircraft.bSet)
 				{
 					TestTrue(*FString::Printf(TEXT("%s: the collision box is the scaled body's"), *Label), Boxes && Boxes->Num() == 1 && Scales(2.0 * Length, Spec.Length, S));
@@ -447,7 +460,8 @@ bool FMantleChassisDeriveIsDeterministicTest::RunTest(const FString& Parameters)
 	// however often, in whatever order, and from however many separate reads of the preset.
 	const FString Selectors[] = { TEXT("sedan@0.7"), TEXT("sedan@1.6"), TEXT("sports@0.5"), TEXT("pickup@1.3"), TEXT("truck@0.7"), TEXT("sixwheeler@1.3"), TEXT("van@0.5"),
 		TEXT("limousine@1.6"), TEXT("motorcycle@0.7"), TEXT("motorcycle@1.3"), TEXT("plane@0.7"), TEXT("plane@1.3"), TEXT("plane@2.5"), TEXT("muscle@0.7"), TEXT("drift@1.3"),
-		TEXT("compact@0.7"), TEXT("supercar@1.3"), TEXT("offroad@1.3"), TEXT("bus@0.8"), TEXT("atv@1.3") };
+		TEXT("compact@0.7"), TEXT("supercar@1.3"), TEXT("offroad@1.3"), TEXT("bus@0.8"), TEXT("atv@1.3"), TEXT("semi@0.7"), TEXT("semitrailer@1.2"),
+		TEXT("utilitytrailer@1.3") };
 	for (const FString& Selector : Selectors)
 	{
 		FMantleChassisSpec A;

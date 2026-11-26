@@ -353,6 +353,140 @@ namespace MantleChassisSpecPrivate
 		return true;
 	}
 
+	/** A hitch or a coupler (#446): chassis.hitch or chassis.trailer.coupler, {"type": "fifthWheel" | "ball", "location": [x, y, z]}. */
+	bool ParseHitchObject(const TSharedPtr<FJsonObject>& Parent, const TCHAR* Key, const FString& Label, FMantleVehicleHitchDesc& Out, FString& OutError)
+	{
+		TSharedPtr<FJsonObject> Json;
+		FString Kind;
+		if (!GetObject(Parent, Key, Label, Json, OutError) || !GetVector(Json, TEXT("location"), Label + TEXT(".location"), Out.Location, OutError))
+		{
+			return false;
+		}
+		if (!Json->TryGetStringField(TEXT("type"), Kind) || !(Kind == TEXT("fifthWheel") || Kind == TEXT("ball")))
+		{
+			return Refuse(OutError, FString::Printf(TEXT("the preset's %s.type is missing or not fifthWheel or ball"), *Label));
+		}
+		Out.Kind = Kind == TEXT("ball") ? EMantleVehicleHitchKind::Ball : EMantleVehicleHitchKind::FifthWheel;
+		return true;
+	}
+
+	/** A trailer's block (chassis.trailer, #446): the coupler, the optional landing gear box and the optional cargo, the document's trailer block's shape. */
+	bool ParseTrailer(const TSharedPtr<FJsonObject>& Chassis, FMantleVehicleTrailerDesc& Out, FString& OutError)
+	{
+		TSharedPtr<FJsonObject> Json;
+		FMantleVehicleTrailerDesc Read;
+		if (!GetObject(Chassis, TEXT("trailer"), TEXT("chassis.trailer"), Json, OutError)
+			|| !ParseHitchObject(Json, TEXT("coupler"), TEXT("chassis.trailer.coupler"), Read.Coupler, OutError))
+		{
+			return false;
+		}
+		if (Json->HasField(TEXT("landingGear")))
+		{
+			TSharedPtr<FJsonObject> Gear;
+			if (!GetObject(Json, TEXT("landingGear"), TEXT("chassis.trailer.landingGear"), Gear, OutError)
+				|| !GetVector(Gear, TEXT("center"), TEXT("chassis.trailer.landingGear.center"), Read.LandingGearCenter, OutError)
+				|| !GetVector(Gear, TEXT("extent"), TEXT("chassis.trailer.landingGear.extent"), Read.LandingGearExtent, OutError))
+			{
+				return false;
+			}
+			Read.bLandingGear = true;
+		}
+		if (Json->HasField(TEXT("cargo")))
+		{
+			TSharedPtr<FJsonObject> Cargo;
+			if (!GetObject(Json, TEXT("cargo"), TEXT("chassis.trailer.cargo"), Cargo, OutError))
+			{
+				return false;
+			}
+			Cargo->TryGetNumberField(TEXT("maxLoad"), Read.MaxCargoKg);
+			if (Cargo->HasField(TEXT("location")))
+			{
+				if (!GetVector(Cargo, TEXT("location"), TEXT("chassis.trailer.cargo.location"), Read.CargoLocation, OutError))
+				{
+					return false;
+				}
+				Read.bCargoLocation = true;
+			}
+		}
+		if (!FMath::IsFinite(Read.MaxCargoKg) || Read.MaxCargoKg < 0.0)
+		{
+			return Refuse(OutError, TEXT("the preset's chassis.trailer.cargo.maxLoad is not a number of 0 or more"));
+		}
+		Out = Read;
+		return true;
+	}
+
+	/**
+	 * The boat block of a boat or jet ski preset's chassis (chassis.boat, #15): the hull, the planing speed, the drive and the optional rudder. The hull's
+	 * points, the drive's reverse share, vector angle and prop walk and the angular damping have the schema's defaults.
+	 */
+	bool ParseBoat(const TSharedPtr<FJsonObject>& Chassis, FMantleChassisBoat& Out, FString& OutError)
+	{
+		TSharedPtr<FJsonObject> Json;
+		TSharedPtr<FJsonObject> Hull;
+		TSharedPtr<FJsonObject> Drive;
+		FMantleChassisBoat Read;
+		FString Kind;
+		if (!GetObject(Chassis, TEXT("boat"), TEXT("chassis.boat"), Json, OutError)
+			|| !GetObject(Json, TEXT("hull"), TEXT("chassis.boat.hull"), Hull, OutError)
+			|| !GetNumber(Hull, TEXT("depth"), TEXT("chassis.boat.hull.depth"), true, Read.HullDepth, OutError)
+			|| !GetNumber(Hull, TEXT("deadrise"), TEXT("chassis.boat.hull.deadrise"), false, Read.DeadriseDegrees, OutError)
+			|| !GetNumber(Hull, TEXT("dragAlong"), TEXT("chassis.boat.hull.dragAlong"), true, Read.DragAlong, OutError)
+			|| !GetNumber(Hull, TEXT("dragAcross"), TEXT("chassis.boat.hull.dragAcross"), true, Read.DragAcross, OutError)
+			|| !GetNumber(Hull, TEXT("heaveDamping"), TEXT("chassis.boat.hull.heaveDamping"), false, Read.HeaveDamping, OutError)
+			|| !GetNumber(Json, TEXT("planingSpeed"), TEXT("chassis.boat.planingSpeed"), false, Read.PlaningSpeedCmPerSec, OutError)
+			|| !GetObject(Json, TEXT("drive"), TEXT("chassis.boat.drive"), Drive, OutError)
+			|| !GetNumber(Drive, TEXT("thrust"), TEXT("chassis.boat.drive.thrust"), true, Read.DriveThrustNewtons, OutError)
+			|| !GetNumber(Drive, TEXT("topSpeed"), TEXT("chassis.boat.drive.topSpeed"), true, Read.TopSpeedCmPerSec, OutError)
+			|| !GetNumber(Drive, TEXT("x"), TEXT("chassis.boat.drive.x"), false, Read.DriveX, OutError)
+			|| !GetNumber(Drive, TEXT("z"), TEXT("chassis.boat.drive.z"), false, Read.DriveZ, OutError))
+		{
+			return false;
+		}
+		if (!Drive->TryGetStringField(TEXT("kind"), Kind) || !(Kind == TEXT("propeller") || Kind == TEXT("jet")))
+		{
+			return Refuse(OutError, TEXT("the preset's chassis.boat.drive.kind is missing or not propeller or jet"));
+		}
+		Read.bJet = Kind == TEXT("jet");
+		double Points = Read.Points;
+		Read.ReverseShare = 0.4;
+		Read.VectorAngle = 25.0;
+		Read.PropWalk = Read.bJet ? 0.0 : 0.05;
+		Hull->TryGetNumberField(TEXT("points"), Points);
+		Drive->TryGetNumberField(TEXT("reverseShare"), Read.ReverseShare);
+		Drive->TryGetNumberField(TEXT("vectorAngle"), Read.VectorAngle);
+		Drive->TryGetNumberField(TEXT("propWalk"), Read.PropWalk);
+		Json->TryGetNumberField(TEXT("angularDamping"), Read.AngularDamping);
+		Read.Points = FMath::IsFinite(Points) ? FMath::RoundToInt32(Points) : 0;
+		if (Read.Points < 3 || Read.Points > 8 || Read.DeadriseDegrees < 0.0 || Read.DeadriseDegrees > 30.0 || Read.HeaveDamping < 0.0 || Read.HeaveDamping > 1.0
+			|| Read.PlaningSpeedCmPerSec < 0.0)
+		{
+			return Refuse(OutError, TEXT("the preset's chassis.boat.hull points is outside 3 to 8, its deadrise outside 0 to 30, its heaveDamping outside 0 to 1, or its planingSpeed below 0"));
+		}
+		if (!FMath::IsFinite(Read.ReverseShare) || !FMath::IsFinite(Read.VectorAngle) || !FMath::IsFinite(Read.PropWalk) || !FMath::IsFinite(Read.AngularDamping)
+			|| Read.ReverseShare < 0.0 || Read.ReverseShare > 1.0 || Read.VectorAngle < 0.0 || Read.VectorAngle > 45.0 || Read.PropWalk < 0.0 || Read.PropWalk > 0.2
+			|| (Read.bJet && Read.PropWalk > 0.0) || Read.AngularDamping < 0.0)
+		{
+			return Refuse(OutError, TEXT("the preset's chassis.boat.drive reverseShare is outside 0 to 1, its vectorAngle outside 0 to 45 or its propWalk outside 0 to 0.2 (none on a jet), or the boat's angularDamping is below 0"));
+		}
+		if (Json->HasField(TEXT("rudder")))
+		{
+			TSharedPtr<FJsonObject> Rudder;
+			if (!GetObject(Json, TEXT("rudder"), TEXT("chassis.boat.rudder"), Rudder, OutError)
+				|| !GetNumber(Rudder, TEXT("x"), TEXT("chassis.boat.rudder.x"), false, Read.RudderX, OutError)
+				|| !GetNumber(Rudder, TEXT("z"), TEXT("chassis.boat.rudder.z"), false, Read.RudderZ, OutError)
+				|| !GetNumber(Rudder, TEXT("area"), TEXT("chassis.boat.rudder.area"), true, Read.RudderAreaM2, OutError)
+				|| !GetNumber(Rudder, TEXT("maxControlAngle"), TEXT("chassis.boat.rudder.maxControlAngle"), false, Read.RudderMaxControlAngle, OutError))
+			{
+				return false;
+			}
+			Read.bRudder = true;
+		}
+		Read.bSet = true;
+		Out = Read;
+		return true;
+	}
+
 	/** The number at Path ("engine/maxTorque", objects separated by '/') under Root. False when any step is missing or the last is not a number. */
 	bool FindNumber(const TSharedPtr<FJsonObject>& Root, const FString& Path, double& Out)
 	{
@@ -562,6 +696,12 @@ const TCHAR* FMantleChassisSpec::TypeName(const EMantleChassisType Kind)
 		return TEXT("helicopter");
 	case EMantleChassisType::Hovercraft:
 		return TEXT("hovercraft");
+	case EMantleChassisType::Boat:
+		return TEXT("boat");
+	case EMantleChassisType::JetSki:
+		return TEXT("jetski");
+	case EMantleChassisType::Trailer:
+		return TEXT("trailer");
 	default:
 		return TEXT("car");
 	}
@@ -570,7 +710,8 @@ const TCHAR* FMantleChassisSpec::TypeName(const EMantleChassisType Kind)
 bool FMantleChassisSpec::ParseType(const FString& Name, EMantleChassisType& OutType)
 {
 	for (const EMantleChassisType Kind : { EMantleChassisType::Car, EMantleChassisType::Truck, EMantleChassisType::Motorcycle, EMantleChassisType::Plane,
-			 EMantleChassisType::Helicopter, EMantleChassisType::Hovercraft })
+			 EMantleChassisType::Helicopter, EMantleChassisType::Hovercraft, EMantleChassisType::Boat, EMantleChassisType::JetSki,
+			 EMantleChassisType::Trailer })
 	{
 		if (Name.Equals(TypeName(Kind), ESearchCase::CaseSensitive))
 		{
@@ -813,12 +954,26 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 	{
 		return false;
 	}
+	if (Chassis->HasField(TEXT("boat")) && !ParseBoat(Chassis, Spec.Boat, OutError))
+	{
+		return false;
+	}
+	if (Chassis->HasField(TEXT("hitch")) && !ParseHitchObject(Chassis, TEXT("hitch"), TEXT("chassis.hitch"), Spec.Hitch, OutError))
+	{
+		return false;
+	}
+	Spec.bHitch = Chassis->HasField(TEXT("hitch"));
+	if (Chassis->HasField(TEXT("trailer")) && !ParseTrailer(Chassis, Spec.Trailer, OutError))
+	{
+		return false;
+	}
+	Spec.bTrailer = Chassis->HasField(TEXT("trailer"));
 
 	// What the size derives from: the type, the derive block, the hand-tuned handling every derived number is a ratio of, and the dimensions it is a ratio against.
 	FString TypeText;
 	if (!Root->TryGetStringField(TEXT("type"), TypeText) || !ParseType(TypeText, Spec.Type))
 	{
-		return Refuse(OutError, TEXT("the preset's type is missing or not car, truck, motorcycle, plane, helicopter or hovercraft"));
+		return Refuse(OutError, TEXT("the preset's type is missing or not car, truck, motorcycle, plane, helicopter, hovercraft, boat, jetski or trailer"));
 	}
 	if ((Spec.Type == EMantleChassisType::Motorcycle) != Spec.bCenterline)
 	{
@@ -844,10 +999,38 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 	{
 		return Refuse(OutError, TEXT("the preset's type hovercraft and its chassis.hovercraft go together"));
 	}
+	if ((Spec.Type == EMantleChassisType::Trailer) != Spec.bTrailer)
+	{
+		return Refuse(OutError, TEXT("the preset's type trailer and its chassis.trailer go together"));
+	}
+	// One trailer per vehicle (#446): a trailer has no hitch of its own, and only a ground vehicle tows.
+	if (Spec.bHitch && (Spec.bTrailer || Spec.Aircraft.bSet || Spec.Helicopter.bSet || Spec.Hovercraft.bSet))
+	{
+		return Refuse(OutError, TEXT("the preset's chassis.hitch is only for a ground vehicle: a trailer, plane, helicopter or hovercraft tows nothing"));
+	}
 	// A hovercraft's pads are the four corners of two axles: its definition turns each of the layout's wheels into one, from a car's seat.
 	if (Spec.Type == EMantleChassisType::Hovercraft && (Spec.WheelCount() != 4 || !Spec.bSteeringWheel))
 	{
 		return Refuse(OutError, TEXT("the preset's type hovercraft stands on four pads (two axles, a pair each) and is driven from a car's seat"));
+	}
+	// A boat or a jet ski floats on its hull; its layout's four wheels are hidden. A boat is driven from a car's seat, a jet ski by a rider astride it on a
+	// jet (the motorcycle seat and its rider).
+	const bool bBoatType = Spec.Type == EMantleChassisType::Boat || Spec.Type == EMantleChassisType::JetSki;
+	if (bBoatType != Spec.Boat.bSet)
+	{
+		return Refuse(OutError, TEXT("the preset's type boat or jetski and its chassis.boat go together"));
+	}
+	if (bBoatType && Spec.WheelCount() != 4)
+	{
+		return Refuse(OutError, TEXT("the preset's type boat or jetski keeps four hidden wheels (two axles, a pair each)"));
+	}
+	if (Spec.Type == EMantleChassisType::Boat && !Spec.bSteeringWheel)
+	{
+		return Refuse(OutError, TEXT("the preset's type boat is driven from a car's seat, at a steering wheel"));
+	}
+	if (Spec.Type == EMantleChassisType::JetSki && (!Spec.Boat.bJet || !Spec.DriverSeat.Equals(TEXT("motorcycle"), ESearchCase::CaseSensitive)))
+	{
+		return Refuse(OutError, TEXT("the preset's type jetski has a jet drive and is ridden astride (the motorcycle seat)"));
 	}
 	if (!GetObject(Root, TEXT("derive"), TEXT("derive"), DeriveJson, OutError) || !FMantleChassisDerive::ReadConstants(DeriveJson, Spec.Constants, OutError)
 		|| !ReadArchetype(DefaultsJson, Spec, OutError))
@@ -866,6 +1049,9 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 	Spec.Archetype.HoverThrustNewtons = Spec.Hovercraft.FanThrustNewtons;
 	Spec.Archetype.PadSpringRate = Spec.Hovercraft.PadSpringRate;
 	Spec.Archetype.HoverFinAreaM2 = Spec.Hovercraft.FinAreaM2;
+	// And a boat's drive and rudder: a resized one's follow its mass and its hull's side.
+	Spec.Archetype.BoatThrustNewtons = Spec.Boat.DriveThrustNewtons;
+	Spec.Archetype.BoatRudderAreaM2 = Spec.Boat.RudderAreaM2;
 	FMantleChassisSize& Size = Spec.ArchetypeSize;
 	Size.Wheelbase = Spec.Wheelbase;
 	Size.Track = Spec.Track;
@@ -977,9 +1163,23 @@ FString FMantleChassisSpec::ComposeDocument(const FMantleChassisSpec& Spec, TArr
 	else
 	{
 		const TSharedPtr<FJsonObject> Box = MakeShared<FJsonObject>();
-		Box->SetArrayField(TEXT("center"), NumberArray(FVector(Spec.BodyX, 0.0, Spec.Clearance + 0.5 * Spec.Height)));
-		Box->SetArrayField(TEXT("extent"), NumberArray(FVector(0.5 * Spec.Length, 0.5 * Spec.Width, 0.5 * Spec.Height)));
-		Boxes.Add(MakeShared<FJsonValueObject>(Box));
+		if (Spec.HasTractorFrame())
+		{
+			// A fifth-wheel tractor collides as its cab and its low frame, so a trailer's floor clears the frame while the tractor backs under it (#446).
+			for (const FMantleChassisBlock& Block : { Spec.CabBlock(), Spec.FrameBlock() })
+			{
+				const TSharedPtr<FJsonObject> Part = MakeShared<FJsonObject>();
+				Part->SetArrayField(TEXT("center"), NumberArray(0.5 * (Block.Min + Block.Max)));
+				Part->SetArrayField(TEXT("extent"), NumberArray(0.5 * (Block.Max - Block.Min)));
+				Boxes.Add(MakeShared<FJsonValueObject>(Part));
+			}
+		}
+		else
+		{
+			Box->SetArrayField(TEXT("center"), NumberArray(FVector(Spec.BodyX, 0.0, Spec.Clearance + 0.5 * Spec.Height)));
+			Box->SetArrayField(TEXT("extent"), NumberArray(FVector(0.5 * Spec.Length, 0.5 * Spec.Width, 0.5 * Spec.Height)));
+			Boxes.Add(MakeShared<FJsonValueObject>(Box));
+		}
 	}
 	Doc->SetArrayField(TEXT("collision"), Boxes);
 	Doc->SetArrayField(TEXT("centerOfMass"), NumberArray(Spec.CenterOfMass));
@@ -1017,6 +1217,21 @@ FString FMantleChassisSpec::ComposeDocument(const FMantleChassisSpec& Spec, TArr
 FMantleChassisBlock FMantleChassisSpec::BodyBlock() const
 {
 	return { FVector(BodyX - 0.5 * Length, -0.5 * Width, Clearance), FVector(BodyX + 0.5 * Length, 0.5 * Width, Clearance + Height) };
+}
+
+FMantleChassisBlock FMantleChassisSpec::CabBlock() const
+{
+	const FMantleChassisBlock Body = BodyBlock();
+	const double Back = FMath::Clamp(Hitch.Location.X + FifthWheelCabGap, Body.Min.X + 1.0, Body.Max.X - 1.0);
+	return { FVector(Back, Body.Min.Y, Body.Min.Z), Body.Max };
+}
+
+FMantleChassisBlock FMantleChassisSpec::FrameBlock() const
+{
+	const FMantleChassisBlock Body = BodyBlock();
+	const double Back = FMath::Clamp(Hitch.Location.X + FifthWheelCabGap, Body.Min.X + 1.0, Body.Max.X - 1.0);
+	const double Top = FMath::Max(Hitch.Location.Z - FifthWheelFrameGap, Body.Min.Z + 1.0);
+	return { Body.Min, FVector(Back, Body.Max.Y, Top) };
 }
 
 FMantleChassisBlock FMantleChassisSpec::WingBlock() const
@@ -1242,6 +1457,29 @@ FMantleChassisBlock FMantleChassisSpec::HoverFinBlock() const
 	return { FVector(Hovercraft.FinX - HalfChord, -HalfThickness, BodyTop()), FVector(Hovercraft.FinX + HalfChord, HalfThickness, BodyTop() + Hovercraft.FinHeight) };
 }
 
+FVector FMantleChassisSpec::BoatHullLocation() const
+{
+	return FVector(BodyX, 0.0, Clearance);
+}
+
+FVector FMantleChassisSpec::BoatDriveLocation() const
+{
+	return FVector(Boat.DriveX, 0.0, Boat.DriveZ);
+}
+
+FVector FMantleChassisSpec::BoatRudderLocation() const
+{
+	return FVector(Boat.RudderX, 0.0, Boat.RudderZ);
+}
+
+FMantleChassisBlock FMantleChassisSpec::BoatDriveBlock() const
+{
+	// A pod a tenth of the hull's width each way about the drive, never under 10 cm: an outboard's leg or a jet's nozzle.
+	const double Half = FMath::Max(5.0, 0.05 * Width);
+	const FVector Middle = BoatDriveLocation();
+	return { Middle - FVector(2.0 * Half, Half, 2.0 * Half), Middle + FVector(2.0 * Half, Half, 2.0 * Half) };
+}
+
 FMantleChassisSpec FMantleChassisSpec::Scaled(const FMantleChassisSpec& Spec, const double Factor)
 {
 	if (!FMath::IsFinite(Factor) || Factor <= 0.0 || Factor == 1.0)
@@ -1275,6 +1513,13 @@ FMantleChassisSpec FMantleChassisSpec::Scaled(const FMantleChassisSpec& Spec, co
 	RiderOut.StopPelvisShift *= Factor;
 	// A plane's body box, airframe and cockpit grow with it. Its angles do not, and its areas and thrust follow from the handling below.
 	Out.BodyX *= Factor;
+	// A hitch, a coupler, a trailer's legs and where its cargo sits grow with it; how much cargo it carries is a weight, which follows its mass (#446).
+	Out.Hitch.Location *= Factor;
+	Out.Trailer.Coupler.Location *= Factor;
+	Out.Trailer.LandingGearCenter *= Factor;
+	Out.Trailer.LandingGearExtent *= Factor;
+	Out.Trailer.CargoLocation *= Factor;
+	Out.Trailer.MaxCargoKg *= Factor * Factor * Factor;
 	if (Out.Aircraft.bSet)
 	{
 		FMantleChassisAircraft& Plane = Out.Aircraft;
@@ -1310,6 +1555,16 @@ FMantleChassisSpec FMantleChassisSpec::Scaled(const FMantleChassisSpec& Spec, co
 		FMantleChassisHovercraft& Hover = Out.Hovercraft;
 		for (double* Length : { &Hover.PadTravel, &Hover.PadRaise, &Hover.FanX, &Hover.FanZ, &Hover.FanLength, &Hover.FanWidth, &Hover.FanHeight, &Hover.FinX,
 				 &Hover.FinHeight, &Hover.FinChord, &Hover.SkirtOverhang, &Hover.SkirtGap })
+		{
+			*Length *= Factor;
+		}
+	}
+	// A boat's hull depth and where its drive and rudder are grow with it; its push and rudder area follow the handling below, and its drag coefficients, damping
+	// ratio and planing speed do not scale.
+	if (Out.Boat.bSet)
+	{
+		FMantleChassisBoat& Boat = Out.Boat;
+		for (double* Length : { &Boat.HullDepth, &Boat.DriveX, &Boat.DriveZ, &Boat.RudderX, &Boat.RudderZ })
 		{
 			*Length *= Factor;
 		}

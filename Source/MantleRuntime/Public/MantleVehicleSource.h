@@ -959,7 +959,8 @@ public:
 	TArray<FMantleVehicleSourcePart> Parts;
 
 	/**
-	 * Which simulation builds it: wheeled for a car, truck, six-wheeler or motorcycle, plane for a plane or jet, helicopter, or hover. Anything but
+	 * Which simulation builds it: wheeled for a car, truck, six-wheeler or motorcycle, plane for a plane or jet, helicopter, hover, or boat (a boat or a jet
+	 * ski). Anything but
 	 * wheeled also needs its block in MovementBlocks. Written into the document as movementType (FMantleVehicleChassisDocument::MergeSource).
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement")
@@ -973,7 +974,7 @@ public:
 	EMantleVehicleSeatKind PassengerSeatKind = EMantleVehicleSeatKind::Car;
 
 	/**
-	 * The movement numbers a document carries, as the JSON object text they have in it: a top-level flight, helicopter or hover block,
+	 * The movement numbers a document carries, as the JSON object text they have in it: a top-level flight, helicopter, hover or boat block,
 	 * and seat (exitSideDistance, rider) and camera (boomLocation) with only those keys. Flat numbers in the body's space at the reference pose, never a
 	 * preset id. FMantleVehicleChassisDocument::MovementBlocksJson makes it from a chassis spec; empty for a wheeled vehicle with no rider fit.
 	 */

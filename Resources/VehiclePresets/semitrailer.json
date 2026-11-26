@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "id": "semitrailer",
+  "name": "Semi-trailer",
+  "description": "A 53 ft box trailer that a semi truck tows on its fifth wheel: two axles at the back, a kingpin at the front and landing legs it stands on while uncoupled. It has no engine or seat; scripts load its cargo.",
+  "comment": "A vehicle preset (#446); see sedan.json for the format. movementType trailer is the Trailer movement type: no engine, gearbox, steering or seat. The document still needs an engine, a transmission, a steered and a driven wheel and a driver seat (its reader's rule, as a hovercraft's), so the axles say steer and drive and the defaults carry the truck's engine and gearbox; none of them is built. A 53 ft tandem dry van, 102 in wide and 13 ft 6 in high: empty 6800 kg (15,000 lb; guides say 13,500-15,500), length 1615, width 259 and height 290 on a 121 cm floor (the box's underside 2 cm over a fifth wheel at 119), so its top is 411 cm. Kingpin 91 cm (36 in) behind the front at 119 cm (47 in), the tandem 124 cm (49 in) apart, its middle 1250 cm (41 ft, the common California setting) behind the kingpin (Hale Trailer's dry van guide, otrucking, National Academies' truck size study). Model space keeps its origin under the middle of the wheelbase, which is the tandem's, so the body's middle is 533.5 cm ahead of it (body.x) and the coupler at x 1250. The empty centre of mass at x 438 puts 35 percent on the kingpin (estimate). The landing legs are one box at x 1000 whose bottom is on the ground when the trailer stands level; the session tunes the drop. cargo.maxLoad 21,000 kg makes 80,000 lb gross with the semi (semi.json), centred in the box 220 cm up; with it 41 percent of the loaded trailer is on the kingpin: about 11.8k / 31.3k / 36.3k lb on the steer, drive and trailer axles (computed), near the US 12k / 34k / 34k pattern. Brakes: ABS on (US trailers since 1998), about 1 g on a loaded trailer: 0.5 x 27,800 kg x 9.8 x 0.507 m / 4 = about 17,000 Nm a wheel, and the spring brakes the same. Springs and damping are the semi's drive axles' per kg of the empty trailer's coupled weight on a wheel (65 percent of 6800 kg over 4 wheels), grip the semi's. The camera and the seat are the document's and nobody uses them.",
+  "movementType": "trailer",
+  "publishable": true,
+  "type": "trailer",
+  "seats": {
+    "driver": "car"
+  },
+  "fit": {
+    "wheelRadius": 50.7,
+    "trackWidth": 183,
+    "minScale": 0.5,
+    "maxScale": 1.2
+  },
+  "wheels": {
+    "min": 4,
+    "max": 8
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 124,
+      "track": 183,
+      "wheelRadius": 50.7,
+      "wheelWidth": 30,
+      "axles": [
+        { "steer": true, "drive": false, "handbrake": true },
+        { "steer": false, "drive": true, "handbrake": true }
+      ]
+    },
+    "body": { "length": 1615, "width": 259, "height": 290, "groundClearance": 121, "x": 533.5 },
+    "centerOfMass": [438, 0, 160],
+    "seat": {
+      "location": [900, -42, 250],
+      "steeringWheel": { "location": [946.8, -42, 253], "radius": 21 }
+    },
+    "trailer": {
+      "coupler": { "type": "fifthWheel", "location": [1250, 0, 119] },
+      "landingGear": { "center": [1000, 0, 56], "extent": [10, 100, 56] },
+      "cargo": { "maxLoad": 21000, "location": [533.5, 0, 220] }
+    }
+  },
+  "derive": {
+    "stability": 0.55,
+    "cameraArmPerLength": 0.83,
+    "cameraHeightPerHeight": 1.82
+  },
+  "defaults": {
+    "mass": 6800,
+    "maxSpeed": 2917,
+    "dragCoefficient": 0.3,
+    "frontalArea": 10,
+    "engine": {
+      "maxTorque": 576,
+      "maxRPM": 5000,
+      "idleRPM": 600,
+      "torqueCurve": [[0, 0.6], [1000, 0.75], [2500, 0.9], [3800, 1], [4500, 0.962], [5000, 0.85]]
+    },
+    "transmission": {
+      "gearRatios": [4.027, 2.364, 1.532, 1.152, 0.852, 0.667],
+      "reverseRatio": 3.064,
+      "finalDrive": 4.459,
+      "changeUpRPM": 4500,
+      "changeDownRPM": 1200
+    },
+    "suspension": {
+      "maxRaise": 15,
+      "maxDrop": 22,
+      "springRate": 363,
+      "springPreload": 200,
+      "damping": 1.19
+    },
+    "steering": {
+      "maxAngle": 35,
+      "ackermann": true
+    },
+    "brakes": {
+      "brakeTorque": 17000,
+      "handbrakeTorque": 17000,
+      "abs": true,
+      "frontShare": 0.5
+    },
+    "tires": {
+      "friction": 1.15
+    },
+    "camera": {
+      "armLength": 1600,
+      "height": 450
+    }
+  },
+  "ranges": {
+    "mass": [3000, 15000],
+    "maxSpeed": [1500, 3500],
+    "dragCoefficient": [0.1, 1],
+    "suspension/maxRaise": [5, 40],
+    "suspension/maxDrop": [5, 40],
+    "suspension/springRate": [100, 2000],
+    "suspension/damping": [0.3, 3],
+    "brakes/brakeTorque": [5000, 20000],
+    "brakes/handbrakeTorque": [5000, 20000],
+    "tires/friction": [0.8, 5],
+    "wheels/*/radius": [40, 65],
+    "trailer/cargo/maxLoad": [0, 30000]
+  }
+}

@@ -164,6 +164,37 @@ namespace MantleVehicleChassisDocumentPrivate
 		return Out;
 	}
 
+	/** A hitch or a coupler (#446): its type and location. */
+	TSharedRef<FJsonObject> HitchJson(const FMantleVehicleHitchDesc& Hitch)
+	{
+		const TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
+		Out->SetStringField(TEXT("type"), Hitch.Kind == EMantleVehicleHitchKind::Ball ? TEXT("ball") : TEXT("fifthWheel"));
+		Out->SetField(TEXT("location"), Triple(Hitch.Location));
+		return Out;
+	}
+
+	/** A trailer's block (#446): the coupler, the landing gear box when it has one, and its cargo. */
+	TSharedRef<FJsonObject> TrailerJson(const FMantleVehicleTrailerDesc& T)
+	{
+		const TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
+		Out->SetObjectField(TEXT("coupler"), HitchJson(T.Coupler));
+		if (T.bLandingGear)
+		{
+			const TSharedRef<FJsonObject> Gear = MakeShared<FJsonObject>();
+			Gear->SetField(TEXT("center"), Triple(T.LandingGearCenter));
+			Gear->SetField(TEXT("extent"), Triple(T.LandingGearExtent));
+			Out->SetObjectField(TEXT("landingGear"), Gear);
+		}
+		const TSharedRef<FJsonObject> Cargo = MakeShared<FJsonObject>();
+		Cargo->SetField(TEXT("maxLoad"), Number(T.MaxCargoKg));
+		if (T.bCargoLocation)
+		{
+			Cargo->SetField(TEXT("location"), Triple(T.CargoLocation));
+		}
+		Out->SetObjectField(TEXT("cargo"), Cargo);
+		return Out;
+	}
+
 	TSharedRef<FJsonObject> HoverJson(const FMantleVehicleHoverDesc& H)
 	{
 		const TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
@@ -208,6 +239,50 @@ namespace MantleVehicleChassisDocumentPrivate
 		Damping->SetField(TEXT("maxSkirtBrakeAccel"), Number(H.Damping.MaxSkirtBrakeAccel));
 		Out->SetObjectField(TEXT("damping"), Damping);
 		Out->SetField(TEXT("angularDamping"), Number(H.AngularDamping));
+		return Out;
+	}
+
+	TSharedRef<FJsonObject> BoatJson(const FMantleVehicleBoatDesc& B)
+	{
+		const TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
+		const TSharedRef<FJsonObject> Hull = MakeShared<FJsonObject>();
+		const FMantleVehicleBoatHullDesc& H = B.Hull;
+		Hull->SetField(TEXT("location"), Triple(H.Location));
+		Hull->SetField(TEXT("length"), Number(H.Length));
+		Hull->SetField(TEXT("beam"), Number(H.Beam));
+		Hull->SetField(TEXT("depth"), Number(H.Depth));
+		Hull->SetField(TEXT("deadrise"), Number(H.DeadriseDegrees));
+		Hull->SetNumberField(TEXT("points"), H.Points);
+		Hull->SetField(TEXT("dragAlong"), Number(H.DragAlong));
+		Hull->SetField(TEXT("dragAcross"), Number(H.DragAcross));
+		Hull->SetField(TEXT("heaveDamping"), Number(H.HeaveDamping));
+		Out->SetObjectField(TEXT("hull"), Hull);
+		Out->SetField(TEXT("planingSpeed"), Number(B.PlaningSpeedCmPerSec));
+		const TSharedRef<FJsonObject> Drive = MakeShared<FJsonObject>();
+		const FMantleVehicleBoatPropulsionDesc& T = B.Propulsion;
+		Drive->SetStringField(TEXT("kind"), T.Kind == 1 ? TEXT("jet") : TEXT("propeller"));
+		Drive->SetField(TEXT("location"), Triple(T.Location));
+		Drive->SetField(TEXT("direction"), Triple(T.Direction));
+		Drive->SetField(TEXT("maxThrust"), Number(T.MaxThrustNewtons));
+		Drive->SetField(TEXT("reverseShare"), Number(T.ReverseShare));
+		Drive->SetField(TEXT("vectorAngle"), Number(T.VectorAngleDegrees));
+		Drive->SetField(TEXT("topSpeed"), Number(T.TopSpeedCmPerSec));
+		Drive->SetField(TEXT("brakeFade"), Number(T.BrakeFadeCmPerSec));
+		if (T.Kind != 1)
+		{
+			Drive->SetField(TEXT("propWalk"), Number(T.PropWalk));
+		}
+		Out->SetObjectField(TEXT("propulsion"), Drive);
+		if (B.bRudder)
+		{
+			const TSharedRef<FJsonObject> Fin = MakeShared<FJsonObject>();
+			Fin->SetField(TEXT("location"), Triple(B.Rudder.Location));
+			Fin->SetField(TEXT("area"), Number(B.Rudder.AreaM2));
+			Fin->SetField(TEXT("maxControlAngle"), Number(B.Rudder.MaxControlAngle));
+			Fin->SetField(TEXT("stallAngle"), Number(B.Rudder.StallAngle));
+			Out->SetObjectField(TEXT("rudder"), Fin);
+		}
+		Out->SetField(TEXT("angularDamping"), Number(B.AngularDamping));
 		return Out;
 	}
 
@@ -477,6 +552,43 @@ namespace MantleVehicleChassisDocumentPrivate
 		H.Damping.MaxSkirtBrakeAccel = Craft.MaxSkirtBrakeAccel;
 	}
 
+	/** A boat's or jet ski's hull, drive and rudder (#15): the hull is the body box, its keel the box's bottom along its middle. */
+	void DeriveBoat(const FMantleChassisSpec& Spec, const FMantleChassisHandling& Handling, FMantleVehicleDesc& D)
+	{
+		const FMantleChassisBoat& Craft = Spec.Boat;
+		D.MovementType = EMantleVehicleMovementKind::Boat;
+		FMantleVehicleBoatDesc& B = D.Boat;
+		B.Hull.Location = Spec.BoatHullLocation();
+		B.Hull.Length = Spec.Length;
+		B.Hull.Beam = Spec.Width;
+		B.Hull.Depth = Craft.HullDepth;
+		B.Hull.DeadriseDegrees = Craft.DeadriseDegrees;
+		B.Hull.Points = Craft.Points;
+		B.Hull.DragAlong = Craft.DragAlong;
+		B.Hull.DragAcross = Craft.DragAcross;
+		B.Hull.HeaveDamping = Craft.HeaveDamping;
+		B.PlaningSpeedCmPerSec = Craft.PlaningSpeedCmPerSec;
+		B.AngularDamping = Craft.AngularDamping;
+
+		FMantleVehicleBoatPropulsionDesc& Drive = B.Propulsion;
+		Drive.Kind = Craft.bJet ? 1 : 0;
+		Drive.Location = Spec.BoatDriveLocation();
+		Drive.Direction = FVector::ForwardVector;
+		Drive.MaxThrustNewtons = Handling.BoatThrustNewtons;
+		Drive.ReverseShare = Craft.ReverseShare;
+		Drive.VectorAngleDegrees = Craft.VectorAngle;
+		Drive.TopSpeedCmPerSec = Craft.TopSpeedCmPerSec;
+		Drive.PropWalk = Craft.bJet ? 0.0 : Craft.PropWalk;
+
+		B.bRudder = Craft.bRudder;
+		if (Craft.bRudder)
+		{
+			B.Rudder.Location = Spec.BoatRudderLocation();
+			B.Rudder.AreaM2 = Handling.BoatRudderAreaM2;
+			B.Rudder.MaxControlAngle = Craft.RudderMaxControlAngle;
+		}
+	}
+
 	/** The seat extras (kind, exit distance, rider) of Desc, and the boom, put on Document's seat and camera. */
 	void WriteSeatAndCamera(const FMantleVehicleDesc& Desc, FJsonObject& Document)
 	{
@@ -678,6 +790,54 @@ namespace MantleVehicleChassisDocumentPrivate
 			Hold(TEXT("hover/damping/maxSkirtBrakeAccel"), H.Damping.MaxSkirtBrakeAccel);
 			Hold(TEXT("hover/angularDamping"), H.AngularDamping);
 		}
+		if (D.MovementType == EMantleVehicleMovementKind::Boat)
+		{
+			FMantleVehicleBoatDesc& B = D.Boat;
+			HoldVector(TEXT("boat/hull/location/*"), B.Hull.Location);
+			Hold(TEXT("boat/hull/length"), B.Hull.Length);
+			Hold(TEXT("boat/hull/beam"), B.Hull.Beam);
+			Hold(TEXT("boat/hull/depth"), B.Hull.Depth);
+			Hold(TEXT("boat/hull/deadrise"), B.Hull.DeadriseDegrees);
+			Hold(TEXT("boat/hull/dragAlong"), B.Hull.DragAlong);
+			Hold(TEXT("boat/hull/dragAcross"), B.Hull.DragAcross);
+			Hold(TEXT("boat/hull/heaveDamping"), B.Hull.HeaveDamping);
+			Hold(TEXT("boat/planingSpeed"), B.PlaningSpeedCmPerSec);
+			HoldVector(TEXT("boat/propulsion/location/*"), B.Propulsion.Location);
+			Hold(TEXT("boat/propulsion/maxThrust"), B.Propulsion.MaxThrustNewtons);
+			Hold(TEXT("boat/propulsion/reverseShare"), B.Propulsion.ReverseShare);
+			Hold(TEXT("boat/propulsion/vectorAngle"), B.Propulsion.VectorAngleDegrees);
+			Hold(TEXT("boat/propulsion/topSpeed"), B.Propulsion.TopSpeedCmPerSec);
+			Hold(TEXT("boat/propulsion/brakeFade"), B.Propulsion.BrakeFadeCmPerSec);
+			Hold(TEXT("boat/propulsion/propWalk"), B.Propulsion.PropWalk);
+			if (B.bRudder)
+			{
+				HoldVector(TEXT("boat/rudder/location/*"), B.Rudder.Location);
+				Hold(TEXT("boat/rudder/area"), B.Rudder.AreaM2);
+				Hold(TEXT("boat/rudder/maxControlAngle"), B.Rudder.MaxControlAngle);
+				Hold(TEXT("boat/rudder/stallAngle"), B.Rudder.StallAngle);
+			}
+			Hold(TEXT("boat/angularDamping"), B.AngularDamping);
+		}
+		// A trailer's points and its cargo (#446): a utility trailer at 2.5 times its size would carry 35 t, past what a document can say.
+		if (D.MovementType == EMantleVehicleMovementKind::Trailer)
+		{
+			FMantleVehicleTrailerDesc& T = D.Trailer;
+			HoldVector(TEXT("trailer/coupler/location/*"), T.Coupler.Location);
+			if (T.bLandingGear)
+			{
+				HoldVector(TEXT("trailer/landingGear/center/*"), T.LandingGearCenter);
+				HoldVector(TEXT("trailer/landingGear/extent/*"), T.LandingGearExtent);
+			}
+			Hold(TEXT("trailer/cargo/maxLoad"), T.MaxCargoKg);
+			if (T.bCargoLocation)
+			{
+				HoldVector(TEXT("trailer/cargo/location/*"), T.CargoLocation);
+			}
+		}
+		if (D.bHitch)
+		{
+			HoldVector(TEXT("hitch/location/*"), D.Hitch.Location);
+		}
 	}
 
 	/** What a document path is, for a creator: the first row whose prefix the path starts with. */
@@ -716,6 +876,10 @@ namespace MantleVehicleChassisDocumentPrivate
 		{ TEXT("hover/thruster"), TEXT("The hover fan") },
 		{ TEXT("hover/rudder"), TEXT("The hovercraft's rudder") },
 		{ TEXT("hover"), TEXT("A hovercraft setting") },
+		{ TEXT("boat/hull"), TEXT("The boat's hull") },
+		{ TEXT("boat/propulsion"), TEXT("The boat's drive") },
+		{ TEXT("boat/rudder"), TEXT("The boat's rudder") },
+		{ TEXT("boat"), TEXT("A boat setting") },
 	};
 
 	/**
@@ -765,6 +929,10 @@ const TCHAR* FMantleVehicleChassisDocument::MovementName(const EMantleVehicleMov
 		return TEXT("helicopter");
 	case EMantleVehicleMovementKind::Hover:
 		return TEXT("hover");
+	case EMantleVehicleMovementKind::Boat:
+		return TEXT("boat");
+	case EMantleVehicleMovementKind::Trailer:
+		return TEXT("trailer");
 	default:
 		return TEXT("wheeled");
 	}
@@ -807,6 +975,10 @@ void FMantleVehicleChassisDocument::Derive(const FMantleChassisSpec& Spec, FMant
 	InOutDesc.Flight = FMantleVehicleFlightDesc();
 	InOutDesc.Helicopter = FMantleVehicleHelicopterDesc();
 	InOutDesc.Hover = FMantleVehicleHoverDesc();
+	InOutDesc.Boat = FMantleVehicleBoatDesc();
+	InOutDesc.Trailer = FMantleVehicleTrailerDesc();
+	InOutDesc.bHitch = false;
+	InOutDesc.Hitch = FMantleVehicleHitchDesc();
 	InOutDesc.SeatKind = SeatKindOf(Spec.DriverSeat);
 	InOutDesc.PassengerSeatKind = EMantleVehicleSeatKind::Car;
 	InOutDesc.bSeatExitSideDistance = false;
@@ -830,6 +1002,21 @@ void FMantleVehicleChassisDocument::Derive(const FMantleChassisSpec& Spec, FMant
 	{
 		DeriveHovercraft(Spec, Handling, InOutDesc);
 	}
+	if (Spec.Boat.bSet)
+	{
+		DeriveBoat(Spec, Handling, InOutDesc);
+	}
+	// A trailer and a hitch (#446): the chassis's own, in its space; a resized one's were scaled with it (FMantleChassisSpec::Scaled).
+	if (Spec.bTrailer)
+	{
+		InOutDesc.MovementType = EMantleVehicleMovementKind::Trailer;
+		InOutDesc.Trailer = Spec.Trailer;
+	}
+	if (Spec.bHitch)
+	{
+		InOutDesc.bHitch = true;
+		InOutDesc.Hitch = Spec.Hitch;
+	}
 	HoldToRanges(InOutDesc, OutHeld);
 }
 
@@ -852,8 +1039,18 @@ void FMantleVehicleChassisDocument::Write(const FMantleVehicleDesc& Desc, FJsonO
 	case EMantleVehicleMovementKind::Hover:
 		Document.SetObjectField(TEXT("hover"), HoverJson(Desc.Hover));
 		break;
+	case EMantleVehicleMovementKind::Boat:
+		Document.SetObjectField(TEXT("boat"), BoatJson(Desc.Boat));
+		break;
+	case EMantleVehicleMovementKind::Trailer:
+		Document.SetObjectField(TEXT("trailer"), TrailerJson(Desc.Trailer));
+		break;
 	default:
 		break;
+	}
+	if (Desc.bHitch)
+	{
+		Document.SetObjectField(TEXT("hitch"), HitchJson(Desc.Hitch));
 	}
 	WriteSeatAndCamera(Desc, Document);
 }
@@ -874,40 +1071,21 @@ TArray<FVector2D> FMantleVehicleChassisDocument::GroundSteeringSpeedCurve()
 		FVector2D(120.0, 0.24) };
 }
 
-TArray<FVector2D> FMantleVehicleChassisDocument::TwoWheelerSteeringSpeedCurve()
-{
-	// #378, from the drive probe's steering sweeps on the bike at its real grip: at each speed 1.3x the road-wheel angle that gives its peak
-	// sideways g, as a share of its 40 deg lock (this tyre model has no camber thrust, so the front tyre's slip angle turns the bike, as on a car).
-	// Full lock to 20 mph for walking-pace turns.
-	return { FVector2D(0.0, 1.0), FVector2D(20.0, 0.8), FVector2D(25.0, 0.75), FVector2D(37.5, 0.53), FVector2D(56.0, 0.35), FVector2D(75.0, 0.27),
-		FVector2D(120.0, 0.24) };
-}
-
 void FMantleVehicleChassisDocument::ComposeGroundHandling(const FMantleChassisSpec& Spec, FJsonObject& Document, TArray<FString>* OutHeld)
 {
 	using namespace MantleVehicleChassisDocumentPrivate;
 
-	if (Spec.Aircraft.bSet || Spec.Helicopter.bSet || Spec.Hovercraft.bSet)
-	{
-		return;
-	}
-	// A rider on two wheels (#378) gets its own steering curve and keeps its tyres' own grip (a bike's front and rear are the preset's, not a car's split).
-	const bool bTwoWheeler = Spec.WheelCount() == 2 && Spec.Rider.bSet;
-	if (Spec.WheelCount() <= 2 && !bTwoWheeler)
+	if (Spec.Aircraft.bSet || Spec.Helicopter.bSet || Spec.Hovercraft.bSet || Spec.Boat.bSet || Spec.WheelCount() <= 2)
 	{
 		return;
 	}
 	TArray<TSharedPtr<FJsonValue>> Curve;
-	for (const FVector2D& Point : bTwoWheeler ? TwoWheelerSteeringSpeedCurve() : GroundSteeringSpeedCurve())
+	for (const FVector2D& Point : GroundSteeringSpeedCurve())
 	{
 		const TArray<TSharedPtr<FJsonValue>> Pair = { Number(Point.X), Number(Point.Y) };
 		Curve.Add(MakeShared<FJsonValueArray>(Pair));
 	}
 	ChildObject(Document, TEXT("steering"))->SetArrayField(TEXT("speedCurve"), Curve);
-	if (bTwoWheeler)
-	{
-		return;
-	}
 
 	// The preset's one friction is the middle, so a two-axle car's average grip is unchanged. Held to the document's ranges, as the movement numbers are.
 	const TSharedPtr<FJsonObject> Tires = ChildObject(Document, TEXT("tires"));
@@ -973,7 +1151,7 @@ FString FMantleVehicleChassisDocument::MovementBlocksJson(const FMantleChassisSp
 	const TSharedRef<FJsonObject> Scratch = MakeShared<FJsonObject>();
 	Compose(Spec, *Scratch);
 	const TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
-	for (const TCHAR* Block : { TEXT("flight"), TEXT("helicopter"), TEXT("hover") })
+	for (const TCHAR* Block : { TEXT("flight"), TEXT("helicopter"), TEXT("hover"), TEXT("boat"), TEXT("trailer"), TEXT("hitch") })
 	{
 		const TSharedPtr<FJsonObject>* Found = nullptr;
 		if (Scratch->TryGetObjectField(Block, Found) && Found && Found->IsValid())
@@ -1084,7 +1262,8 @@ bool FMantleVehicleChassisDocument::MergeSource(const UMantleVehicleSource& Sour
 			return Refuse(FString::Printf(TEXT("the vehicle's movement blocks hold %s, which is not an object"), *Key));
 		}
 		if (Key.Equals(TEXT("flight"), ESearchCase::CaseSensitive) || Key.Equals(TEXT("helicopter"), ESearchCase::CaseSensitive)
-			|| Key.Equals(TEXT("hover"), ESearchCase::CaseSensitive))
+			|| Key.Equals(TEXT("hover"), ESearchCase::CaseSensitive) || Key.Equals(TEXT("boat"), ESearchCase::CaseSensitive)
+			|| Key.Equals(TEXT("trailer"), ESearchCase::CaseSensitive) || Key.Equals(TEXT("hitch"), ESearchCase::CaseSensitive))
 		{
 			Document.SetObjectField(Key, Value);
 			continue;
@@ -1101,7 +1280,7 @@ bool FMantleVehicleChassisDocument::MergeSource(const UMantleVehicleSource& Sour
 		}
 		else
 		{
-			return Refuse(FString::Printf(TEXT("the vehicle's movement blocks hold %s; a source sets flight, helicopter, hover, seat or camera there (the type and the kinds are its own fields)"), *Key));
+			return Refuse(FString::Printf(TEXT("the vehicle's movement blocks hold %s; a source sets flight, helicopter, hover, boat, trailer, hitch, seat or camera there (the type and the kinds are its own fields)"), *Key));
 		}
 		const TSharedPtr<FJsonObject>* Target = nullptr;
 		if (!Document.TryGetObjectField(Key, Target) || !Target || !Target->IsValid())
