@@ -53,6 +53,13 @@ namespace MantleVehiclePresetApplyTestPrivate
 			Test.TestEqual(FString::Printf(TEXT("%s"), *Path), ActualBool, ExpectedBool);
 			return;
 		}
+		// A string (#445: engine/drive) is the same string.
+		if (Expected->Type == EJson::String)
+		{
+			Test.TestTrue(FString::Printf(TEXT("%s is a string in the document"), *Path), Actual->Type == EJson::String);
+			Test.TestEqual(FString::Printf(TEXT("%s"), *Path), Actual->AsString(), Expected->AsString());
+			return;
+		}
 		double ExpectedNumber = 0.0;
 		double ActualNumber = 0.0;
 		if (!Expected->TryGetNumber(ExpectedNumber) || !Actual->TryGetNumber(ActualNumber))

@@ -122,6 +122,7 @@ namespace MantleVehiclePresetPrivate
 			TEXT("mass"), TEXT("maxSpeed"), TEXT("centerOfMass"), TEXT("dragCoefficient"), TEXT("frontalArea"),
 			TEXT("engine/maxTorque"), TEXT("engine/maxRPM"), TEXT("engine/idleRPM"), TEXT("engine/torqueCurve"),
 			TEXT("engine/tractionControl"), TEXT("engine/engineBraking"),
+			TEXT("engine/drive"), TEXT("engine/peakPower"), TEXT("engine/regenBraking"), TEXT("engine/batteryCapacity"),
 			TEXT("transmission/gearRatios"), TEXT("transmission/reverseRatio"), TEXT("transmission/finalDrive"),
 			TEXT("transmission/changeUpRPM"), TEXT("transmission/changeDownRPM"), TEXT("transmission/shiftTime"),
 			TEXT("suspension/maxRaise"), TEXT("suspension/maxDrop"), TEXT("suspension/springRate"),
@@ -223,6 +224,23 @@ namespace MantleVehiclePresetPrivate
 				Bad(Path);
 				return false;
 			}
+			return true;
+		}
+
+		/** A string (#445: the engine's drive). */
+		bool String(const FString& Path, FString& Out)
+		{
+			const TSharedPtr<FJsonValue> Value = Find(Path);
+			if (!Value.IsValid())
+			{
+				return false;
+			}
+			if (Value->Type != EJson::String)
+			{
+				Bad(Path);
+				return false;
+			}
+			Out = Value->AsString();
 			return true;
 		}
 
@@ -556,6 +574,12 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 	Reader.Float(TEXT("dragCoefficient"), T.DragCoefficient);
 	Reader.Float(TEXT("frontalArea"), T.FrontalArea);
 
+	// #445: an electric motor, with its power, regen and battery. A preset sets the drive whole: a combustion preset makes the vehicle combustion again.
+	FString Drive;
+	T.bElectric = Reader.String(TEXT("engine/drive"), Drive) && Drive == TEXT("electric");
+	Reader.Float(TEXT("engine/peakPower"), T.PeakPower);
+	Reader.Float(TEXT("engine/regenBraking"), T.RegenBraking);
+	Reader.Float(TEXT("engine/batteryCapacity"), T.BatteryCapacity);
 	Reader.Float(TEXT("engine/maxTorque"), T.MaxTorque);
 	Reader.Int(TEXT("engine/maxRPM"), T.MaxRPM);
 	Reader.Int(TEXT("engine/idleRPM"), T.IdleRPM);

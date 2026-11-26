@@ -3929,22 +3929,36 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 	Doc->SetField(TEXT("frontalArea"), VehicleNumber(T.FrontalArea));
 
 	TSharedRef<FJsonObject> Engine = MakeShared<FJsonObject>();
-	Engine->SetField(TEXT("maxTorque"), VehicleNumber(T.MaxTorque));
-	Engine->SetField(TEXT("maxRPM"), VehicleInteger(T.MaxRPM));
-	Engine->SetField(TEXT("idleRPM"), VehicleInteger(T.IdleRPM));
-	TArray<TSharedPtr<FJsonValue>> Curve;
-	for (const FVector2D& Point : T.TorqueCurve)
+	if (T.bElectric)
 	{
-		TArray<TSharedPtr<FJsonValue>> Pair = { VehicleNumber(Point.X), VehicleNumber(Point.Y) };
-		Curve.Add(MakeShared<FJsonValueArray>(Pair));
+		// An electric motor (#445): its peak torque, top speed, peak power, regen and battery; no idle, torque curve or engine braking.
+		Engine->SetStringField(TEXT("drive"), TEXT("electric"));
+		Engine->SetField(TEXT("maxTorque"), VehicleNumber(T.MaxTorque));
+		Engine->SetField(TEXT("maxRPM"), VehicleInteger(T.MaxRPM));
+		Engine->SetField(TEXT("peakPower"), VehicleNumber(T.PeakPower));
+		Engine->SetField(TEXT("regenBraking"), VehicleNumber(T.RegenBraking));
+		Engine->SetField(TEXT("batteryCapacity"), VehicleNumber(T.BatteryCapacity));
+		Engine->SetBoolField(TEXT("tractionControl"), T.bTractionControl);
 	}
-	Engine->SetArrayField(TEXT("torqueCurve"), Curve);
-	// The driver aids (#376), part of the car: traction control always written, so the creator's document says it; engine braking only when the car
-	// has some (absent: none).
-	Engine->SetBoolField(TEXT("tractionControl"), T.bTractionControl);
-	if (T.EngineBraking > 0.f)
+	else
 	{
-		Engine->SetField(TEXT("engineBraking"), VehicleNumber(T.EngineBraking));
+		Engine->SetField(TEXT("maxTorque"), VehicleNumber(T.MaxTorque));
+		Engine->SetField(TEXT("maxRPM"), VehicleInteger(T.MaxRPM));
+		Engine->SetField(TEXT("idleRPM"), VehicleInteger(T.IdleRPM));
+		TArray<TSharedPtr<FJsonValue>> Curve;
+		for (const FVector2D& Point : T.TorqueCurve)
+		{
+			TArray<TSharedPtr<FJsonValue>> Pair = { VehicleNumber(Point.X), VehicleNumber(Point.Y) };
+			Curve.Add(MakeShared<FJsonValueArray>(Pair));
+		}
+		Engine->SetArrayField(TEXT("torqueCurve"), Curve);
+		// The driver aids (#376), part of the car: traction control always written, so the creator's document says it; engine braking only when the car
+		// has some (absent: none).
+		Engine->SetBoolField(TEXT("tractionControl"), T.bTractionControl);
+		if (T.EngineBraking > 0.f)
+		{
+			Engine->SetField(TEXT("engineBraking"), VehicleNumber(T.EngineBraking));
+		}
 	}
 	Doc->SetObjectField(TEXT("engine"), Engine);
 
@@ -3953,20 +3967,30 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 	for (const float Ratio : T.GearRatios)
 	{
 		Gears.Add(VehicleNumber(Ratio));
+		// An electric car (#445) has one fixed reduction: its first ratio, nothing else.
+		if (T.bElectric) break;
 	}
 	Transmission->SetArrayField(TEXT("gearRatios"), Gears);
-	Transmission->SetField(TEXT("reverseRatio"), VehicleNumber(T.ReverseRatio));
-	Transmission->SetField(TEXT("finalDrive"), VehicleNumber(T.FinalDrive));
-	if (T.ChangeUpRPM > 0)
+	if (T.bElectric)
 	{
-		Transmission->SetField(TEXT("changeUpRPM"), VehicleInteger(T.ChangeUpRPM));
+		// It reverses through the same ratio and never shifts (#445): only the final drive.
+		Transmission->SetField(TEXT("finalDrive"), VehicleNumber(T.FinalDrive));
 	}
-	if (T.ChangeDownRPM > 0)
+	else
 	{
-		Transmission->SetField(TEXT("changeDownRPM"), VehicleInteger(T.ChangeDownRPM));
+		Transmission->SetField(TEXT("reverseRatio"), VehicleNumber(T.ReverseRatio));
+		Transmission->SetField(TEXT("finalDrive"), VehicleNumber(T.FinalDrive));
+		if (T.ChangeUpRPM > 0)
+		{
+			Transmission->SetField(TEXT("changeUpRPM"), VehicleInteger(T.ChangeUpRPM));
+		}
+		if (T.ChangeDownRPM > 0)
+		{
+			Transmission->SetField(TEXT("changeDownRPM"), VehicleInteger(T.ChangeDownRPM));
+		}
+		// Each gear change's time (#376), part of the car: always written, so the creator's document says it (absent, the game takes 0.5 s).
+		Transmission->SetField(TEXT("shiftTime"), VehicleNumber(T.ShiftTime));
 	}
-	// Each gear change's time (#376), part of the car: always written, so the creator's document says it (absent, the game takes 0.5 s).
-	Transmission->SetField(TEXT("shiftTime"), VehicleNumber(T.ShiftTime));
 	Doc->SetObjectField(TEXT("transmission"), Transmission);
 
 	TSharedRef<FJsonObject> Suspension = MakeShared<FJsonObject>();
@@ -4599,30 +4623,40 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 	VehicleCheckRange(Subject, TEXT("Frontal Area"), TEXT("frontalArea"), T.FrontalArea, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Max Torque"), TEXT("engine/maxTorque"), T.MaxTorque, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Max RPM"), TEXT("engine/maxRPM"), T.MaxRPM, OutIssues);
-	VehicleCheckRange(Subject, TEXT("Idle RPM"), TEXT("engine/idleRPM"), T.IdleRPM, OutIssues);
-	VehicleCheckRange(Subject, TEXT("Engine Braking"), TEXT("engine/engineBraking"), T.EngineBraking, OutIssues);
-	if (T.IdleRPM >= T.MaxRPM)
+	if (T.bElectric)
 	{
-		AddError(FString::Printf(TEXT("idles at %d RPM, not below its Max RPM (%d)."), T.IdleRPM, T.MaxRPM), TEXT("Lower Idle RPM or raise Max RPM."));
+		// An electric motor (#445): its power, regen and battery; it has no idle, torque curve or engine braking to check.
+		VehicleCheckRange(Subject, TEXT("Peak Power"), TEXT("engine/peakPower"), T.PeakPower, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Regen Braking"), TEXT("engine/regenBraking"), T.RegenBraking, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Battery Capacity"), TEXT("engine/batteryCapacity"), T.BatteryCapacity, OutIssues);
 	}
-	if (T.TorqueCurve.Num() < 2 || T.TorqueCurve.Num() > FMantleVehicleLimits::MaxTorqueCurvePoints)
+	else
 	{
-		AddError(FString::Printf(TEXT("has %d torque curve points; a vehicle has 2 to %d."), T.TorqueCurve.Num(), FMantleVehicleLimits::MaxTorqueCurvePoints),
-			TEXT("Give Torque Curve at least a point at low RPM and one at high RPM."));
-	}
-	for (int32 Point = 0; Point < T.TorqueCurve.Num(); ++Point)
-	{
-		VehicleCheckRange(Subject, FString::Printf(TEXT("Torque Curve point %d's RPM"), Point), TEXT("engine/torqueCurve/*/0"), T.TorqueCurve[Point].X, OutIssues);
-		VehicleCheckRange(Subject, FString::Printf(TEXT("Torque Curve point %d's torque"), Point), TEXT("engine/torqueCurve/*/1"), T.TorqueCurve[Point].Y, OutIssues);
-		if (Point > 0 && T.TorqueCurve[Point].X <= T.TorqueCurve[Point - 1].X)
+		VehicleCheckRange(Subject, TEXT("Idle RPM"), TEXT("engine/idleRPM"), T.IdleRPM, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Engine Braking"), TEXT("engine/engineBraking"), T.EngineBraking, OutIssues);
+		if (T.IdleRPM >= T.MaxRPM)
 		{
-			AddError(FString::Printf(TEXT("has a torque curve whose point %d does not rise in RPM past the one before."), Point),
-				TEXT("List Torque Curve's points from low RPM to high."));
+			AddError(FString::Printf(TEXT("idles at %d RPM, not below its Max RPM (%d)."), T.IdleRPM, T.MaxRPM), TEXT("Lower Idle RPM or raise Max RPM."));
 		}
-		else if (Point > 0 && T.TorqueCurve[Point].X > T.MaxRPM)
+		if (T.TorqueCurve.Num() < 2 || T.TorqueCurve.Num() > FMantleVehicleLimits::MaxTorqueCurvePoints)
 		{
-			AddError(FString::Printf(TEXT("has a torque curve point at %s RPM, past its Max RPM (%d)."), *VehicleNumberText(T.TorqueCurve[Point].X), T.MaxRPM),
-				TEXT("Keep every Torque Curve point at or below Max RPM."));
+			AddError(FString::Printf(TEXT("has %d torque curve points; a vehicle has 2 to %d."), T.TorqueCurve.Num(), FMantleVehicleLimits::MaxTorqueCurvePoints),
+				TEXT("Give Torque Curve at least a point at low RPM and one at high RPM."));
+		}
+		for (int32 Point = 0; Point < T.TorqueCurve.Num(); ++Point)
+		{
+			VehicleCheckRange(Subject, FString::Printf(TEXT("Torque Curve point %d's RPM"), Point), TEXT("engine/torqueCurve/*/0"), T.TorqueCurve[Point].X, OutIssues);
+			VehicleCheckRange(Subject, FString::Printf(TEXT("Torque Curve point %d's torque"), Point), TEXT("engine/torqueCurve/*/1"), T.TorqueCurve[Point].Y, OutIssues);
+			if (Point > 0 && T.TorqueCurve[Point].X <= T.TorqueCurve[Point - 1].X)
+			{
+				AddError(FString::Printf(TEXT("has a torque curve whose point %d does not rise in RPM past the one before."), Point),
+					TEXT("List Torque Curve's points from low RPM to high."));
+			}
+			else if (Point > 0 && T.TorqueCurve[Point].X > T.MaxRPM)
+			{
+				AddError(FString::Printf(TEXT("has a torque curve point at %s RPM, past its Max RPM (%d)."), *VehicleNumberText(T.TorqueCurve[Point].X), T.MaxRPM),
+					TEXT("Keep every Torque Curve point at or below Max RPM."));
+			}
 		}
 	}
 	// #821: the steering's speed curve, when it has one, has 1 to 8 points rising in speed.
@@ -4645,6 +4679,11 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 	{
 		VehicleCheckRange(Subject, TEXT("Tire Rear Friction"), TEXT("tires/rearFriction"), T.TireRearFriction, OutIssues);
 	}
+	if (T.bElectric && T.GearRatios.Num() != 1)
+	{
+		AddError(FString::Printf(TEXT("is electric with %d gears; an electric motor has one fixed reduction."), T.GearRatios.Num()),
+			TEXT("Give Gear Ratios one entry (Final Drive times it is the motor's reduction)."));
+	}
 	if (T.GearRatios.Num() < 1 || T.GearRatios.Num() > FMantleVehicleLimits::MaxGears)
 	{
 		AddError(FString::Printf(TEXT("has %d gears; a vehicle has 1 to %d."), T.GearRatios.Num(), FMantleVehicleLimits::MaxGears), TEXT("Give Gear Ratios 1 to 8 entries, first gear first."));
@@ -4653,27 +4692,31 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 	{
 		VehicleCheckRange(Subject, FString::Printf(TEXT("Gear Ratios %d"), Gear), TEXT("transmission/gearRatios/*"), T.GearRatios[Gear], OutIssues);
 	}
-	VehicleCheckRange(Subject, TEXT("Reverse Ratio"), TEXT("transmission/reverseRatio"), T.ReverseRatio, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Final Drive"), TEXT("transmission/finalDrive"), T.FinalDrive, OutIssues);
-	const int32 ChangeUp = T.ChangeUpRPM > 0 ? T.ChangeUpRPM : static_cast<int32>(T.MaxRPM * FMantleVehicleConverter::DefaultChangeUpFraction);
-	if (T.ChangeUpRPM > 0)
+	// An electric car (#445) has no reverse ratio, shift points or shift time.
+	if (!T.bElectric)
 	{
-		VehicleCheckRange(Subject, TEXT("Change Up RPM"), TEXT("transmission/changeUpRPM"), T.ChangeUpRPM, OutIssues);
-		if (T.ChangeUpRPM > T.MaxRPM)
+		VehicleCheckRange(Subject, TEXT("Reverse Ratio"), TEXT("transmission/reverseRatio"), T.ReverseRatio, OutIssues);
+		const int32 ChangeUp = T.ChangeUpRPM > 0 ? T.ChangeUpRPM : static_cast<int32>(T.MaxRPM * FMantleVehicleConverter::DefaultChangeUpFraction);
+		if (T.ChangeUpRPM > 0)
 		{
-			AddError(FString::Printf(TEXT("changes up at %d RPM, past its Max RPM (%d)."), T.ChangeUpRPM, T.MaxRPM), TEXT("Lower Change Up RPM, or set it to 0 for 85% of Max RPM."));
+			VehicleCheckRange(Subject, TEXT("Change Up RPM"), TEXT("transmission/changeUpRPM"), T.ChangeUpRPM, OutIssues);
+			if (T.ChangeUpRPM > T.MaxRPM)
+			{
+				AddError(FString::Printf(TEXT("changes up at %d RPM, past its Max RPM (%d)."), T.ChangeUpRPM, T.MaxRPM), TEXT("Lower Change Up RPM, or set it to 0 for 85% of Max RPM."));
+			}
 		}
-	}
-	if (T.ChangeDownRPM > 0)
-	{
-		VehicleCheckRange(Subject, TEXT("Change Down RPM"), TEXT("transmission/changeDownRPM"), T.ChangeDownRPM, OutIssues);
-		if (T.ChangeDownRPM >= ChangeUp)
+		if (T.ChangeDownRPM > 0)
 		{
-			AddError(FString::Printf(TEXT("changes down at %d RPM, not below where it changes up (%d)."), T.ChangeDownRPM, ChangeUp),
-				TEXT("Lower Change Down RPM, or set it to 0 for 40% of Max RPM."));
+			VehicleCheckRange(Subject, TEXT("Change Down RPM"), TEXT("transmission/changeDownRPM"), T.ChangeDownRPM, OutIssues);
+			if (T.ChangeDownRPM >= ChangeUp)
+			{
+				AddError(FString::Printf(TEXT("changes down at %d RPM, not below where it changes up (%d)."), T.ChangeDownRPM, ChangeUp),
+					TEXT("Lower Change Down RPM, or set it to 0 for 40% of Max RPM."));
+			}
 		}
+		VehicleCheckRange(Subject, TEXT("Shift Time"), TEXT("transmission/shiftTime"), T.ShiftTime, OutIssues);
 	}
-	VehicleCheckRange(Subject, TEXT("Shift Time"), TEXT("transmission/shiftTime"), T.ShiftTime, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Suspension Max Raise"), TEXT("suspension/maxRaise"), T.SuspensionMaxRaise, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Suspension Max Drop"), TEXT("suspension/maxDrop"), T.SuspensionMaxDrop, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Spring Rate"), TEXT("suspension/springRate"), T.SpringRate, OutIssues);
