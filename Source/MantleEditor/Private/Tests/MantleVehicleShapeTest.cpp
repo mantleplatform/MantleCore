@@ -160,7 +160,8 @@ bool FMantleVehicleShapeChangesHandlingTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the sentence starts with the weight"), Said.StartsWith(TEXT("Weighs about ")));
 	TestTrue(TEXT("the sentence gives the turning circle"), Said.Contains(TEXT("Turns in a circle about 7 m across.")));
 	TestTrue(TEXT("the weight is in metric tons"), Said.Contains(TEXT("metric tons. Turns in")));
-	TestTrue(TEXT("the sentence gives the top speed"), Said.Contains(TEXT("Top speed about 160 km/h.")));
+	// The sedan preset's maxSpeed 5944 cm/s (cars step 6: the 2018 Camry's 214 km/h), said to the nearest 5.
+	TestTrue(TEXT("the sentence gives the top speed"), Said.Contains(TEXT("Top speed about 215 km/h.")));
 
 	// Ground clearance lifts the seat with the body; body height does not (a driver is the same size in any vehicle).
 	FMantleVehicleDimensions Lifted = Own;
@@ -263,8 +264,8 @@ bool FMantleVehicleShapeHoldsTest::RunTest(const FString& Parameters)
 			TestEqual(*FString::Printf(TEXT("%s as it is has nothing to warn about"), *Id), FMantleVehicleShape::Warnings(Preset).Num(), 0);
 		}
 	}
-	// A handling number the derivation had to hold at a limit is said in plain words: a body 2.5 times the sedan's in every direction weighs more than
-	// a vehicle may.
+	// A handling number the derivation had to hold at a limit is said in plain words: a body 2.5 times the sedan's in every direction needs brakes
+	// past the document's 20000 Nm (4300 x 2.5^4). Not its weight: about 24 t is inside the 80 t a vehicle may weigh since tanks (#448).
 	FMantleVehicleDimensions Huge = Own;
 	for (const EMantleVehicleDimension Dimension : { EMantleVehicleDimension::BodyLength, EMantleVehicleDimension::BodyWidth, EMantleVehicleDimension::BodyHeight,
 			 EMantleVehicleDimension::GroundClearance })
@@ -275,9 +276,9 @@ bool FMantleVehicleShapeHoldsTest::RunTest(const FString& Parameters)
 	if (TestTrue(TEXT("a huge sedan is shaped"), HugeSpec.Derived.IsSet()))
 	{
 		TestTrue(TEXT("the derivation listed what it held"), HugeSpec.Derived->Clamped.Num() > 0);
-		TestTrue(TEXT("and the window says the weight is held"), FMantleVehicleShape::Warnings(HugeSpec).ContainsByPredicate([](const FText& Warning)
+		TestTrue(TEXT("and the window says the brakes are held"), FMantleVehicleShape::Warnings(HugeSpec).ContainsByPredicate([](const FText& Warning)
 		{
-			return Warning.ToString().Contains(TEXT("as heavy as Mantle allows"));
+			return Warning.ToString().Contains(TEXT("brakes are as strong as Mantle allows"));
 		}));
 	}
 

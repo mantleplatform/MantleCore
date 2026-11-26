@@ -260,20 +260,20 @@ bool FMantleVehicleTypeMatchCheck::IsTrackBeltName(const FString& Name)
 	return false;
 }
 
-bool FMantleVehicleTypeMatchCheck::WheelsPackedLikeTracks(const TConstArrayView<FVector> Positions, const double FloorZ)
+bool FMantleVehicleTypeMatchCheck::WheelsPackedLikeTracks(const TConstArrayView<FVector> Positions, const double FloorZ, const FVector& BodySize)
 {
 	if (Positions.Num() < 8)
 	{
 		return false;
 	}
-	// The row the wheels make runs along the longer side of their box; the two sides are either half across it.
+	// The rows run along the vehicle's longer side (its body's, not the wheels' own box: a short track's road wheels can span less than its gauge, as
+	// four 50 cm wheels 90 cm apart on a 310 cm gauge do); the two sides are either half of the wheels' box across it.
 	FBox Box(ForceInit);
 	for (const FVector& Position : Positions)
 	{
 		Box += Position;
 	}
-	const FVector Size = Box.GetSize();
-	const int32 Along = Size.X >= Size.Y ? 0 : 1;
+	const int32 Along = BodySize.X >= BodySize.Y ? 0 : 1;
 	const int32 Across = 1 - Along;
 	const double Middle = Box.GetCenter()[Across];
 	TArray<FVector> Sides[2];
@@ -407,7 +407,7 @@ EMantleVehicleModelFamily FMantleVehicleTypeMatchCheck::FamilyOfModel(const FMan
 			{
 				Hubs.Add(Model.BonePositions[Wheel]);
 			}
-			bPacked = WheelsPackedLikeTracks(Hubs, WheelBounds.Min.Z);
+			bPacked = WheelsPackedLikeTracks(Hubs, WheelBounds.Min.Z, WheelBounds.GetSize());
 		}
 		if (TrackBones.Num() > 0 || bTrackMaterial || bPacked)
 		{
