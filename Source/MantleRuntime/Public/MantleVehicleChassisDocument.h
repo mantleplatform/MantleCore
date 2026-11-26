@@ -28,6 +28,16 @@ struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 	static constexpr double HelicopterCollectiveRate = 1.0;
 	/** A hovercraft's rigid-body angular damping, per second, on the ground and in the air alike (default 0.5): hover.angularDamping. */
 	static constexpr double HovercraftAngularDamping = 0.5;
+	/** A hovercraft's slide assist with the builder's Grip all the way to grippy (#381): the car-like hold every hovercraft had before #381. */
+	static constexpr double HovercraftGrippyLateralPerSecond = 1.5;
+	static constexpr double HovercraftGrippyMaxLateralAccel = 400.0;
+	static constexpr double HovercraftGrippyYawPerSecond = 2.0;
+	static constexpr double HovercraftGrippyMaxYawAccelDegrees = 180.0;
+	/**
+	 * One of a hovercraft's slide dampers for the builder's Grip (-1 to 1, #381): in two halves, from nothing (-1, a true hovercraft) to the preset's
+	 * own Own (0, a real one) and on to Grippy (1), in straight lines. Pure.
+	 */
+	static double HovercraftSlide(double Grip, double Own, double Grippy);
 	/**
 	 * How much of the elevator's travel the player's keys and stick reach (flight.pitchAuthority): half of its 20 degrees, a visible flap and a real climb that is
 	 * still hard to stall from one held key.

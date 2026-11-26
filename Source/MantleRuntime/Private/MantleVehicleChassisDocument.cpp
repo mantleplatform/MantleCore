@@ -562,11 +562,13 @@ namespace MantleVehicleChassisDocumentPrivate
 		H.Rudder.MaxControlAngle = Craft.FinMaxControlAngle;
 		H.Rudder.StallAngle = Craft.FinStallAngle;
 
-		// What stands in for a tire's grip, and the skirt brake.
-		H.Damping.LateralPerSecond = Craft.LateralPerSecond;
-		H.Damping.MaxLateralAccel = Craft.MaxLateralAccel;
-		H.Damping.YawPerSecond = Craft.YawPerSecond;
-		H.Damping.MaxYawAccelDegrees = Craft.MaxYawAccelDegrees;
+		// What stands in for a tire's grip, as the builder's Grip slider sets it (#381), and the skirt brake.
+		using Doc = FMantleVehicleChassisDocument;
+		const double Grip = Handling.HoverGrip;
+		H.Damping.LateralPerSecond = Doc::HovercraftSlide(Grip, Craft.LateralPerSecond, Doc::HovercraftGrippyLateralPerSecond);
+		H.Damping.MaxLateralAccel = Doc::HovercraftSlide(Grip, Craft.MaxLateralAccel, Doc::HovercraftGrippyMaxLateralAccel);
+		H.Damping.YawPerSecond = Doc::HovercraftSlide(Grip, Craft.YawPerSecond, Doc::HovercraftGrippyYawPerSecond);
+		H.Damping.MaxYawAccelDegrees = Doc::HovercraftSlide(Grip, Craft.MaxYawAccelDegrees, Doc::HovercraftGrippyMaxYawAccelDegrees);
 		H.Damping.SkirtBrakePerSecond = Craft.SkirtBrakePerSecond;
 		H.Damping.MaxSkirtBrakeAccel = Craft.MaxSkirtBrakeAccel;
 	}
@@ -1100,9 +1102,12 @@ TArray<FVector2D> FMantleVehicleChassisDocument::TwoWheelerSteeringSpeedCurve()
 {
 	// #378, from the drive probe's steering sweeps on the bike at its real grip: at each speed 1.3x the road-wheel angle that gives its peak
 	// sideways g, as a share of its 40 deg lock (this tyre model has no camber thrust, so the front tyre's slip angle turns the bike, as on a car).
-	// Full lock to 20 mph for walking-pace turns.
-	return { FVector2D(0.0, 1.0), FVector2D(20.0, 0.8), FVector2D(25.0, 0.75), FVector2D(37.5, 0.53), FVector2D(56.0, 0.35), FVector2D(75.0, 0.27),
-		FVector2D(120.0, 0.24) };
+	// Measured on the default 600 (#378 probe round 1's diagnosis, the balanced bike): 20 km/h 0.68, 40 km/h 0.35, 60 km/h 0.19, 90 km/h 0.08,
+	// 120 km/h 0.05. Full lock at walking pace, for parking turns. From 56 mph it holds at the document's floor, 0.1 (steering/speedCurve/*/1
+	// is 0.1-1): 4 deg, above the 1.6-2.3 deg peak there, which the lean grip cap still bounds. Probe round 6 confirmed 60 km/h's 7.6 deg peak
+	// with 9 deg of lock free, and showed that more lock at speed is worse: past ~72 km/h the extra lock ran the bike's lean to its cap, then
+	// lean and yaw collapsed (opus-review-lean-r4-r6, #378).
+	return { FVector2D(0.0, 1.0), FVector2D(5.0, 1.0), FVector2D(12.4, 0.68), FVector2D(24.9, 0.35), FVector2D(37.3, 0.19), FVector2D(55.9, 0.1) };
 }
 
 void FMantleVehicleChassisDocument::ComposeGroundHandling(const FMantleChassisSpec& Spec, FJsonObject& Document, TArray<FString>* OutHeld)
@@ -1342,4 +1347,10 @@ bool FMantleVehicleChassisDocument::MergeSource(const UMantleVehicleSource& Sour
 		}
 	}
 	return true;
+}
+
+double FMantleVehicleChassisDocument::HovercraftSlide(const double Grip, const double Own, const double Grippy)
+{
+	const double G = FMath::IsFinite(Grip) ? FMath::Clamp(Grip, -1.0, 1.0) : 0.0;
+	return G < 0.0 ? Own * (1.0 + G) : Own + (Grippy - Own) * G;
 }

@@ -634,7 +634,7 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeFeelRow(const EMantleVehicleFeel 
 		[
 			SNew(SBox).WidthOverride(150.f)
 			[
-				SNew(STextBlock).Text(FMantleVehicleShape::FeelLabel(Feel)).ToolTipText(FMantleVehicleShape::FeelHelp(Feel))
+				SNew(STextBlock).Text(FMantleVehicleShape::FeelLabel(Feel)).ToolTipText_Lambda([this, Feel] { return FMantleVehicleShape::FeelHelp(Feel, Shape.GetFamily()); })
 			]
 		]
 		+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center).Padding(0.f, 4.f)
@@ -645,7 +645,7 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeFeelRow(const EMantleVehicleFeel 
 				.Delta(0.05f)
 				.MinFractionalDigits(2)
 				.MaxFractionalDigits(2)
-				.ToolTipText(FMantleVehicleShape::FeelHelp(Feel))
+				.ToolTipText_Lambda([this, Feel] { return FMantleVehicleShape::FeelHelp(Feel, Shape.GetFamily()); })
 				.Value_Lambda([this, Feel] { return static_cast<float>(Shape.GetFeel(Feel)); })
 				.OnValueChanged_Lambda([this, Feel](float Value) { SetFeel(Feel, Value); })
 				.OnEndSliderMovement_Lambda([this](float) { FlushPreview(); })

@@ -1730,24 +1730,16 @@ class _VehiclesService:
     """Spawn and seat cars: the vehicles in the place's storage (server), and read the car the local player drives (client)."""
     boost_started: Signal
     boost_stopped: Signal
-    coupled: Signal
     damaged: Signal
     destroyed: Signal
     fuel_changed: Signal
     fuel_empty: Signal
     ready: Signal
-    uncoupled: Signal
-    def couple(self, vehicle: Entity, trailer: Entity, snap: bool = ..., /) -> bool:
-        """Couple a trailer to the vehicle's hitch. With snap true, the trailer is first moved straight behind the vehicle with its coupler on the hitch: use it to spawn a ready rig. Without snap the trailer is coupled where it stands and drawn onto the hitch over a moment, so put it close behind first. Returns false, changing nothing, when the vehicle has no hitch, the trailer is not a trailer, the hitch and the trailer's coupler are different kinds (a fifth wheel and a ball: see GetHitchType and GetCouplerType), either one is coupled already, or the loaded trailer weighs more than five times the vehicle. A script can couple a locked coupling (SetCouplingLocked). Fires Vehicles.Coupled."""
-        ...
     def damage(self, vehicle: Entity, amount: float, /) -> float:
         """Take amount of health off the car (never below 0) and return the health it has left. Fires Vehicles.Damaged, and Vehicles.Destroyed if it reaches 0. Turn health on first with SetHealthEnabled."""
         ...
     def eject(self, player: Player, /) -> bool:
         """Put the player back on foot beside the car they are driving. Returns false when they are not driving, the car is still moving, or there is nowhere beside it to stand."""
-        ...
-    def get_articulation(self, vehicle: Entity, /) -> float:
-        """How far the trailer has swung from straight behind, in degrees: 0 straight, positive with the trailer to the right, negative to the left. Give it the towing vehicle or the trailer; 0 when not coupled. Watch it for a jackknife warning. Errors if the entity is not a vehicle or no longer exists."""
         ...
     def get_boost(self, vehicle: Entity, /) -> float:
         """The boost the car has left, from 0 to MaxBoost."""
@@ -1761,14 +1753,8 @@ class _VehiclesService:
     def get_boost_strength(self, vehicle: Entity, /) -> float:
         """How hard the boost pushes, from 0 (nothing) to 1 (the hardest it can; about 18 m/s of extra speed every second). 0.5 unless you change it."""
         ...
-    def get_cargo_mass(self, trailer: Entity, /) -> float:
-        """The cargo a trailer carries, in kg; 0 for a vehicle that is not a trailer. Errors if the entity is not a vehicle or no longer exists."""
-        ...
-    def get_coupler_type(self, trailer: Entity, /) -> Optional[str]:
-        """A trailer's coupler: 'fifthWheel' (a semi trailer's kingpin) or 'ball' (a ball socket), or nil when the vehicle is not a trailer. It couples only to a hitch of the same kind (GetHitchType). Errors if the entity is not a vehicle or no longer exists."""
-        ...
-    def get_coupling_break_force(self, vehicle: Entity, /) -> Optional[float]:
-        """The break force set with SetCouplingBreakForce, in newtons, or nil when the coupling never breaks. Errors if the entity is not a vehicle or no longer exists."""
+    def get_engine_size(self, vehicle: Entity, /) -> Optional[float]:
+        """The vehicle's engine size in cc (cubic centimeters), as its creator picked it: a motorcycle's 125, 300, 600, 1000 or 1800 cc engine. nil when the vehicle does not give one (cars, aircraft). Errors if the entity is not a vehicle or no longer exists."""
         ...
     def get_fuel(self, vehicle: Entity, /) -> float:
         """The fuel in the tank, from 0 to MaxFuel."""
@@ -1782,8 +1768,8 @@ class _VehiclesService:
     def get_health(self, vehicle: Entity, /) -> float:
         """The car's health, from 0 to MaxHealth. It only changes while health is on."""
         ...
-    def get_hitch_type(self, vehicle: Entity, /) -> Optional[str]:
-        """The vehicle's hitch: 'fifthWheel' (a semi truck's) or 'ball' (a tow ball), or nil when it has none and cannot tow. A vehicle only couples a trailer whose coupler is the same kind (GetCouplerType). Errors if the entity is not a vehicle or no longer exists."""
+    def get_lean_angle(self, vehicle: Entity, /) -> Optional[float]:
+        """How far a motorcycle leans now, in degrees: positive leaning right, negative left, 0 upright. A motorcycle leans into the turn it makes, as far as its speed and the turn need, up to its max lean. nil for a vehicle that is not a motorcycle. Errors if the entity is not a vehicle or no longer exists."""
         ...
     def get_lights(self, vehicle: Entity, light: str, /) -> str:
         """The script's word on a light: 'on', 'off' or 'auto' (the game decides). light is 'head', 'rear', 'reverse', 'left' or 'right'. Errors if the entity is not a car or no longer exists."""
@@ -1791,8 +1777,8 @@ class _VehiclesService:
     def get_liveries(self, vehicle: Entity, /) -> list[str]:
         """The names of the car's liveries, in the order SetLivery counts them: the first name is livery index 0, the next is 1, and so on. A name is what the vehicle's creator called it, or 'Livery 1', 'Livery 2' and so on for one without a name. The list is empty for a car published with no liveries, for the built-in cars, and for an entity that is not a car."""
         ...
-    def get_local_coupling_state(self) -> str:
-        """For the vehicle the local player is driving: 'coupled' when it tows a trailer, 'inRange' when a trailer is in place and the couple key would couple it now, and 'none' otherwise, also on foot. There is no built-in prompt: read this every frame to draw your own."""
+    def get_local_lean_angle(self) -> Optional[float]:
+        """How far the motorcycle the local player is riding leans now, in degrees (Vehicles:GetLeanAngle's sign: positive right). nil while the local player is not riding a motorcycle. Works on a client script; read it every frame for a lean readout."""
         ...
     def get_local_speed(self) -> Optional[float]:
         """The speed of the vehicle the local player is driving, in centimeters per second (Vehicles:GetSpeed's unit; multiply by 0.036 for km/h): its whole velocity, so it is not negative in reverse. nil while the local player is not driving a vehicle. Works on a client script, where Vehicles:GetSpeed does not; read it every frame to draw a speedometer."""
@@ -1802,9 +1788,6 @@ class _VehiclesService:
         ...
     def get_max_boost(self, vehicle: Entity, /) -> float:
         """The most boost the car can store (100 unless you change it)."""
-        ...
-    def get_max_cargo_mass(self, trailer: Entity, /) -> float:
-        """The most cargo the trailer takes, in kg: its own limit, or less while it is coupled to a vehicle too light to pull that much. 0 for a vehicle that is not a trailer. Errors if the entity is not a vehicle or no longer exists."""
         ...
     def get_max_fuel(self, vehicle: Entity, /) -> float:
         """The tank's size (100 unless you change it)."""
@@ -1833,14 +1816,11 @@ class _VehiclesService:
     def get_part_stand_spot(self, vehicle: Entity, part: str, /) -> Optional[dict[str, Any]]:
         """Where someone stands to open one of the car's parts, where the car is now: position is on the ground beside the part, and yaw (degrees) the way they face it. In front of the hood, behind the trunk, a step out from a door. Use it to check that a player is at the part, or to walk an NPC there. Nil when the entity is not a car or the car does not have that part."""
         ...
+    def get_slide_assist(self, vehicle: Entity, /) -> Optional[float]:
+        """A hovercraft's slide assist scale (SetSlideAssist; 1 unless a script changed it), or nil for anything but a hovercraft."""
+        ...
     def get_speed(self, vehicle: Entity, /) -> float:
         """The car's speed in centimeters per second, as the simulation reports it. Errors if the entity is not a car or no longer exists."""
-        ...
-    def get_towing_vehicle(self, trailer: Entity, /) -> Optional[Entity]:
-        """The vehicle towing this trailer, or nil when it is not coupled. Errors if the entity is not a vehicle or no longer exists."""
-        ...
-    def get_trailer(self, vehicle: Entity, /) -> Optional[Entity]:
-        """The trailer the vehicle is towing, or nil when it tows nothing. Errors if the entity is not a vehicle or no longer exists."""
         ...
     def get_underglow(self, vehicle: Entity, /) -> Optional[str]:
         """The underglow color set with SetUnderglow as '#RRGGBB'. Nil when the underglow is off or the entity is not a car."""
@@ -1862,9 +1842,6 @@ class _VehiclesService:
         ...
     def is_boosting(self, vehicle: Entity, /) -> bool:
         """Whether the car's driver is boosting right now."""
-        ...
-    def is_coupling_locked(self, vehicle: Entity, /) -> bool:
-        """Whether the vehicle's coupling is locked (SetCouplingLocked). Errors if the entity is not a vehicle or no longer exists."""
         ...
     def is_destroyed(self, vehicle: Entity, /) -> bool:
         """Whether the car has health on and none left."""
@@ -1893,9 +1870,6 @@ class _VehiclesService:
     def is_part_open(self, vehicle: Entity, part: str, /) -> Optional[bool]:
         """Whether one of the car's parts is open (see SetPartOpen). Nil when the entity is not a car or the car does not have that part."""
         ...
-    def is_trailer(self, vehicle: Entity, /) -> bool:
-        """Whether the vehicle is a trailer (its vehicle was made with the trailer movement type). Errors if the entity is not a vehicle or no longer exists."""
-        ...
     def lock(self, vehicle: Entity, /) -> bool:
         """Lock the car. A locked car opens only for the last player who drove it: anyone else's vehicle key rattles the door, and holding the key breaks in -- the window on that side breaks, the car unlocks, and it must be hotwired before it starts. The lock stays when the driver gets out, and its driver can also lock and unlock it from the seat (L / D-pad left). Returns false when the entity is not a car."""
         ...
@@ -1922,15 +1896,6 @@ class _VehiclesService:
         ...
     def set_boost_strength(self, vehicle: Entity, strength: float, /) -> None:
         """Set how hard the boost pushes, from 0 (nothing) to 1 (the hardest it can)."""
-        ...
-    def set_cargo_mass(self, trailer: Entity, kg: float, /) -> bool:
-        """Load a trailer with kg of cargo. It is kept between 0 and what the trailer takes (GetMaxCargoMass), so read GetCargoMass to see what it got. The trailer gets heavier and its weight moves toward the load, for every player. Returns false when the entity is not a trailer."""
-        ...
-    def set_coupling_break_force(self, vehicle: Entity, newtons: Optional[float] = ..., /) -> bool:
-        """How hard a pull or push at the hitch breaks the coupling, in newtons, set on the towing vehicle. Past it the trailer comes off and Vehicles.Uncoupled fires with the reason 'broken'. nil or 0 means it never breaks, which is how every vehicle starts. Any other value is at least 10000 (a lower one is raised to it), so a typo can't drop a trailer on the first bump. It stays when the vehicle couples another trailer. Returns false when the entity is not a vehicle with a hitch."""
-        ...
-    def set_coupling_locked(self, vehicle: Entity, locked: bool, /) -> bool:
-        """Lock (true) or unlock (false) the vehicle's coupling. While the towing vehicle or its trailer is locked, the driver's couple key can neither couple nor uncouple it: for a delivery that must keep its trailer, or a rental. Couple and Uncouple from a script still work. Returns false when the entity is not a vehicle."""
         ...
     def set_fuel(self, vehicle: Entity, fuel: float, /) -> None:
         """Set the fuel, clamped to 0..MaxFuel. Fires Vehicles.FuelChanged, and Vehicles.FuelEmpty if it reaches 0."""
@@ -1983,6 +1948,9 @@ class _VehiclesService:
     def set_part_open(self, vehicle: Entity, part: str, open: bool, player: Optional[Player] = ..., /) -> bool:
         """Open or shut one of the car's parts: part is 'driverDoor', 'passengerDoor', 'rearLeftDoor', 'rearRightDoor', 'hood' or 'trunk'. Without a player the part swings there by itself (a remote, a script's own timing). With a player, their character walks round the car to the part's stand spot (GetPartStandSpot), faces it and lifts or pushes it with their hands, the part moving with them; that works for the trunk, the hood and the rear doors, and passing a player for a front door is an error (a front door swings as someone gets in or out, and shuts behind them). If the walk cannot be made or is cut short (the player is too far to walk there, is blocked, or walks off), the part still opens or shuts, by itself. Either way it stays, and every player sees it, also one who joins later. The newest call for a part wins: shutting it while a player is still on the way to open it stops them. Returns false when the entity is not a car, the car does not have that part (see GetOpenableParts), or the player is not on foot and alive; returns true at once, with nobody walking, when the part is already open or shut as asked. Example: Interaction.Interacted:Connect(function(car, player, part) if part == 'hood' or part == 'trunk' then Vehicles:SetPartOpen(car, part, not Vehicles:IsPartOpen(car, part), player) end end)"""
         ...
+    def set_slide_assist(self, vehicle: Entity, scale: float, /) -> bool:
+        """How much a hovercraft's skirt holds its line in turns, as a scale on its own: 1 is the hovercraft as it was built, 0 lets it slide like a real hovercraft on ice, and up to 5 grips almost like a car (for an arcade level or a power-up). Clamped to 0..5; it stays until you set it again, and a new vehicle starts at 1. Returns false, and changes nothing, for anything but a hovercraft."""
+        ...
     def set_underglow(self, vehicle: Entity, color: Optional[str] = ..., /) -> bool:
         """Neon underglow: color is '#RRGGBB', a glowing strip under the car and a soft glow on the ground beneath it (no real light, so it costs almost nothing). Nil turns it off. Every player sees the change. Returns false when the entity is not a car."""
         ...
@@ -1994,9 +1962,6 @@ class _VehiclesService:
         ...
     def spawn(self, item: str, position: Vector3, /) -> Entity:
         """Spawn a car at position and return it as an Entity. item is the library item id of a vehicle this place stores: the string Storage:Get returns for one of the place's storage names. Any other value errors -- an asset id, an object path, a built-in car's name, an item the place does not store, or a weapon. The car is a real replicated vehicle: every player sees it, walks up to it and can drive it. Read its Position, tag it, or Destroy it like any entity. The server builds cars one per frame, so the Entity comes back at once but the car is not ready to use: connect to Vehicles.Ready, which fires with the car when it is built, before you Seat, paint or Lock it or touch its health, fuel or boost (those error until then)."""
-        ...
-    def uncouple(self, vehicle: Entity, /) -> bool:
-        """Uncouple the trailer the vehicle tows or, given a trailer, uncouple it from what tows it. It works while moving and on a locked coupling. Returns false when nothing is coupled or the entity is not a vehicle. Fires Vehicles.Uncoupled with the reason 'script'."""
         ...
     def unlock(self, vehicle: Entity, /) -> bool:
         """Unlock the car, so anyone can open it again. A locked car opens only for the last player who drove it: anyone else's vehicle key rattles the door, and holding the key breaks in -- the window on that side breaks, the car unlocks, and it must be hotwired before it starts. The lock stays when the driver gets out, and its driver can also lock and unlock it from the seat (L / D-pad left). Returns false when the entity is not a car."""
