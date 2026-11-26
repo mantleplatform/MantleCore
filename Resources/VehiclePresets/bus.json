@@ -3,7 +3,7 @@
   "id": "bus",
   "name": "Bus",
   "description": "A long, heavy city bus on two axles: transit buses, coaches and school buses. Very heavy and slow to pull away, with its engine at the back, a governed top speed, a wide turn and a high chase camera.",
-  "comment": "A vehicle preset (#728); see sedan.json for the format. The real bus is a New Flyer Xcelsior XD40, a 40 ft clean-diesel transit bus (#376 step 9c), from New Flyer's 2021 brochure: 12.24 m over the body, 2.6 m wide, 7.21 m (283.75 in) wheelbase, 305/70R22.5 tires (49.9 cm radius), 27,750 lb (12,587 kg) curb, 40 seats and 43 standees, a 44 ft (13.4 m) turning radius. Its Cummins L9 is set in the middle of the transit ratings (280-380 hp, 900-1100 lb-ft, 2200 rpm governed): 1356 Nm at 1400 rpm and 330 hp at 2000. Its Allison B400R ratios (3.51, 1.91, 1.43, 1.00, 0.74, 0.64; reverse 4.80) are from a secondary source. No instrumented test was found, so it is reported, not judged. Estimates: the 4.88 axle (105 km/h at about 2000 rpm in 5th), the 105 km/h governor, the 35/65 front/rear split (engine at the back), the 210 cm track, the drag and frontal area, the 25 cm underside and a 0.75 g grip. Its fit stops at 1.6 times its size (19.6 m): past that its body and driver's seat are longer than a vehicle document can say. The bus seats a driver and one passenger beside them until vehicles carry more seats. Grip, springs, damping, brakes and engine braking follow steps 4-9's rules: 1.55 friction per g, a 1.2 Hz ride, a 0.27 damping ratio, brake torque for the rear to reach its grip (with 30% on the front axle, as the weight is), engine braking for about 0.125 g lifting off.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format. The real bus is a New Flyer Xcelsior XD40, a 40 ft clean-diesel transit bus (#376 step 9c), from New Flyer's 2021 brochure: 12.24 m over the body, 2.6 m wide, 7.21 m (283.75 in) wheelbase, 305/70R22.5 tires (49.9 cm radius), 27,750 lb (12,587 kg) curb, 40 seats and 43 standees, a 44 ft (13.4 m) turning radius. Its Cummins L9 is set in the middle of the transit ratings (280-380 hp, 900-1100 lb-ft, 2200 rpm governed): 1356 Nm at 1400 rpm and 330 hp at 2000. Its Allison B400R ratios (3.51, 1.91, 1.43, 1.00, 0.74, 0.64; reverse 4.80) are from a secondary source. No instrumented test was found, so it is reported, not judged. Estimates: the 4.88 axle (105 km/h at about 2000 rpm in 5th), the 105 km/h governor, the 35/65 front/rear split (engine at the back), the 210 cm track, the drag and frontal area, the 25 cm underside and a 0.75 g grip. Its fit stops at 1.6 times its size (19.6 m): past that its body and driver's seat are longer than a vehicle document can say. The bus seats a driver and one passenger beside them until vehicles carry more seats. Grip, springs, damping, brakes and engine braking follow steps 4-9's rules: 1.55 friction per g, a 1.2 Hz ride, a 0.27 damping ratio, engine braking for about 0.125 g lifting off. Its brakes are a real city bus's, not its tires' grip (the vehicle lead's call, 2026-11-26): air brakes on a 13 t bus stop it at about 0.55-0.6 g (70 m from 100 km/h, with engine braking and rolling resistance helping), which standing passengers rely on; 30% of it on the front axle, as the weight is, and ABS on.",
   "movementType": "wheeled",
   "publishable": true,
   "type": "truck",
@@ -77,7 +77,7 @@
       "ackermann": true
     },
     "brakes": {
-      "brakeTorque": 19500,
+      "brakeTorque": 6800,
       "handbrakeTorque": 16000,
       "abs": true,
       "frontShare": 0.3
