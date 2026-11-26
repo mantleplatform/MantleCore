@@ -468,11 +468,13 @@ namespace MantleVehicleChassisDocumentPrivate
 		H.Rudder.MaxControlAngle = Craft.FinMaxControlAngle;
 		H.Rudder.StallAngle = Craft.FinStallAngle;
 
-		// What stands in for a tire's grip, and the skirt brake.
-		H.Damping.LateralPerSecond = Craft.LateralPerSecond;
-		H.Damping.MaxLateralAccel = Craft.MaxLateralAccel;
-		H.Damping.YawPerSecond = Craft.YawPerSecond;
-		H.Damping.MaxYawAccelDegrees = Craft.MaxYawAccelDegrees;
+		// What stands in for a tire's grip, as the builder's Grip slider sets it (#381), and the skirt brake.
+		using Doc = FMantleVehicleChassisDocument;
+		const double Grip = Handling.HoverGrip;
+		H.Damping.LateralPerSecond = Doc::HovercraftSlide(Grip, Craft.LateralPerSecond, Doc::HovercraftGrippyLateralPerSecond);
+		H.Damping.MaxLateralAccel = Doc::HovercraftSlide(Grip, Craft.MaxLateralAccel, Doc::HovercraftGrippyMaxLateralAccel);
+		H.Damping.YawPerSecond = Doc::HovercraftSlide(Grip, Craft.YawPerSecond, Doc::HovercraftGrippyYawPerSecond);
+		H.Damping.MaxYawAccelDegrees = Doc::HovercraftSlide(Grip, Craft.MaxYawAccelDegrees, Doc::HovercraftGrippyMaxYawAccelDegrees);
 		H.Damping.SkirtBrakePerSecond = Craft.SkirtBrakePerSecond;
 		H.Damping.MaxSkirtBrakeAccel = Craft.MaxSkirtBrakeAccel;
 	}
@@ -1119,4 +1121,10 @@ bool FMantleVehicleChassisDocument::MergeSource(const UMantleVehicleSource& Sour
 		}
 	}
 	return true;
+}
+
+double FMantleVehicleChassisDocument::HovercraftSlide(const double Grip, const double Own, const double Grippy)
+{
+	const double G = FMath::IsFinite(Grip) ? FMath::Clamp(Grip, -1.0, 1.0) : 0.0;
+	return G < 0.0 ? Own * (1.0 + G) : Own + (Grippy - Own) * G;
 }

@@ -911,10 +911,10 @@ bool FMantleVehicleDocumentDefaultsTest::RunTest(const FString& Parameters)
 	{
 		TestFalse(TEXT("no fin"), D.Hover.bRudder);
 		TestEqual(TEXT("angular damping 0.5"), D.Hover.AngularDamping, 0.5);
-		TestEqual(TEXT("lateral 1.5"), D.Hover.Damping.LateralPerSecond, 1.5);
-		TestEqual(TEXT("max lateral accel 400"), D.Hover.Damping.MaxLateralAccel, 400.0);
-		TestEqual(TEXT("yaw 2"), D.Hover.Damping.YawPerSecond, 2.0);
-		TestEqual(TEXT("max yaw accel 180"), D.Hover.Damping.MaxYawAccelDegrees, 180.0);
+		TestEqual(TEXT("lateral 0.3 (a real hovercraft's slide, #381)"), D.Hover.Damping.LateralPerSecond, 0.3);
+		TestEqual(TEXT("max lateral accel 100"), D.Hover.Damping.MaxLateralAccel, 100.0);
+		TestEqual(TEXT("yaw 1"), D.Hover.Damping.YawPerSecond, 1.0);
+		TestEqual(TEXT("max yaw accel 90"), D.Hover.Damping.MaxYawAccelDegrees, 90.0);
 		TestEqual(TEXT("skirt brake 2"), D.Hover.Damping.SkirtBrakePerSecond, 2.0);
 		TestEqual(TEXT("max skirt brake accel 500"), D.Hover.Damping.MaxSkirtBrakeAccel, 500.0);
 		TestEqual(TEXT("reverse share 0.5"), D.Hover.Thruster.ReverseShare, 0.5);
@@ -1736,10 +1736,10 @@ bool FMantleVehicleDocumentCookedHoverTest::RunTest(const FString& Parameters)
 		C.Number(TEXT("hover/rudder/stallAngle"), Rudder, TEXT("stallAngle"), H.Rudder.StallAngle, 0.0);
 	}
 	const TSharedPtr<FJsonObject> Damping = ObjectAt(Block, TEXT("damping"));
-	C.Number(TEXT("hover/damping/lateralPerSecond"), Damping, TEXT("lateralPerSecond"), H.Damping.LateralPerSecond, 1.5);
-	C.Number(TEXT("hover/damping/maxLateralAccel"), Damping, TEXT("maxLateralAccel"), H.Damping.MaxLateralAccel, 400.0);
-	C.Number(TEXT("hover/damping/yawPerSecond"), Damping, TEXT("yawPerSecond"), H.Damping.YawPerSecond, 2.0);
-	C.Number(TEXT("hover/damping/maxYawAccel"), Damping, TEXT("maxYawAccel"), H.Damping.MaxYawAccelDegrees, 180.0);
+	C.Number(TEXT("hover/damping/lateralPerSecond"), Damping, TEXT("lateralPerSecond"), H.Damping.LateralPerSecond, 0.3);
+	C.Number(TEXT("hover/damping/maxLateralAccel"), Damping, TEXT("maxLateralAccel"), H.Damping.MaxLateralAccel, 100.0);
+	C.Number(TEXT("hover/damping/yawPerSecond"), Damping, TEXT("yawPerSecond"), H.Damping.YawPerSecond, 1.0);
+	C.Number(TEXT("hover/damping/maxYawAccel"), Damping, TEXT("maxYawAccel"), H.Damping.MaxYawAccelDegrees, 90.0);
 	C.Number(TEXT("hover/damping/skirtBrakePerSecond"), Damping, TEXT("skirtBrakePerSecond"), H.Damping.SkirtBrakePerSecond, 2.0);
 	C.Number(TEXT("hover/damping/maxSkirtBrakeAccel"), Damping, TEXT("maxSkirtBrakeAccel"), H.Damping.MaxSkirtBrakeAccel, 500.0);
 	C.Number(TEXT("hover/angularDamping"), Block, TEXT("angularDamping"), H.AngularDamping, 0.5);
