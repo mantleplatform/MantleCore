@@ -272,7 +272,7 @@ struct MANTLEEDITOR_API FMantleVehicleShape
 	static FText PassengerHelp();
 
 	/**
-	 * What a flier needs to be test-driven, in one plain sentence for the Drive step: a plane or a jet needs a long flat open stretch (about 350 m, about 150 m) or a runway,
+	 * What a flier needs to be test-driven, in one plain sentence for the Drive step: a plane or a jet needs a long flat open stretch (about 375 m; a warbird 460 m) or a runway,
 	 * a helicopter needs open space above it. Empty for a vehicle that drives or floats.
 	 */
 	static FText DriveAdvice(const FMantleChassisSpec& Spec);

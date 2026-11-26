@@ -315,8 +315,9 @@ bool FMantleVehicleBuilderFlierAdviceTest::RunTest(const FString& Parameters)
 		TestTrue(*FString::Printf(TEXT("%s loads"), Id), FMantleVehicleChassisBuilder::LoadSpec(Id, Spec, Error));
 		return FMantleVehicleShape::DriveAdvice(Spec).ToString();
 	};
-	TestTrue(TEXT("the plane needs about 350 m or a runway"), Advice(TEXT("plane")).Contains(TEXT("350 m")) && Advice(TEXT("plane")).Contains(TEXT("runway")));
-	TestTrue(TEXT("the jet needs about 150 m or a runway"), Advice(TEXT("jet")).Contains(TEXT("150 m")) && Advice(TEXT("jet")).Contains(TEXT("runway")));
+	TestTrue(TEXT("the plane needs about 375 m or a runway"), Advice(TEXT("plane")).Contains(TEXT("375 m")) && Advice(TEXT("plane")).Contains(TEXT("runway")));
+	TestTrue(TEXT("the warbird needs about 460 m or a runway"), Advice(TEXT("warbird")).Contains(TEXT("460 m")) && Advice(TEXT("warbird")).Contains(TEXT("runway")));
+	TestTrue(TEXT("the jet needs about 375 m or a runway"), Advice(TEXT("jet")).Contains(TEXT("375 m")) && Advice(TEXT("jet")).Contains(TEXT("runway")));
 	TestTrue(TEXT("the helicopter needs open space above"), Advice(TEXT("helicopter")).Contains(TEXT("open space above")));
 	for (const TCHAR* Id : { TEXT("sedan"), TEXT("motorcycle"), TEXT("hovercraft"), TEXT("tank"), TEXT("bulldozer") })
 	{
@@ -852,7 +853,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FMantleVehicleBuilderFeelTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleBuilderFixTestPrivate;
-	for (const TCHAR* Id : { TEXT("sedan"), TEXT("sports"), TEXT("limousine"), TEXT("pickup"), TEXT("van"), TEXT("truck"), TEXT("sixwheeler"), TEXT("motorcycle") })
+	for (const TCHAR* Id : { TEXT("sedan"), TEXT("sports"), TEXT("limousine"), TEXT("pickup"), TEXT("van"), TEXT("truck"), TEXT("sixwheeler"), TEXT("compact"),
+		 TEXT("muscle"), TEXT("drift"), TEXT("supercar"), TEXT("motorcycle") })
 	{
 		FMantleChassisSpec Archetype;
 		FString Error;

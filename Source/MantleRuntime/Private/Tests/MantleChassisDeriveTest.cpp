@@ -446,8 +446,9 @@ bool FMantleChassisDeriveIsDeterministicTest::RunTest(const FString& Parameters)
 	// Every machine rebuilds the same chassis from the same selector: the same inputs give bit-for-bit the same handling and the same document,
 	// however often, in whatever order, and from however many separate reads of the preset.
 	const FString Selectors[] = { TEXT("sedan@0.7"), TEXT("sedan@1.6"), TEXT("sports@0.5"), TEXT("pickup@1.3"), TEXT("truck@0.7"), TEXT("sixwheeler@1.3"), TEXT("van@0.5"),
-		TEXT("limousine@1.6"), TEXT("motorcycle@0.7"), TEXT("motorcycle@1.3"), TEXT("plane@0.7"), TEXT("plane@1.3"), TEXT("plane@2.5"), TEXT("tank@0.7"),
-		TEXT("tank@1.3"), TEXT("bulldozer@0.5"), TEXT("bulldozer@1.3") };
+		TEXT("limousine@1.6"), TEXT("motorcycle@0.7"), TEXT("motorcycle@1.3"), TEXT("plane@0.7"), TEXT("plane@1.3"), TEXT("plane@2.5"), TEXT("muscle@0.7"), TEXT("drift@1.3"),
+		TEXT("compact@0.7"), TEXT("supercar@1.3"),
+		TEXT("tank@0.7"), TEXT("tank@1.3"), TEXT("bulldozer@0.5"), TEXT("bulldozer@1.3") };
 	for (const FString& Selector : Selectors)
 	{
 		FMantleChassisSpec A;

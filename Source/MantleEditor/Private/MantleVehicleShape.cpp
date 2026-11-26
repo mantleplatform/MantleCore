@@ -793,10 +793,14 @@ FText FMantleVehicleShape::DriveAdvice(const FMantleChassisSpec& Spec)
 {
 	if (Spec.Aircraft.bSet)
 	{
-		// Take-off rolls of about 130 m for the jet and 340 m for the plane, with some to spare.
+		// Take-off rolls (#379's flight model) of about 290 m for the light plane and the jet and 350 m for the warbird, with some to spare.
+		if (Spec.Id == TEXT("warbird"))
+		{
+			return LOCTEXT("AdviceWarbird", "A warbird needs a long, flat, open stretch to take off from, about 460 m, or a runway. Mantle puts it on the flattest ground it finds ahead of you and tells you where.");
+		}
 		return Spec.Aircraft.bPropeller
-			? LOCTEXT("AdvicePlane", "A plane needs a long, flat, open stretch to take off from, about 350 m, or a runway. Mantle puts it on the flattest ground it finds ahead of you and tells you where.")
-			: LOCTEXT("AdviceJet", "A jet needs a long, flat, open stretch to take off from, about 150 m, or a runway. Mantle puts it on the flattest ground it finds ahead of you and tells you where.");
+			? LOCTEXT("AdvicePlane", "A plane needs a long, flat, open stretch to take off from, about 375 m, or a runway. Mantle puts it on the flattest ground it finds ahead of you and tells you where.")
+			: LOCTEXT("AdviceJet", "A jet needs a long, flat, open stretch to take off from, about 375 m, or a runway. Mantle puts it on the flattest ground it finds ahead of you and tells you where.");
 	}
 	if (Spec.Helicopter.bSet)
 	{

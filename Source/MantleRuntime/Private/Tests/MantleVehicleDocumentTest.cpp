@@ -211,7 +211,7 @@ namespace MantleVehicleDocumentTestPrivate
 	}
 
 	/**
-	 * What the chassis demo path (FMantleChassisDefinitions: ApplySeatKind, ApplyAircraft, ApplyHelicopter, ApplyHovercraft) sets from a spec, transcribed here as
+	 * What the chassis demo path (FMantleChassisDefinitions: ApplySeatKind, DeriveAircraft, DeriveHelicopter, DeriveHovercraft) sets from a spec, transcribed here as
 	 * expected values and compared field by field with the Desc a composed document reads as. Every comparison is of the float the definition holds.
 	 */
 	void CheckAgainstDevPath(FAutomationTestBase& Test, const FString& Label, const FMantleChassisSpec& Spec, const FMantleVehicleDesc& D)
@@ -517,8 +517,8 @@ bool FMantleVehicleDocumentGoldenTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleDocumentTestPrivate;
 	const TArray<FString> Selectors = MantleVehicleDocumentTestPrivate::Selectors();
-	// The fourteen presets at scale 1 and at 0.7.
-	TestEqual(TEXT("fourteen presets, two sizes each"), Selectors.Num(), 28);
+	// The eighteen presets at scale 1 and at 0.7.
+	TestEqual(TEXT("eighteen presets, two sizes each"), Selectors.Num(), 36);
 	for (const FString& Selector : Selectors)
 	{
 		FMantleChassisSpec Spec;
@@ -723,6 +723,7 @@ bool FMantleVehicleDocumentGroundHandlingTest::RunTest(const FString& Parameters
 	const TArray<FVector2D> WantCurve = { FVector2D(0.0, 1.0), FVector2D(20.0, 0.8), FVector2D(25.0, 0.75), FVector2D(37.5, 0.53), FVector2D(56.0, 0.35),
 		FVector2D(75.0, 0.27), FVector2D(120.0, 0.24) };
 	int32 Grounded = 0;
+	int32 OwnRear = 0;
 	for (const FString& Selector : Selectors())
 	{
 		FMantleChassisSpec Spec;
@@ -740,10 +741,21 @@ bool FMantleVehicleDocumentGroundHandlingTest::RunTest(const FString& Parameters
 			continue;
 		}
 		++Grounded;
-		// The preset's one friction is the middle: the front gets 6/7 of it, the rear 8/7 (3.0 and 4.0 of a 3.5), and nothing else is touched.
+		// The preset's one friction is the middle: the front gets 6/7 of it, the rear 8/7 (3.0 and 4.0 of a 3.5), and nothing else is touched. A preset
+		// that sets its own rear grip (the drift car) keeps it, times the friction over the preset's own, so its resized car keeps the balance.
 		const double Friction = (Spec.Derived.IsSet() ? Spec.Derived.GetValue() : Spec.Archetype).TireFriction;
+		const TSharedPtr<FJsonObject>* PresetTires = nullptr;
+		double PresetRear = 0.0;
+		const bool bOwnRear = Spec.Defaults->TryGetObjectField(TEXT("tires"), PresetTires) && (*PresetTires)->TryGetNumberField(TEXT("rearFriction"), PresetRear);
+		const double WantRear = bOwnRear ? PresetRear * Friction / Spec.Archetype.TireFriction : Friction * 8.0 / 7.0;
+		OwnRear += bOwnRear ? 1 : 0;
 		TestTrue(*FString::Printf(TEXT("%s: the front grips 6/7 of the preset's friction (%g of %g)"), *Selector, D.TireFriction, Friction), FMath::IsNearlyEqual(D.TireFriction, Friction * 6.0 / 7.0, 1.0e-9));
-		TestTrue(*FString::Printf(TEXT("%s: the rear grips 8/7 of it (%g)"), *Selector, D.TireRearFriction), D.bTireRearFriction && FMath::IsNearlyEqual(D.TireRearFriction, Friction * 8.0 / 7.0, 1.0e-9));
+		TestTrue(*FString::Printf(TEXT("%s: the rear grips %s (%g, want %g)"), *Selector, bOwnRear ? TEXT("the preset's own, scaled with the friction") : TEXT("8/7 of it"), D.TireRearFriction, WantRear),
+			D.bTireRearFriction && FMath::IsNearlyEqual(D.TireRearFriction, WantRear, 1.0e-9));
+		if (bOwnRear)
+		{
+			TestTrue(*FString::Printf(TEXT("%s: its rear grips less than its front"), *Selector), D.TireRearFriction < D.TireFriction);
+		}
 		if (TestEqual(*FString::Printf(TEXT("%s: the steering curve has every point"), *Selector), D.SteeringSpeedCurve.Num(), WantCurve.Num()))
 		{
 			for (int32 Index = 0; Index < WantCurve.Num(); ++Index)
@@ -753,6 +765,7 @@ bool FMantleVehicleDocumentGroundHandlingTest::RunTest(const FString& Parameters
 		}
 	}
 	TestTrue(TEXT("the cars, the trucks and the six-wheeler were checked"), Grounded >= 12);
+	TestEqual(TEXT("the drift car at both sizes keeps its own rear grip, and no other preset has one"), OwnRear, 2);
 
 	// The reader refuses a malformed curve or a rear grip out of range.
 	auto Refuses = [this](const TCHAR* Name, const TCHAR* Expect, TFunctionRef<void(FJsonObject&)> Mutate)
@@ -854,12 +867,12 @@ bool FMantleVehicleDocumentDefaultsTest::RunTest(const FString& Parameters)
 	const FString Heli = Mutated(*this, TEXT("helicopter"), [](FJsonObject& Doc)
 	{
 		const TSharedPtr<FJsonObject> Block = Child(Doc, TEXT("helicopter"));
-		for (const TCHAR* Key : { TEXT("throttleLeverRate"), TEXT("linearDamping"), TEXT("angularDamping") })
+		for (const TCHAR* Key : { TEXT("throttleLeverRate"), TEXT("linearDamping"), TEXT("angularDamping"), TEXT("heightHold"), TEXT("yawHold"), TEXT("aerofoils") })
 		{
 			Block->RemoveField(Key);
 		}
 		const TSharedPtr<FJsonObject> Rotor = Item(*Block, TEXT("rotors"), 0);
-		for (const TCHAR* Key : { TEXT("axis"), TEXT("pitchAcceleration"), TEXT("rollAcceleration"), TEXT("yawAcceleration"), TEXT("stabilityAssist"), TEXT("stabilityStiffness"),
+		for (const TCHAR* Key : { TEXT("axis"), TEXT("diameter"), TEXT("pitchAcceleration"), TEXT("rollAcceleration"), TEXT("yawAcceleration"), TEXT("stabilityAssist"), TEXT("stabilityStiffness"),
 			TEXT("stabilityDamping"), TEXT("stabilityMaxAcceleration") })
 		{
 			Rotor->RemoveField(Key);
@@ -868,7 +881,10 @@ bool FMantleVehicleDocumentDefaultsTest::RunTest(const FString& Parameters)
 	if (TestTrue(*FString::Printf(TEXT("a helicopter with only its required keys reads (%s)"), *Error), ParseDesc(Heli, D, Error)))
 	{
 		TestEqual(TEXT("collective rate 1"), D.Helicopter.ThrottleLeverRate, 1.0);
-		TestEqual(TEXT("linear damping 0.1"), D.Helicopter.LinearDamping, 0.1);
+		TestEqual(TEXT("linear damping 0 (#380)"), D.Helicopter.LinearDamping, 0.0);
+		TestTrue(TEXT("height hold and the yaw assist on"), D.Helicopter.bHeightHold && D.Helicopter.bYawHold);
+		TestEqual(TEXT("no aerofoils"), D.Helicopter.Aerofoils.Num(), 0);
+		TestEqual(TEXT("the disc's size worked out later"), D.Helicopter.Rotors[0].Diameter, 0.0);
 		TestEqual(TEXT("angular damping 0"), D.Helicopter.AngularDamping, 0.0);
 		const FMantleVehicleRotorDesc& Rotor = D.Helicopter.Rotors[0];
 		TestTrue(TEXT("the rotor lifts along up"), Rotor.Axis.Equals(FVector::UpVector));
@@ -1732,8 +1748,24 @@ bool FMantleVehicleDocumentCookedHelicopterTest::RunTest(const FString& Paramete
 	C.Number(TEXT("helicopter/airSpeedLimit"), Block, TEXT("airSpeedLimit"), H.AirSpeedLimit, 0.0);
 	C.Number(TEXT("helicopter/hoverCollective"), Block, TEXT("hoverCollective"), H.HoverCollective, 0.0);
 	C.Number(TEXT("helicopter/throttleLeverRate"), Block, TEXT("throttleLeverRate"), H.ThrottleLeverRate, 1.0);
-	C.Number(TEXT("helicopter/linearDamping"), Block, TEXT("linearDamping"), H.LinearDamping, 0.1);
+	C.Number(TEXT("helicopter/linearDamping"), Block, TEXT("linearDamping"), H.LinearDamping, 0.0);
 	C.Number(TEXT("helicopter/angularDamping"), Block, TEXT("angularDamping"), H.AngularDamping, 0.0);
+	// #380: the creator's assists and the fin.
+	C.Flag(TEXT("helicopter/heightHold"), Block, TEXT("heightHold"), H.bHeightHold, true);
+	C.Flag(TEXT("helicopter/yawHold"), Block, TEXT("yawHold"), H.bYawHold, true);
+	const TArray<TSharedPtr<FJsonValue>>* Fins = nullptr;
+	const int32 FinCount = Block->TryGetArrayField(TEXT("aerofoils"), Fins) && Fins ? Fins->Num() : 0;
+	if (TestEqual(TEXT("helicopter aerofoil count"), H.Aerofoils.Num(), FinCount))
+	{
+		for (int32 I = 0; I < FinCount; ++I)
+		{
+			const TSharedPtr<FJsonObject> Fin = (*Fins)[I]->AsObject();
+			const FString At = FString::Printf(TEXT("helicopter/aerofoils/%d"), I);
+			C.Vec(At + TEXT("/location"), VectorAt(Fin, TEXT("location")), H.Aerofoils[I].Location);
+			C.Number(At + TEXT("/area"), Fin, TEXT("area"), H.Aerofoils[I].AreaM2, 0.0);
+			C.Number(At + TEXT("/maxControlAngle"), Fin, TEXT("maxControlAngle"), H.Aerofoils[I].MaxControlAngle, 12.0);
+		}
+	}
 	const TArray<TSharedPtr<FJsonValue>>& Rotors = ArrayAt(Block, TEXT("rotors"));
 	if (TestEqual(TEXT("rotor count"), H.Rotors.Num(), Rotors.Num()))
 	{
@@ -1750,6 +1782,7 @@ bool FMantleVehicleDocumentCookedHelicopterTest::RunTest(const FString& Paramete
 			C.Vec(At + TEXT("/location"), VectorAt(Rotor, TEXT("location")), R.Location);
 			C.Vec(At + TEXT("/axis"), Rotor->HasField(TEXT("axis")) ? VectorAt(Rotor, TEXT("axis")) : FVector::UpVector, R.Axis);
 			C.Number(At + TEXT("/maxThrust"), Rotor, TEXT("maxThrust"), R.MaxThrustNewtons, 0.0);
+			C.Number(At + TEXT("/diameter"), Rotor, TEXT("diameter"), R.Diameter, 0.0);
 			C.Number(At + TEXT("/pitchAcceleration"), Rotor, TEXT("pitchAcceleration"), R.PitchAcceleration, 1.5);
 			C.Number(At + TEXT("/rollAcceleration"), Rotor, TEXT("rollAcceleration"), R.RollAcceleration, 1.5);
 			C.Number(At + TEXT("/yawAcceleration"), Rotor, TEXT("yawAcceleration"), R.YawAcceleration, 1.0);

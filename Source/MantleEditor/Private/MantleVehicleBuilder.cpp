@@ -967,9 +967,11 @@ namespace MantleVehicleBuilderPrivate
 // Named, not anonymous: unity builds merge this file with others.
 namespace MantleVehicleBuilderPrivate
 {
-	/** The take-off run a plane or a jet needs, in centimeters (the flight probes' rolls with some to spare: about 130 m for the jet, 340 m for the plane). */
-	constexpr double JetRunCm = 15000.0;
-	constexpr double PlaneRunCm = 35000.0;
+	/** The take-off run a plane or a jet needs, in centimeters: each preset's roll on #379's flight model (light plane and jet about 290 m, warbird about
+	 *  350 m) times 1.3. */
+	constexpr double JetRunCm = 37500.0;
+	constexpr double PlaneRunCm = 37500.0;
+	constexpr double WarbirdRunCm = 46000.0;
 
 	/** How far ahead of the camera the search for a flat stretch goes, and how often it looks. */
 	constexpr double FlatSearchReachCm = 40000.0;
@@ -991,6 +993,10 @@ namespace MantleVehicleBuilderPrivate
 		if (Source.Preset == FName(TEXT("plane")))
 		{
 			return PlaneRunCm;
+		}
+		if (Source.Preset == FName(TEXT("warbird")))
+		{
+			return WarbirdRunCm;
 		}
 		return Source.MovementBlocks.Contains(TEXT("spinBones")) ? PlaneRunCm : JetRunCm;
 	}
@@ -1090,7 +1096,7 @@ bool FMantleVehicleBuilder::PlaceInLevel(UMantleVehicleSource& Source, FString& 
 		const double RunCm = MantleVehicleBuilderPrivate::TakeOffRunCm(Source);
 		if (RunCm > 0.0)
 		{
-			const FString Kind = RunCm == MantleVehicleBuilderPrivate::JetRunCm ? TEXT("jet") : TEXT("plane");
+			const FString Kind = Source.Preset == FName(TEXT("jet")) || !Source.MovementBlocks.Contains(TEXT("spinBones")) ? TEXT("jet") : TEXT("plane");
 			const FVector Along = Facing.Vector();
 			double BestVariation = TNumericLimits<double>::Max();
 			double BestDistance = -1.0;

@@ -10,8 +10,8 @@ class FJsonObject;
 
 /**
  * What kind of vehicle a preset is (schema/vehicle-preset.schema.json `type`): the family whose derive block it shares. A type selects
- * only that block, the stability target and the two camera constants. The cars are the sedan, sports car, limousine, pickup and van; the
- * trucks the truck and the six-wheeler; a motorcycle has one wheel on each axle, on the centerline, and balances itself; a plane flies on a
+ * only that block, the stability target and the two camera constants. The cars are the sedan, sports car, limousine, pickup, van, compact,
+ * muscle car, drift car and supercar; the trucks the truck and the six-wheeler; a motorcycle has one wheel on each axle, on the centerline, and balances itself; a plane flies on a
  * wing, a tailplane and a fin (chassis.aircraft) and stands on tricycle gear, its nose wheel on the centerline; a helicopter is lifted and steered
  * by its main rotor (chassis.helicopter) and stands on two skids, each a pair of hidden wheels that are always braked; a hovercraft floats on four
  * pads (chassis.hovercraft), suspensions with no wheel at the layout's hidden wheel points, and is pushed by a fan; a tracked vehicle (a tank, a
@@ -67,6 +67,11 @@ struct MANTLERUNTIME_API FMantleChassisSurface
 	double Camber = 0.0;
 	double MaxControlAngle = 0.0;
 	double StallAngle = 20.0;
+	/** The peak lift coefficient (#379, maxLift); 0: the vehicle document leaves it out and the type's is used. */
+	double MaxLift = 0.0;
+
+	/** The surface's aspect ratio, span^2 / planform (a wing's both halves together): what the document's aspectRatio is (#379). 0 without a planform. */
+	double AspectRatio() const { return Span > 0.0 && Chord > 0.0 ? Span / Chord : 0.0; }
 
 	/** Span x chord, cm^2: what the area follows when the surface is resized. */
 	double Planform() const { return Span * Chord; }
@@ -89,6 +94,15 @@ struct MANTLERUNTIME_API FMantleChassisAircraft
 	double EngineThrustNewtons = 0.0;
 	/** Where the engines push from along X: the propeller hubs, or the jets' nozzle exits. */
 	double EngineX = 0.0;
+	/** Each propeller engine's shaft power, kW (#379, engines.power): its push falls off with speed. 0: none (a jet). */
+	double EnginePowerKw = 0.0;
+	/** Each jet's thrust with the afterburner lit, N (#379, engines.afterburnerThrust). 0: none. */
+	double AfterburnerNewtons = 0.0;
+	/** A jet's seconds from idle to full thrust (#379, spoolTime); below 0: the preset gives none (the document leaves it out). */
+	double SpoolTime = -1.0;
+	/** The player's assists (#379, assists): absent on. */
+	bool bStallProtection = true;
+	bool bCoordinatedTurns = true;
 	/** The airframe has a propeller block: its engines turn propellers. Without one they are jets, each pushing from a nozzle behind the fuselage's tail, and nothing spins. */
 	bool bPropeller = false;
 	double PropellerRadius = 0.0;

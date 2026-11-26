@@ -22,15 +22,16 @@ struct FMantleChassisSpec;
  */
 struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 {
-	/** A helicopter's rigid-body linear damping, per second: the rotor's drag, which settles a hover and holds its top speed near 50 m/s (helicopter.linearDamping). */
-	static constexpr double HelicopterLinearDamping = 0.1;
+	/** A helicopter's rigid-body linear damping, per second (helicopter.linearDamping): none since #380. The chassis's speed-squared drag is its drag, the
+	 *  level assist stops a slow drift, and the assist's nose-down limit (or, with it off, the rotor's flapback) holds its top speed near its never-exceed speed. */
+	static constexpr double HelicopterLinearDamping = 0.0;
 	/** How fast a helicopter's collective moves, full travel per second (a plane's throttle takes two): helicopter.throttleLeverRate. */
 	static constexpr double HelicopterCollectiveRate = 1.0;
 	/** A hovercraft's rigid-body angular damping, per second, on the ground and in the air alike (default 0.5): hover.angularDamping. */
 	static constexpr double HovercraftAngularDamping = 0.5;
 	/**
-	 * How much of the elevator's travel the player's keys and stick reach (flight.pitchAuthority): half of its 20 degrees, a visible flap and a real climb that is
-	 * still hard to stall from one held key.
+	 * How much of the elevator's travel the player's keys and stick reach (flight.pitchAuthority): half of it, so a held key (keys are on or off) pitches
+	 * gently. The stall protection assist (#379) is what keeps a player out of a stall.
 	 */
 	static constexpr double PlanePitchAuthority = 0.5;
 	/** How far to the side a bike's rider steps off, cm: a body-width, not a car's door (seat.exitSideDistance). */
@@ -69,7 +70,8 @@ struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 	 * chassis on more than two wheels that is not a plane, a helicopter, a hovercraft or a tracked vehicle, the steering eases off with speed (steering.speedCurve, the built-in
 	 * sports car's curve: mph, share of the lock) and the tires grip front and rear as the built-in sports car's do (tires.friction times FrontTireGripShare, and
 	 * tires.rearFriction times RearTireGripShare): at full lock at 100 km/h a tap of the key slid the front tires past their grip and spun the car, and equal
-	 * tires let the driven rear go first. Document's tires and steering objects must exist. Nothing for any other chassis.
+	 * tires let the driven rear go first. A preset whose defaults set tires.rearFriction (the drift car, rear under the front) keeps that rear instead, times
+	 * the friction over the preset's own, so a resized car keeps its balance. Document's tires and steering objects must exist. Nothing for any other chassis.
 	 */
 	static void ComposeGroundHandling(const FMantleChassisSpec& Spec, FJsonObject& Document, TArray<FString>* OutHeld = nullptr);
 

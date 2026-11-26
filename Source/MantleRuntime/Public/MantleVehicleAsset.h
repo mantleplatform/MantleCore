@@ -285,6 +285,10 @@ struct FMantleVehicleAerofoilDesc
 	double Camber = 5.0;
 	double MaxControlAngle = 12.0;
 	double StallAngle = 20.0;
+	/** The peak lift coefficient (#379, maxLift); 0 when the document has none: the type's. */
+	double MaxLift = 0.0;
+	/** The whole surface's span^2 / area (#379, aspectRatio); 0 when the document has none: the type's. */
+	double AspectRatio = 0.0;
 };
 
 /** One engine's push (FMantleVehicleThruster). Bone, when set, is where it pushes from (a reference, never posed). Direction is as given: only its direction counts. */
@@ -294,6 +298,10 @@ struct FMantleVehicleThrusterDesc
 	FVector Location = FVector::ZeroVector;
 	FVector Direction = FVector::ForwardVector;
 	double MaxThrustNewtons = 0.0;
+	/** Shaft power, kW (#379, power): above 0 a propeller, whose push falls off with speed; 0 a jet. */
+	double PowerKw = 0.0;
+	/** A jet's thrust with the afterburner lit, N (#379, afterburnerThrust); 0: none. */
+	double AfterburnerNewtons = 0.0;
 };
 
 /** A propeller or rotor bone that turns while someone is aboard (FMantleVehicleSpinBone); cosmetic. Axis is in the body's space. */
@@ -313,6 +321,11 @@ struct FMantleVehicleFlightDesc
 	double ThrottleLeverRate = 0.5;
 	double LinearDamping = 0.0;
 	double AngularDamping = 0.0;
+	/** A jet's seconds from idle to full thrust (#379, spoolTime); below 0 when the document has none: 4 for a jet (no thruster with power), 0 for propellers. */
+	double SpoolTime = -1.0;
+	/** The player's assists (#379, assists.stallProtection / assists.coordinatedTurns); absent: on. */
+	bool bStallProtection = true;
+	bool bCoordinatedTurns = true;
 	TArray<FMantleVehicleAerofoilDesc> Aerofoils;
 	TArray<FMantleVehicleThrusterDesc> Thrusters;
 	TArray<FMantleVehicleSpinBoneDesc> SpinBones;
@@ -328,6 +341,8 @@ struct FMantleVehicleRotorDesc
 	FVector Location = FVector::ZeroVector;
 	FVector Axis = FVector::UpVector;
 	double MaxThrustNewtons = 0.0;
+	/** The disc's diameter, cm (#380): sizes the ground cushion and the downwash. 0 (absent): worked out from the mass. */
+	double Diameter = 0.0;
 	double PitchAcceleration = 1.5;
 	double RollAcceleration = 1.5;
 	double YawAcceleration = 1.0;
@@ -337,15 +352,22 @@ struct FMantleVehicleRotorDesc
 	double StabilityMaxAcceleration = 4.0;
 };
 
-/** A helicopter's block (MovementType Helicopter): the numbers ApplyHelicopter sets. */
+/** A helicopter's block (MovementType Helicopter): the numbers DeriveHelicopter (MantleVehicleChassisDocument) sets. */
 struct FMantleVehicleHelicopterDesc
 {
 	double AirSpeedLimit = 0.0;
 	/** The collective that holds the weight: weight over rotor thrust. */
 	double HoverCollective = 0.0;
 	double ThrottleLeverRate = 1.0;
-	double LinearDamping = 0.1;
+	/** #380: the rotor's drag is the chassis's speed-squared drag now, so no body damping by default. */
+	double LinearDamping = 0.0;
 	double AngularDamping = 0.0;
+	/** #380, creator settings: height hold (W/S ask for a climb, letting go holds the height; off: a real collective lever and the vortex ring) and the yaw
+	 *  assist (the pedals ask for a yaw rate, no torque swing). Absent: on. */
+	bool bHeightHold = true;
+	bool bYawHold = true;
+	/** #380: the fin (and any surface the creator adds), the same as a plane's aerofoils. */
+	TArray<FMantleVehicleAerofoilDesc> Aerofoils;
 	TArray<FMantleVehicleRotorDesc> Rotors;
 	TArray<FMantleVehicleSpinBoneDesc> SpinBones;
 	/** The pilot's hands: left on the collective, right on the cyclic. */
@@ -396,7 +418,7 @@ struct FMantleVehicleHoverDampingDesc
 	double MaxSkirtBrakeAccel = 500.0;
 };
 
-/** A hovercraft's block (MovementType Hover): the numbers ApplyHovercraft sets. */
+/** A hovercraft's block (MovementType Hover): the numbers DeriveHovercraft (MantleVehicleChassisDocument) sets. */
 struct FMantleVehicleHoverDesc
 {
 	TArray<FMantleVehicleHoverPadDesc> Pads;
