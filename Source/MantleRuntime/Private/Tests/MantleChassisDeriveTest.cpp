@@ -563,10 +563,10 @@ bool FMantleChassisDeriveScalingLawsTest::RunTest(const FString& Parameters)
 			TestEqual(*FString::Printf(TEXT("%s: the steering lock is an angle, the same"), *Label), H.MaxSteerAngle, Own.MaxSteerAngle);
 			TestTrue(*FString::Printf(TEXT("%s: the archetype's tire and drag are kept"), *Label), H.TireFriction == Own.TireFriction && H.DragCoefficient == Own.DragCoefficient);
 			// The damper follows one wheel's critical damping, sqrt(spring x mass per wheel) = sqrt(S^2 x S^3), so the damping ratio stays the archetype's;
-			// past the document's 1 it is held there, and the hold is listed.
+			// past the document's 5 it is held there, and the hold is listed.
 			const bool bDampingHeld = H.Clamped.ContainsByPredicate([](const FString& Entry) { return Entry.StartsWith(TEXT("suspension/damping ")); });
 			TestTrue(*FString::Printf(TEXT("%s: the damping keeps the damping ratio, S^2.5"), *Label),
-				bDampingHeld ? (H.SpringDamping == 1.0 && Own.SpringDamping * FMath::Pow(S, 2.5) > 1.0) : ScalesRounded(H.SpringDamping, Own.SpringDamping, FMath::Pow(S, 2.5)));
+				bDampingHeld ? (H.SpringDamping == 5.0 && Own.SpringDamping * FMath::Pow(S, 2.5) > 5.0) : ScalesRounded(H.SpringDamping, Own.SpringDamping, FMath::Pow(S, 2.5)));
 			// A smaller wheel moves less road a step: the top speed falls with it, and the final drive keeps the top gear at the same share of the
 			// redline. A larger one keeps the archetype's top speed and gears down for it.
 			TestTrue(*FString::Printf(TEXT("%s: the top speed is the archetype's, less in proportion to a smaller wheel"), *Label), ScalesRounded(H.MaxSpeed, Own.MaxSpeed, FMath::Min(1.0, S)));

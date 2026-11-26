@@ -70,7 +70,7 @@
       "maxDrop": 22,
       "springRate": 220,
       "springPreload": 150,
-      "damping": 0.69
+      "damping": 0.8
     },
     "steering": {
       "maxAngle": 36,
