@@ -124,6 +124,7 @@ namespace MantleVehiclePresetPrivate
 			TEXT("mass"), TEXT("maxSpeed"), TEXT("centerOfMass"), TEXT("dragCoefficient"), TEXT("frontalArea"),
 			TEXT("engine/maxTorque"), TEXT("engine/maxRPM"), TEXT("engine/idleRPM"), TEXT("engine/torqueCurve"),
 			TEXT("engine/tractionControl"), TEXT("engine/engineBraking"), TEXT("engine/displacement"),
+			TEXT("engine/induction"), TEXT("engine/maxBoost"), TEXT("engine/spoolRPM"), TEXT("engine/spoolTime"),
 			TEXT("transmission/gearRatios"), TEXT("transmission/reverseRatio"), TEXT("transmission/finalDrive"),
 			TEXT("transmission/changeUpRPM"), TEXT("transmission/changeDownRPM"), TEXT("transmission/shiftTime"),
 			TEXT("suspension/maxRaise"), TEXT("suspension/maxDrop"), TEXT("suspension/springRate"),
@@ -222,6 +223,21 @@ namespace MantleVehiclePresetPrivate
 				return false;
 			}
 			if (!Value->TryGetBool(Out))
+			{
+				Bad(Path);
+				return false;
+			}
+			return true;
+		}
+
+		bool String(const FString& Path, FString& Out)
+		{
+			const TSharedPtr<FJsonValue> Value = Find(Path);
+			if (!Value.IsValid())
+			{
+				return false;
+			}
+			if (!Value->TryGetString(Out))
 			{
 				Bad(Path);
 				return false;
@@ -653,6 +669,25 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 	Reader.Float(TEXT("engine/engineBraking"), T.EngineBraking);
 	// #378: the engine's size, from a motorcycle's engine pick; absent, the tuning keeps its own (0, not given).
 	Reader.Int(TEXT("engine/displacement"), T.EngineDisplacement);
+	// #444: the preset's engine is the engine, so its induction is applied whole: absent, none and the boost settings' defaults (a turbo car's boost
+	// would otherwise stay on a preset without one).
+	{
+		const FMantleVehicleSourceTuning Plain;
+		T.Induction = Plain.Induction;
+		T.MaxBoost = Plain.MaxBoost;
+		T.SpoolRPM = Plain.SpoolRPM;
+		T.SpoolTime = Plain.SpoolTime;
+		FString Induction;
+		if (Reader.String(TEXT("engine/induction"), Induction))
+		{
+			if (Induction == TEXT("turbo")) T.Induction = EMantleVehicleSourceInduction::Turbo;
+			else if (Induction == TEXT("supercharger")) T.Induction = EMantleVehicleSourceInduction::Supercharger;
+			else if (Induction != TEXT("none")) Reader.Bad(TEXT("engine/induction"));
+		}
+		Reader.Float(TEXT("engine/maxBoost"), T.MaxBoost);
+		Reader.Int(TEXT("engine/spoolRPM"), T.SpoolRPM);
+		Reader.Float(TEXT("engine/spoolTime"), T.SpoolTime);
+	}
 
 	Reader.Float(TEXT("tires/friction"), T.TireFriction);
 	if (Reader.Float(TEXT("tires/rearFriction"), T.TireRearFriction))

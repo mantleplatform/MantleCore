@@ -66,6 +66,15 @@ struct MANTLERUNTIME_API FMantleVehicleSourceWheel
 	float RimRadius = 0.f;
 };
 
+/** A creator's engine induction (#444, engine.induction): none, a turbo or a supercharger. */
+UENUM(BlueprintType)
+enum class EMantleVehicleSourceInduction : uint8
+{
+	None,
+	Turbo,
+	Supercharger
+};
+
 /** A paint layer beyond the primary (the document's paint.layers): a second paint color, the rims, the interior's trim or the dashboard. */
 UENUM(BlueprintType)
 enum class EMantleVehicleSourcePaintLayer : uint8
@@ -388,6 +397,23 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "0", ClampMax = "5"))
 	float EngineBraking = 0.f;
 
+	/** A turbo or a supercharger (engine.induction). With one, Max Torque and the Torque Curve are the engine at full boost (its spec sheet's numbers);
+	 *  below full boost it makes less. A turbo's boost builds with the revs and takes Spool Time to arrive; a supercharger's follows the revs at once. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine")
+	EMantleVehicleSourceInduction Induction = EMantleVehicleSourceInduction::None;
+
+	/** psi of boost at full throttle from Spool RPM up (engine.maxBoost): the boost the torque curve was measured at. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "0", ClampMax = "40", EditCondition = "Induction != EMantleVehicleSourceInduction::None"))
+	float MaxBoost = 10.f;
+
+	/** rpm full boost arrives at (engine.spoolRPM), above idle and at most Max RPM; the boost builds from idle up to it. For a turbo engine, the start of
+	 *  its published torque plateau. 0: 40% of Max RPM. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "0", ClampMax = "20000", EditCondition = "Induction != EMantleVehicleSourceInduction::None"))
+	int32 SpoolRPM = 0;
+
+	/** Seconds a turbo takes from no boost to full boost with the revs already above Spool RPM: its lag (engine.spoolTime). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "0.1", ClampMax = "3", EditCondition = "Induction == EMantleVehicleSourceInduction::Turbo"))
+	float SpoolTime = 0.8f;
 	/** The engine's size in cc (engine.displacement, #378), as the vehicle builder's engine pick sets it on a motorcycle. Sound and scripts read it;
 	 *  the driving never does. 0: not given (written only when set). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "0", ClampMax = "2500", DisplayName = "Engine Size (cc)"))

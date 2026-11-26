@@ -51,6 +51,9 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("engine/torqueCurve/*/0"), 0.0, 20000.0 },
 		{ TEXT("engine/torqueCurve/*/1"), 0.0, 1.0 },
 		{ TEXT("engine/engineBraking"), 0.0, 5.0 },
+		{ TEXT("engine/maxBoost"), 0.0, 40.0 },
+		{ TEXT("engine/spoolRPM"), 500.0, 20000.0 },
+		{ TEXT("engine/spoolTime"), 0.1, 3.0 },
 		{ TEXT("engine/displacement"), 50.0, 2500.0 },
 		{ TEXT("transmission/gearRatios/*"), 0.1, 10.0 },
 		{ TEXT("transmission/reverseRatio"), 0.1, 10.0 },
@@ -592,6 +595,11 @@ namespace MantleVehicleAssetPrivate
 			{
 				return P.Fail(FString::Printf(TEXT("/engine/torqueCurve/%d/0"), Index), TEXT("does not rise, or passes maxRPM"));
 			}
+		}
+		// #444: full boost arrives above idle and no later than the rev limit.
+		if (D.SpoolRPM >= 0 && (D.SpoolRPM <= D.IdleRPM || D.SpoolRPM > D.MaxRPM))
+		{
+			return P.Fail(TEXT("/engine/spoolRPM"), FString::Printf(TEXT("is %d, not above idleRPM %d and at most maxRPM %d"), D.SpoolRPM, D.IdleRPM, D.MaxRPM));
 		}
 		if (D.ChangeUpRPM > D.MaxRPM || D.ChangeDownRPM >= D.ChangeUpRPM)
 		{
@@ -2552,7 +2560,8 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 
 	TSharedPtr<FJsonObject> Engine;
 	if (P.Ok() && P.Object(Root, TEXT(""), TEXT("engine"), Engine)
-		&& P.Keys(Engine, TEXT("/engine"), { TEXT("maxTorque"), TEXT("maxRPM"), TEXT("idleRPM"), TEXT("torqueCurve"), TEXT("tractionControl"), TEXT("engineBraking"), TEXT("displacement") },
+		&& P.Keys(Engine, TEXT("/engine"), { TEXT("maxTorque"), TEXT("maxRPM"), TEXT("idleRPM"), TEXT("torqueCurve"), TEXT("tractionControl"), TEXT("engineBraking"), TEXT("displacement"),
+			TEXT("induction"), TEXT("maxBoost"), TEXT("spoolRPM"), TEXT("spoolTime") },
 			{ TEXT("maxTorque"), TEXT("maxRPM"), TEXT("idleRPM"), TEXT("torqueCurve") }))
 	{
 		P.Number(Engine, TEXT("/engine"), TEXT("maxTorque"), TEXT("engine/maxTorque"), D.MaxTorque);
@@ -2566,6 +2575,31 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 		if (P.Ok())
 		{
 			P.OptNumber(Engine, TEXT("/engine"), TEXT("engineBraking"), TEXT("engine/engineBraking"), D.EngineBraking);
+		}
+		// A turbo or supercharger (#444), all optional: absent is none (and the boost fields' defaults).
+		if (P.Ok() && Engine->HasField(TEXT("induction")))
+		{
+			FString Induction;
+			if (!Engine->TryGetStringField(TEXT("induction"), Induction))
+			{
+				P.Fail(TEXT("/engine/induction"), TEXT("must be a string"));
+			}
+			else if (Induction.Equals(TEXT("none"), ESearchCase::CaseSensitive)) D.Induction = EMantleVehicleDescInduction::None;
+			else if (Induction.Equals(TEXT("turbo"), ESearchCase::CaseSensitive)) D.Induction = EMantleVehicleDescInduction::Turbo;
+			else if (Induction.Equals(TEXT("supercharger"), ESearchCase::CaseSensitive)) D.Induction = EMantleVehicleDescInduction::Supercharger;
+			else P.Fail(TEXT("/engine/induction"), FString::Printf(TEXT("is \"%s\", not none, turbo or supercharger"), *Induction));
+		}
+		if (P.Ok())
+		{
+			P.OptNumber(Engine, TEXT("/engine"), TEXT("maxBoost"), TEXT("engine/maxBoost"), D.MaxBoost);
+		}
+		if (P.Ok() && Engine->HasField(TEXT("spoolRPM")))
+		{
+			P.Int(Engine, TEXT("/engine"), TEXT("spoolRPM"), TEXT("engine/spoolRPM"), D.SpoolRPM);
+		}
+		if (P.Ok())
+		{
+			P.OptNumber(Engine, TEXT("/engine"), TEXT("spoolTime"), TEXT("engine/spoolTime"), D.SpoolTime);
 		}
 		// The engine's size (#378), optional: absent is not given (0).
 		if (P.Ok() && Engine->HasField(TEXT("displacement")))

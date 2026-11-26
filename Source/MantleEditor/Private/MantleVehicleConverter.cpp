@@ -3904,6 +3904,11 @@ const UMantleVehicleSource* FMantleVehicleConverter::MakeExportView(const UMantl
 	return View;
 }
 
+int32 FMantleVehicleConverter::SpoolRPMFor(const FMantleVehicleSourceTuning& Tuning)
+{
+	return Tuning.SpoolRPM > 0 ? Tuning.SpoolRPM : FMath::RoundToInt(Tuning.MaxRPM * 0.4f);
+}
+
 TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehicleSource& Authored, const TMap<FString, FString>& SectionMaterialIds, FString* OutError)
 {
 	using namespace MantleVehicleConverterPrivate;
@@ -3950,6 +3955,15 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 	if (T.EngineDisplacement > 0)
 	{
 		Engine->SetNumberField(TEXT("displacement"), T.EngineDisplacement);
+	}
+	// #444: a turbo or supercharger. Written only with one, all four fields together (a document without them is an engine with none, so a car
+	// without one cooks as before); boost settings without an induction are refused in CheckSource, never dropped here without a word.
+	if (T.Induction != EMantleVehicleSourceInduction::None)
+	{
+		Engine->SetStringField(TEXT("induction"), T.Induction == EMantleVehicleSourceInduction::Turbo ? TEXT("turbo") : TEXT("supercharger"));
+		Engine->SetField(TEXT("maxBoost"), VehicleNumber(T.MaxBoost));
+		Engine->SetField(TEXT("spoolRPM"), VehicleInteger(FMantleVehicleConverter::SpoolRPMFor(T)));
+		Engine->SetField(TEXT("spoolTime"), VehicleNumber(T.SpoolTime));
 	}
 	Doc->SetObjectField(TEXT("engine"), Engine);
 
@@ -4626,6 +4640,29 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 	if (T.EngineDisplacement > 0)
 	{
 		VehicleCheckRange(Subject, TEXT("Engine Size"), TEXT("engine/displacement"), T.EngineDisplacement, OutIssues);
+	}
+	// #444: a turbo or supercharger's settings, each to its range, and full boost above idle and no later than the rev limit. Boost settings changed
+	// on an engine without an induction are refused: the document would leave them out, so the creator's numbers would do nothing.
+	if (T.Induction != EMantleVehicleSourceInduction::None)
+	{
+		const int32 Spool = FMantleVehicleConverter::SpoolRPMFor(T);
+		VehicleCheckRange(Subject, TEXT("Max Boost"), TEXT("engine/maxBoost"), T.MaxBoost, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Spool RPM"), TEXT("engine/spoolRPM"), Spool, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Spool Time"), TEXT("engine/spoolTime"), T.SpoolTime, OutIssues);
+		if (Spool <= T.IdleRPM || Spool > T.MaxRPM)
+		{
+			AddError(FString::Printf(TEXT("reaches full boost at %d RPM, not above its Idle RPM (%d) and at most its Max RPM (%d)."), Spool, T.IdleRPM, T.MaxRPM),
+				TEXT("Set Spool RPM between them (0 uses 40% of Max RPM)."));
+		}
+	}
+	else
+	{
+		const FMantleVehicleSourceTuning Defaults;
+		if (T.MaxBoost != Defaults.MaxBoost || T.SpoolRPM != Defaults.SpoolRPM || T.SpoolTime != Defaults.SpoolTime)
+		{
+			AddError(TEXT("has Max Boost, Spool RPM or Spool Time changed but no Induction, so they would do nothing."),
+				TEXT("Set Induction to Turbo or Supercharger, or put those three back to their defaults."));
+		}
 	}
 	if (T.IdleRPM >= T.MaxRPM)
 	{

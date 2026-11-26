@@ -286,6 +286,65 @@ bool FMantleVehiclePresetDriverAidsTest::RunTest(const FString& Parameters)
 			&& (*Transmission)->TryGetNumberField(TEXT("shiftTime"), Shift) && FMath::IsNearlyEqual(Shift, 0.5, 1e-4));
 	}
 
+	// #444: a turbo is read in and written out whole; none leaves all four out; boost settings without an induction, or out of range, are refused.
+	{
+		FMantleVehiclePreset Turbo;
+		const TCHAR* TurboDefaults = TEXT("{ \"engine\": { \"induction\": \"turbo\", \"maxBoost\": 17.4, \"spoolRPM\": 2300, \"spoolTime\": 0.6 } }");
+		if (TestTrue(TEXT("the inline turbo preset parses"), FMantleVehiclePresets::Parse(PresetWithDefaults(TurboDefaults), Turbo, Error)))
+		{
+			UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage());
+			TArray<FString> Notes;
+			TestTrue(TEXT("the induction keys are known"), FMantleVehiclePresets::ApplyDefaults(Turbo, *Source, Notes));
+			TestTrue(TEXT("turbo read in"), Source->Tuning.Induction == EMantleVehicleSourceInduction::Turbo);
+			TestEqual(TEXT("spool rpm read in"), Source->Tuning.SpoolRPM, 2300);
+			const TSharedRef<FJsonObject> Document = FMantleVehicleConverter::MakeDocument(*Source, TMap<FString, FString>());
+			ExpectFragment(*this, TEXT("turbo"), Turbo.Defaults, Document);
+			// A preset without an induction takes it away again, with the boost settings.
+			FMantleVehiclePreset Plain;
+			if (TestTrue(TEXT("the inline plain preset parses"), FMantleVehiclePresets::Parse(PresetWithDefaults(TEXT("{ \"engine\": { \"maxTorque\": 300 } }")), Plain, Error)))
+			{
+				TestTrue(TEXT("the plain preset applies"), FMantleVehiclePresets::ApplyDefaults(Plain, *Source, Notes));
+				TestTrue(TEXT("no induction after a preset without one"), Source->Tuning.Induction == EMantleVehicleSourceInduction::None);
+				TestEqual(TEXT("and the boost back to its default"), Source->Tuning.MaxBoost, 10.f);
+			}
+		}
+		UMantleVehicleSource* Bare = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		const TSharedRef<FJsonObject> NoneDoc = FMantleVehicleConverter::MakeDocument(*Bare, TMap<FString, FString>());
+		const TSharedPtr<FJsonObject>* NoneEngine = nullptr;
+		if (TestTrue(TEXT("a plain car's document has an engine"), NoneDoc->TryGetObjectField(TEXT("engine"), NoneEngine) && NoneEngine))
+		{
+			for (const TCHAR* Key : { TEXT("induction"), TEXT("maxBoost"), TEXT("spoolRPM"), TEXT("spoolTime") })
+			{
+				TestFalse(FString::Printf(TEXT("no induction: %s left out"), Key), (*NoneEngine)->HasField(Key));
+			}
+		}
+		TArray<FMantleValidationIssue> BoostIssues;
+		Bare->Tuning.MaxBoost = 15.f;
+		FMantleVehicleConverter::CheckSource(Bare, FString(), BoostIssues);
+		TestTrue(TEXT("boost settings without an induction are an error"), BoostIssues.ContainsByPredicate([](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(TEXT("no Induction"));
+		}));
+		UMantleVehicleSource* WildTurbo = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		WildTurbo->Tuning.Induction = EMantleVehicleSourceInduction::Turbo;
+		WildTurbo->Tuning.MaxBoost = 45.f;
+		WildTurbo->Tuning.SpoolTime = 5.f;
+		WildTurbo->Tuning.SpoolRPM = WildTurbo->Tuning.IdleRPM;
+		TArray<FMantleValidationIssue> TurboIssues;
+		FMantleVehicleConverter::CheckSource(WildTurbo, FString(), TurboIssues);
+		for (const TCHAR* What : { TEXT("Max Boost"), TEXT("Spool Time") })
+		{
+			TestTrue(FString::Printf(TEXT("%s out of range is an error"), What), TurboIssues.ContainsByPredicate([What](const FMantleValidationIssue& Issue)
+			{
+				return Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(What);
+			}));
+		}
+		TestTrue(TEXT("full boost at idle is an error"), TurboIssues.ContainsByPredicate([](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(TEXT("full boost"));
+		}));
+	}
+
 	// Out of range: the check says so, by name.
 	UMantleVehicleSource* Wild = NewObject<UMantleVehicleSource>(GetTransientPackage());
 	Wild->Tuning.BrakeFrontShare = 1.5f;
