@@ -2771,9 +2771,15 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	TSharedPtr<FJsonObject> Engine;
 	// An electric motor (engine.drive "electric", #445) has peak power, regen and a battery instead of an idle and a torque curve.
 	FString Drive;
-	if (P.Ok() && P.Object(Root, TEXT(""), TEXT("engine"), Engine) && Engine->TryGetStringField(TEXT("drive"), Drive))
+	if (P.Ok() && P.Object(Root, TEXT(""), TEXT("engine"), Engine) && Engine->HasField(TEXT("drive")))
 	{
-		if (Drive == TEXT("electric"))
+		// Only a string: a null, list or object is refused rather than read as combustion.
+		const TSharedPtr<FJsonValue> DriveValue = Engine->TryGetField(TEXT("drive"));
+		if (!DriveValue.IsValid() || DriveValue->Type != EJson::String)
+		{
+			P.Fail(TEXT("/engine/drive"), TEXT("must be a string"));
+		}
+		else if ((Drive = DriveValue->AsString()) == TEXT("electric"))
 		{
 			D.bElectric = true;
 		}
