@@ -46,7 +46,7 @@
   },
   "defaults": {
     "mass": 2141,
-    "maxSpeed": 3800,
+    "maxSpeed": 4611,
     "dragCoefficient": 0.4,
     "frontalArea": 3,
     "engine": {

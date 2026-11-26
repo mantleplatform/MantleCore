@@ -2255,7 +2255,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	if (P.Ok())
 	{
 		P.Number(Root, TEXT(""), TEXT("mass"), TEXT("mass"), D.Mass);
-		P.Number(Root, TEXT(""), TEXT("maxSpeed"), TEXT("maxSpeed"), D.MaxSpeed);
+		P.OptNumber(Root, TEXT(""), TEXT("maxSpeed"), TEXT("maxSpeed"), D.MaxSpeed); // absent: 0, no governor
 		P.Number(Root, TEXT(""), TEXT("dragCoefficient"), TEXT("dragCoefficient"), D.DragCoefficient);
 		P.Number(Root, TEXT(""), TEXT("frontalArea"), TEXT("frontalArea"), D.FrontalArea);
 		if (Root->HasField(TEXT("centerOfMass")))

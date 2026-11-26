@@ -46,7 +46,7 @@
   },
   "defaults": {
     "mass": 2400,
-    "maxSpeed": 4000,
+    "maxSpeed": 5694,
     "dragCoefficient": 0.34,
     "frontalArea": 2.9,
     "engine": {
@@ -87,7 +87,7 @@
   },
   "ranges": {
     "mass": [1600, 3500],
-    "maxSpeed": [2000, 5500],
+    "maxSpeed": [2000, 6000],
     "dragCoefficient": [0.25, 0.55],
     "engine/maxTorque": [200, 1400],
     "engine/maxRPM": [4000, 8000],

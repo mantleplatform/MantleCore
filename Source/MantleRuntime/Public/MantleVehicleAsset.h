@@ -465,8 +465,8 @@ struct FMantleVehicleLiveryGlowDesc
 struct MANTLERUNTIME_API FMantleVehicleDesc
 {
 	double Mass = 1500.0;
-	/** cm/s: each wheel's spin is capped at MaxSpeed over its radius. */
-	double MaxSpeed = 4000.0;
+	/** cm/s: the governed top speed (the drive fades out over the last 2% below it). 0 (the document has none): no governor. */
+	double MaxSpeed = 0.0;
 	bool bCenterOfMass = false;
 	FVector CenterOfMass = FVector::ZeroVector;
 	double DragCoefficient = 0.3;
