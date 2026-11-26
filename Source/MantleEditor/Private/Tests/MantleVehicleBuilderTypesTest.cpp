@@ -143,7 +143,7 @@ bool FMantleVehicleBuilderCardsTest::RunTest(const FString& Parameters)
 	const auto Rank = [](const FMantleVehiclePreset* Card)
 	{
 		return Card->MovementType == TEXT("wheeled") ? 0 : Card->MovementType == TEXT("tracked") ? 1 : Card->MovementType == TEXT("plane") ? 2
-			: Card->MovementType == TEXT("helicopter") ? 3 : Card->MovementType == TEXT("trailer") ? 5 : 4;
+			: Card->MovementType == TEXT("helicopter") ? 3 : Card->MovementType == TEXT("trailer") ? 6 : 4;
 	};
 	bool bInOrder = true;
 	for (int32 Index = 1; Index < Cards.Num(); ++Index)
