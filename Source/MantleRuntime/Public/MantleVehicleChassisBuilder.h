@@ -138,7 +138,9 @@ struct MANTLERUNTIME_API FMantleVehicleChassisBuilder
 	/** The fork bone of the steered centerline axle of a two-axle chassis (fork_f), the parent of wheel_f. */
 	static FName FrontForkBoneName();
 
-	/** A quad rider's handlebar bone (#376 step 9d), under the root between the grips: its rider's fork bone, from which no wheel hangs. */
+	/** A quad rider's handlebar bone (#376 step 9d), under the root between the grips: its rider's fork bone, from which no wheel hangs. A jet ski's
+	 *  (#15) is the same bone at the seat's steering wheel hub instead, turned about the column by the steering as a car's steering wheel turns (the
+	 *  seat's steeringWheel.bone). No body in the physics asset either way. */
 	static FName HandlebarBoneName();
 
 	/**

@@ -371,8 +371,9 @@ bool FMantleVehicleChassisBuilder::MakeAsset(const FMantleChassisSpec& Spec, FMa
 	}
 
 	// A quad's rider (#376 step 9d): the handlebar is a bone of its own under the root, midway between the grips on the centerline, which the
-	// wheel anim instance turns by the steered wheels' mean steering. No wheel hangs from it and the physics asset has no body on it.
-	if (!Spec.bCenterline && Spec.Rider.bSet)
+	// wheel anim instance turns by the steered wheels' mean steering. No wheel hangs from it and the physics asset has no body on it. A jet ski's
+	// handlebar is the same bone, placed at its steering wheel's hub below (#15).
+	if (!Spec.bCenterline && Spec.Rider.bSet && Spec.Type != EMantleChassisType::JetSki)
 	{
 		Body.Bones.Add({ HandlebarBoneName(), 0 });
 		Body.ReferencePose.Add(FTransform(FVector(0.5 * (Spec.Rider.LeftGrip.X + Spec.Rider.RightGrip.X), 0.0,
@@ -418,6 +419,14 @@ bool FMantleVehicleChassisBuilder::MakeAsset(const FMantleChassisSpec& Spec, FMa
 		TailRotorBone = Body.Bones.Num();
 		Body.Bones.Add({ TailRotorBoneName(), 0 });
 		Body.ReferencePose.Add(FTransform(Spec.TailRotorHub()));
+	}
+	// A jet ski's handlebar: a bone under the root at the steering wheel's hub, which the steering turns about the column, with the rider's grips on it.
+	int32 HandlebarBone = INDEX_NONE;
+	if (Spec.Type == EMantleChassisType::JetSki)
+	{
+		HandlebarBone = Body.Bones.Num();
+		Body.Bones.Add({ HandlebarBoneName(), 0 });
+		Body.ReferencePose.Add(FTransform(Spec.Hub));
 	}
 	Asset.RootBoneTransform = FTransform::Identity;
 
@@ -479,6 +488,16 @@ bool FMantleVehicleChassisBuilder::MakeAsset(const FMantleChassisSpec& Spec, FMa
 	{
 		const FMantleChassisBlock Drive = Spec.BoatDriveBlock();
 		Shapes.AddBox(FVector3f(Drive.Min), FVector3f(Drive.Max), 0);
+	}
+	// A jet ski's handlebar on its bone: the bar from grip to grip and the column down from the hub, so both turn with the steering.
+	if (HandlebarBone != INDEX_NONE)
+	{
+		const FVector Left = Spec.Rider.LeftGrip;
+		const FVector Right = Spec.Rider.RightGrip;
+		const FVector BarMin(FMath::Min(Left.X, Right.X) - 1.5, FMath::Min(Left.Y, Right.Y), FMath::Min(Left.Z, Right.Z) - 1.5);
+		const FVector BarMax(FMath::Max(Left.X, Right.X) + 1.5, FMath::Max(Left.Y, Right.Y), FMath::Max(Left.Z, Right.Z) + 1.5);
+		Shapes.AddBox(FVector3f(BarMin), FVector3f(BarMax), HandlebarBone);
+		Shapes.AddBox(FVector3f(Spec.Hub + FVector(-3.0, -3.0, -20.0)), FVector3f(Spec.Hub + FVector(3.0, 3.0, 0.0)), HandlebarBone);
 	}
 	// A helicopter's: the mast, the tail boom, the fin and the skids on the root, a cross of blades on each rotor's bone.
 	if (Spec.Helicopter.bSet)

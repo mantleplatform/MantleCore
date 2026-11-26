@@ -7,6 +7,7 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
+#include "MantleVehicleChassisBuilder.h"
 #include "MantleVehicleChassisDocument.h"
 
 // Named, not anonymous: MantleRuntime builds as a unity build.
@@ -976,11 +977,19 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 	{
 		Spec.DriverSeat = DriverKind;
 	}
+	FString PassengerKind;
+	if (Spec.bPassenger && (*Seats)->TryGetStringField(TEXT("passenger"), PassengerKind))
+	{
+		Spec.PassengerSeat = PassengerKind;
+	}
 	// A tank or a bulldozer is steered with two levers or a yoke, never a wheel: its driver sits in a car's seat with no steering wheel to hold.
+	// A jet ski's rider (#15) sits astride, the motorcycle seat, yet its handlebar is a steering wheel: it turns about the column at the seat's steeringWheel.
 	FString EarlyType;
-	const bool bTrackedType = Root->TryGetStringField(TEXT("type"), EarlyType) && EarlyType.Equals(TypeName(EMantleChassisType::Tracked), ESearchCase::CaseSensitive);
+	const bool bTypeRead = Root->TryGetStringField(TEXT("type"), EarlyType);
+	const bool bTrackedType = bTypeRead && EarlyType.Equals(TypeName(EMantleChassisType::Tracked), ESearchCase::CaseSensitive);
+	const bool bJetSkiType = bTypeRead && EarlyType.Equals(TypeName(EMantleChassisType::JetSki), ESearchCase::CaseSensitive);
 	Spec.bSteeringWheel = !Spec.bCenterline && !Spec.DriverSeat.Equals(TEXT("pilot"), ESearchCase::CaseSensitive)
-		&& !Spec.DriverSeat.Equals(TEXT("motorcycle"), ESearchCase::CaseSensitive) && !bTrackedType;
+		&& (!Spec.DriverSeat.Equals(TEXT("motorcycle"), ESearchCase::CaseSensitive) || bJetSkiType) && !bTrackedType;
 	if (Spec.bSteeringWheel
 		&& (!GetObject(SeatJson, TEXT("steeringWheel"), TEXT("chassis.seat.steeringWheel"), WheelJson, OutError)
 			|| !GetVector(WheelJson, TEXT("location"), TEXT("chassis.seat.steeringWheel.location"), Spec.Hub, OutError)
@@ -1153,6 +1162,16 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 				return Refuse(OutError, FString::Printf(TEXT("the preset's chassis.layout.axles[%d] of a tracked vehicle must be steer false, drive true and handbrake true"), Axle));
 			}
 		}
+	}
+	// A jet ski's rider holds its handlebar, which turns about the column at the steering wheel's hub (the seat's steeringWheel, a bone of its own).
+	if (Spec.Type == EMantleChassisType::JetSki)
+	{
+		Spec.ForkBone = FMantleVehicleChassisBuilder::HandlebarBoneName();
+	}
+	if (!Spec.PassengerSeat.Equals(TEXT("car"), ESearchCase::CaseSensitive)
+		&& !(Spec.Type == EMantleChassisType::JetSki && Spec.PassengerSeat.Equals(TEXT("motorcycle"), ESearchCase::CaseSensitive)))
+	{
+		return Refuse(OutError, TEXT("the preset's seats.passenger is car, or motorcycle on a jetski (astride behind the rider)"));
 	}
 	if (!GetObject(Root, TEXT("derive"), TEXT("derive"), DeriveJson, OutError) || !FMantleChassisDerive::ReadConstants(DeriveJson, Spec.Constants, OutError)
 		|| !ReadArchetype(DefaultsJson, Spec, OutError))
@@ -1335,17 +1354,26 @@ FString FMantleChassisSpec::ComposeDocument(const FMantleChassisSpec& Spec, TArr
 	SeatJson->SetArrayField(TEXT("location"), NumberArray(Spec.Seat));
 	if (Spec.bSteeringWheel)
 	{
+		// A jet ski's is its handlebar: its column's pitch, and the bone it turns (FMantleVehicleChassisBuilder::HandlebarBoneName).
+		const bool bHandlebar = Spec.Type == EMantleChassisType::JetSki;
 		const TSharedPtr<FJsonObject> Rim = MakeShared<FJsonObject>();
 		Rim->SetArrayField(TEXT("location"), NumberArray(Spec.Hub));
-		Rim->SetArrayField(TEXT("rotation"), NumberArray(FVector(SteeringWheelPitch, 0.0, 0.0)));
+		Rim->SetArrayField(TEXT("rotation"), NumberArray(FVector(bHandlebar ? HandlebarColumnPitch : SteeringWheelPitch, 0.0, 0.0)));
 		Rim->SetNumberField(TEXT("radius"), Spec.RimRadius);
+		if (bHandlebar)
+		{
+			Rim->SetStringField(TEXT("bone"), FMantleVehicleChassisBuilder::HandlebarBoneName().ToString());
+		}
 		SeatJson->SetObjectField(TEXT("steeringWheel"), Rim);
 	}
 	Doc->SetObjectField(TEXT("seat"), SeatJson);
 	if (Spec.bPassenger)
 	{
+		// Beside the driver, mirrored across Y; a jet ski's astride behind its rider.
+		const FVector PassengerAt = Spec.Type == EMantleChassisType::JetSki ? FVector(Spec.Seat.X - PillionBehind, Spec.Seat.Y, Spec.Seat.Z + PillionRise)
+			: FVector(Spec.Seat.X, -Spec.Seat.Y, Spec.Seat.Z);
 		const TSharedPtr<FJsonObject> Passenger = MakeShared<FJsonObject>();
-		Passenger->SetArrayField(TEXT("location"), NumberArray(FVector(Spec.Seat.X, -Spec.Seat.Y, Spec.Seat.Z)));
+		Passenger->SetArrayField(TEXT("location"), NumberArray(PassengerAt));
 		Doc->SetObjectField(TEXT("passengerSeat"), Passenger);
 	}
 

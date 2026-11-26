@@ -1176,7 +1176,7 @@ void FMantleVehicleChassisDocument::Derive(const FMantleChassisSpec& Spec, FMant
 	InOutDesc.Hitch = FMantleVehicleHitchDesc();
 	InOutDesc.Tracked = FMantleVehicleTrackedDesc();
 	InOutDesc.SeatKind = SeatKindOf(Spec.DriverSeat);
-	InOutDesc.PassengerSeatKind = EMantleVehicleSeatKind::Car;
+	InOutDesc.PassengerSeatKind = SeatKindOf(Spec.PassengerSeat);
 	InOutDesc.bSeatExitSideDistance = false;
 	InOutDesc.SeatExitSideDistance = 0.0;
 	InOutDesc.bRider = false;

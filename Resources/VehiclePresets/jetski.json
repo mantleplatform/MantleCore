@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "id": "jetski",
+  "name": "Jet ski",
+  "description": "A stand-up-fast sit-down jet ski: it floats on a place's water, gets up on plane, turns sharply on its jet nozzle and leaps waves. Ridden astride, with a passenger behind. It only moves in the water.",
+  "comment": "A vehicle preset (#15): see sedan.json for the format and boat.json for the boat block. movementType boat with type jetski: a jet drive and the motorcycle seat (the rider astride, the hands on a handlebar that turns about its column at chassis.seat.steeringWheel, the handlebar bone). Real reference: the Sea-Doo RXP-X 300 (sea-doo.brp.com 2022-2023 spec pages: 3.32 m long, 1.25 m beam, 354 kg dry, 70 L of fuel, 300 hp; 0-60 mph in 3.6 s and 68.5 mph top in a Boating Magazine test). 400 kg is the dry weight with its fuel. The hull is the body box (332 x 125 cm), its keel the box's bottom along its middle, a deep V (22 degrees): three rows of four water points. Over 7 m/s (planingSpeed 700) it is on plane. The jet pushes 6000 N at rest from its intake under the stern, falling off with the speed through the water (topSpeed tuned on the drive probe to the reference), turns 20 degrees either way on A and D, reverses at half of that on S (its reverse bucket), and off the throttle steers on a small push (OTAS); it pushes only while its intake is in the water, so it flies free off a wave and cannot be driven on land. No rudder. The layout's four wheels are hidden: the document needs a steered and a driven wheel (its reader's rule), and the definition keeps none. engine, transmission, suspension, steering, brakes and tires are the document's and drive nothing (the engine's idle and top rpm are its sound's).",
+  "movementType": "boat",
+  "publishable": true,
+  "type": "jetski",
+  "seats": {
+    "driver": "motorcycle",
+    "passenger": "motorcycle"
+  },
+  "fit": {
+    "wheelRadius": 20,
+    "trackWidth": 80,
+    "minScale": 0.7,
+    "maxScale": 1.5
+  },
+  "wheels": {
+    "min": 4,
+    "max": 4
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 220,
+      "track": 80,
+      "wheelRadius": 20,
+      "wheelWidth": 10,
+      "axles": [
+        { "steer": true, "drive": false },
+        { "steer": false, "drive": true }
+      ]
+    },
+    "body": { "length": 332, "width": 125, "height": 70, "groundClearance": 10 },
+    "centerOfMass": [-30, 0, 40],
+    "seat": {
+      "location": [-30, 0, 88],
+      "steeringWheel": { "location": [55, 0, 100], "radius": 10 }
+    },
+    "rider": {
+      "handlebar": { "left": [50, -36, 104], "right": [50, 36, 104] },
+      "footPegs": { "left": [-20, -42, 45], "right": [-20, 42, 45] },
+      "pelvisOffset": [0, 0, 18.9],
+      "stopPelvisShift": [0, 12, -24],
+      "kneeSplayDegrees": 15
+    },
+    "boat": {
+      "hull": { "depth": 45, "deadrise": 22, "points": 4, "dragAlong": 0.004, "dragAcross": 0.6, "heaveDamping": 0.3 },
+      "planingSpeed": 700,
+      "drive": { "kind": "jet", "thrust": 6000, "topSpeed": 4500, "reverseShare": 0.5, "vectorAngle": 20, "x": -160, "z": -10 },
+      "angularDamping": 0.3
+    }
+  },
+  "derive": {
+    "stability": 1.0,
+    "cameraArmPerLength": 1.35,
+    "cameraHeightPerHeight": 2.2
+  },
+  "defaults": {
+    "mass": 400,
+    "maxSpeed": 3100,
+    "dragCoefficient": 0.5,
+    "frontalArea": 1.2,
+    "engine": {
+      "maxTorque": 300,
+      "maxRPM": 8000,
+      "idleRPM": 1700,
+      "torqueCurve": [[0, 0.6], [4000, 1], [8000, 0.8]]
+    },
+    "transmission": {
+      "gearRatios": [1.0],
+      "reverseRatio": 1.0,
+      "finalDrive": 1.0,
+      "changeUpRPM": 7000,
+      "changeDownRPM": 3000
+    },
+    "suspension": {
+      "maxRaise": 10,
+      "maxDrop": 10,
+      "springRate": 400,
+      "springPreload": 100,
+      "damping": 0.5
+    },
+    "steering": {
+      "maxAngle": 10,
+      "ackermann": false
+    },
+    "brakes": {
+      "brakeTorque": 1500,
+      "handbrakeTorque": 3000
+    },
+    "tires": {
+      "friction": 2
+    },
+    "camera": {
+      "armLength": 450,
+      "height": 160
+    }
+  },
+  "ranges": {
+    "mass": [250, 800],
+    "maxSpeed": [1500, 5000],
+    "dragCoefficient": [0.2, 0.8],
+    "engine/maxTorque": [100, 2000],
+    "engine/maxRPM": [2000, 9000],
+    "engine/idleRPM": [400, 2000],
+    "suspension/maxRaise": [3, 20],
+    "suspension/maxDrop": [3, 20],
+    "suspension/springRate": [100, 3000],
+    "suspension/damping": [0.3, 0.95],
+    "steering/maxAngle": [5, 45],
+    "brakes/brakeTorque": [500, 12000],
+    "tires/friction": [1, 5],
+    "wheels/*/radius": [10, 40]
+  }
+}

@@ -335,6 +335,12 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 {
 	/** How the steering wheel is pitched, degrees: a typical wheel (schema/vehicle.schema.json steeringWheel.rotation). */
 	static constexpr double SteeringWheelPitch = -20.0;
+	/** A jet ski's handlebar column (#15), degrees: its steering wheel's hub pitched so its axis (+X) runs down the column into the hull, 25 degrees off the
+	 *  vertical towards the bow, so the bars turn about the column as a car's wheel turns about its own. */
+	static constexpr double HandlebarColumnPitch = -65.0;
+	/** A jet ski's passenger sits behind its rider on the seat, this far back and this much higher, cm. */
+	static constexpr double PillionBehind = 45.0;
+	static constexpr double PillionRise = 5.0;
 
 	/** The fewest and most axles a layout has. */
 	static constexpr int32 MinAxles = 2;
@@ -435,6 +441,9 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	/** The seat has a steering wheel (a rider's has handlebars instead, and a pilot's a stick and a throttle). */
 	bool bSteeringWheel = true;
 	FString DriverSeat = TEXT("car");
+	/** seats.passenger's kind: car, or motorcycle (a jet ski's passenger, astride behind the rider). */
+	FString PassengerSeat = TEXT("car");
+	/** A motorcycle's front fork, or a jet ski's handlebar (FMantleVehicleChassisBuilder::HandlebarBoneName): the bone the rider's grips are on. */
 	FName ForkBone;
 	FMantleVehicleChassisRider Rider;
 	/** Where the body box's middle is along X, cm: 0, the middle of the wheelbase, for everything but a plane or a helicopter, whose fuselage or cabin is not

@@ -66,7 +66,7 @@ namespace MantleVehicleDocumentTestPrivate
 	/** Document minus the keys WP2 adds, so what it carried before is what remains. */
 	void StripMovement(FJsonObject& Doc)
 	{
-		for (const TCHAR* Key : { TEXT("movementType"), TEXT("flight"), TEXT("helicopter"), TEXT("hover"), TEXT("tracked") })
+		for (const TCHAR* Key : { TEXT("movementType"), TEXT("flight"), TEXT("helicopter"), TEXT("hover"), TEXT("tracked"), TEXT("boat") })
 		{
 			Doc.RemoveField(Key);
 		}
@@ -92,7 +92,7 @@ namespace MantleVehicleDocumentTestPrivate
 		const TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
 		FJsonObject::Duplicate(Base, Out);
 		StripMovement(*Out);
-		for (const TCHAR* Key : { TEXT("movementType"), TEXT("flight"), TEXT("helicopter"), TEXT("hover"), TEXT("tracked") })
+		for (const TCHAR* Key : { TEXT("movementType"), TEXT("flight"), TEXT("helicopter"), TEXT("hover"), TEXT("tracked"), TEXT("boat") })
 		{
 			if (Example->HasField(Key))
 			{
@@ -750,8 +750,8 @@ bool FMantleVehicleDocumentGroundHandlingTest::RunTest(const FString& Parameters
 		{
 			continue;
 		}
-		// A tracked vehicle (#448) is no car here either: neither key is written.
-		const bool bFlier = Spec.Aircraft.bSet || Spec.Helicopter.bSet || Spec.Hovercraft.bSet || Spec.Boat.bSet || Spec.Tracked.bSet;
+		// A tracked vehicle (#448) or a boat (#15) is no car here either: neither key is written.
+		const bool bFlier = Spec.Aircraft.bSet || Spec.Helicopter.bSet || Spec.Hovercraft.bSet || Spec.Tracked.bSet || Spec.Boat.bSet;
 		if (!bFlier && Spec.WheelCount() == 2 && Spec.Rider.bSet)
 		{
 			// A bike (#378): its own steering curve, and its tyres' own grip (no car split is written).
@@ -1117,7 +1117,7 @@ bool FMantleVehicleDocumentRefusalsTest::RunTest(const FString& Parameters)
 	Refuses(TEXT("a helicopter with no helicopter block"), TEXT("helicopter"), TEXT("needs a helicopter block"), [](FJsonObject& Doc) { Doc.RemoveField(TEXT("helicopter")); });
 	Refuses(TEXT("a hovercraft with no hover block"), TEXT("hovercraft"), TEXT("needs a hover block"), [](FJsonObject& Doc) { Doc.RemoveField(TEXT("hover")); });
 	Refuses(TEXT("a boat with no boat block"), TEXT("boat"), TEXT("needs a boat block"), [](FJsonObject& Doc) { Doc.RemoveField(TEXT("boat")); });
-	Refuses(TEXT("an unknown movement type"), TEXT("plane"), TEXT("must be one of wheeled, plane, helicopter, hover, boat"), [](FJsonObject& Doc) { Doc.SetStringField(TEXT("movementType"), TEXT("submarine")); });
+	Refuses(TEXT("an unknown movement type"), TEXT("plane"), TEXT("must be one of wheeled, plane, helicopter, hover, tracked, boat"), [](FJsonObject& Doc) { Doc.SetStringField(TEXT("movementType"), TEXT("submarine")); });
 	Refuses(TEXT("a boat's drive of no kind it knows"), TEXT("boat"), TEXT("must be one of propeller, jet"), [](FJsonObject& Doc)
 		{ Doc.GetObjectField(TEXT("boat"))->GetObjectField(TEXT("propulsion"))->SetStringField(TEXT("kind"), TEXT("paddle")); });
 	Refuses(TEXT("a jet with a prop walk"), TEXT("boat"), TEXT("a jet has none"), [](FJsonObject& Doc)
