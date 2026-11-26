@@ -1815,16 +1815,19 @@ FMantleChassisSpec FMantleChassisSpec::Scaled(const FMantleChassisSpec& Spec, co
 
 bool FMantleChassisSpec::IsDriveOffered() const
 {
-	// A tracked vehicle drives every road wheel through its tracks (Parse requires it), so its drive is never a choice either.
-	if (bCenterline || Aircraft.bSet || Helicopter.bSet || Hovercraft.bSet || Tracked.bSet || Axles.Num() < 2)
+	// Wheeled types with a driven axle only (decision 46). A tracked vehicle drives every road wheel through its tracks (Parse requires it); a boat or a
+	// jet ski is pushed through the water, whatever its layout's axles say; a trailer has no engine. None of them has a drive to choose.
+	if (bCenterline || Aircraft.bSet || Helicopter.bSet || Hovercraft.bSet || Boat.bSet || Tracked.bSet || bTrailer || Axles.Num() < 2)
 	{
 		return false;
 	}
+	bool bDriven = false;
 	for (const FMantleChassisAxle& Axle : Axles)
 	{
 		if (Axle.bCenterline) return false;
+		bDriven |= Axle.bDrive;
 	}
-	return true;
+	return bDriven;
 }
 
 EMantleVehicleDrive FMantleChassisSpec::DefaultDrive() const

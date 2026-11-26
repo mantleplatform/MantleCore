@@ -483,8 +483,8 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	EMantleVehicleDrive DriveChoice = EMantleVehicleDrive::Type;
 
 	/**
-	 * Whether a creator may pick the drive (front, rear or all-wheel drive) for this type: a wheeled type (no aircraft, helicopter, hovercraft or tracked block)
-	 * of two or more axles with two wheels on each.
+	 * Whether a creator may pick the drive (front, rear or all-wheel drive) for this type: a wheeled type with a driven axle (no aircraft, helicopter,
+	 * hovercraft, boat or tracked block, not a trailer: decision 46) of two or more axles with two wheels on each.
 	 */
 	bool IsDriveOffered() const;
 	/** The type's own drive as a creator's choice would name it: Front, Rear or All from its axles' drive flags; Type when it is none of those or the

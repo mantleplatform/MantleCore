@@ -127,10 +127,11 @@ bool FMantleVehicleBuilderCardsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("a stop inside a number is not the end"), Card(TEXT("Tops out at 2.5 m/s. Slowly.")), FString(TEXT("Tops out at 2.5 m/s.")));
 	TestEqual(TEXT("surrounding space is trimmed"), Card(TEXT("  A van.  ")), FString(TEXT("A van.")));
 	TestEqual(TEXT("no description, no sentence"), Card(TEXT("")), FString());
-	// The drive (#376 off-road follow-on): the sedan is front-wheel drive, the sports car rear, the off-roader all; a plane has none to name.
+	// The drive (#376 off-road follow-on): the sedan is front-wheel drive, the sports car rear, the off-roader all; a plane, a boat and a trailer have none to name (decision 46).
 	for (const TPair<const TCHAR*, const TCHAR*>& Want : { TPair<const TCHAR*, const TCHAR*>(TEXT("sedan"), TEXT("front-wheel drive")),
 			 TPair<const TCHAR*, const TCHAR*>(TEXT("sports"), TEXT("rear-wheel drive")), TPair<const TCHAR*, const TCHAR*>(TEXT("offroad"), TEXT("all-wheel drive")),
-			 TPair<const TCHAR*, const TCHAR*>(TEXT("plane"), TEXT("")) })
+			 TPair<const TCHAR*, const TCHAR*>(TEXT("plane"), TEXT("")),
+			 TPair<const TCHAR*, const TCHAR*>(TEXT("boat"), TEXT("")), TPair<const TCHAR*, const TCHAR*>(TEXT("semitrailer"), TEXT("")) })
 	{
 		const FMantleVehiclePreset* Preset = FMantleVehiclePresets::Find(Want.Key);
 		if (TestNotNull(*FString::Printf(TEXT("the %s preset"), Want.Key), Preset))
