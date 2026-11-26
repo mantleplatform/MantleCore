@@ -75,7 +75,7 @@
       "ackermann": true
     },
     "brakes": {
-      "brakeTorque": 4500,
+      "brakeTorque": 6400,
       "handbrakeTorque": 7000,
       "abs": true,
       "frontShare": 0.65
