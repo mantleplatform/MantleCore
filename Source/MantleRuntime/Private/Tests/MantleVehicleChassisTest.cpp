@@ -387,7 +387,7 @@ bool FMantleVehicleBodyCollisionLeavesWheelsOutTest::RunTest(const FString& Para
 		const TSharedPtr<const FMantleVehicleBodyCollision> Chassis = FMantleVehicleBodyCollision::FromBody(Asset.Body, Names);
 		if (TestTrue(*FString::Printf(TEXT("%s: the chassis body has a collision shape"), *Id), Chassis.IsValid()))
 		{
-			if (Spec.Helicopter.bSet || Spec.Hovercraft.bSet)
+			if (Spec.Helicopter.bSet || Spec.Hovercraft.bSet || Spec.Boat.bSet)
 			{
 				TestEqual(*FString::Printf(TEXT("%s: with no wheels drawn, every triangle is in it"), *Id), Chassis->NumTriangles(), Asset.Body.LODs[0].NumTriangles());
 			}

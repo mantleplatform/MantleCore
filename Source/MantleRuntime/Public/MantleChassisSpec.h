@@ -14,7 +14,8 @@ class FJsonObject;
  * trucks the truck and the six-wheeler; a motorcycle has one wheel on each axle, on the centerline, and balances itself; a plane flies on a
  * wing, a tailplane and a fin (chassis.aircraft) and stands on tricycle gear, its nose wheel on the centerline; a helicopter is lifted and steered
  * by its main rotor (chassis.helicopter) and stands on two skids, each a pair of hidden wheels that are always braked; a hovercraft floats on four
- * pads (chassis.hovercraft), suspensions with no wheel at the layout's hidden wheel points, and is pushed by a fan.
+ * pads (chassis.hovercraft), suspensions with no wheel at the layout's hidden wheel points, and is pushed by a fan; a boat and a jet ski float on their
+ * hull's points in a place's water (chassis.boat, #15), their layout's four wheels hidden and unused, and are pushed by a propeller or a jet.
  */
 enum class EMantleChassisType : uint8
 {
@@ -24,6 +25,8 @@ enum class EMantleChassisType : uint8
 	Plane,
 	Helicopter,
 	Hovercraft,
+	Boat,
+	JetSki,
 };
 
 /** One axle of a chassis's layout. */
@@ -191,6 +194,45 @@ struct MANTLERUNTIME_API FMantleChassisHovercraft
 };
 
 /**
+ * What a boat or jet ski preset adds to the chassis (schema/vehicle-preset.schema.json chassis.boat, #15): the hull is the chassis's body box, its keel the
+ * box's bottom (the ground clearance) along its middle; this is how the water holds and drags it, its drive and its optional rudder. Model space, cm; speeds
+ * cm/s. The layout's four wheels are hidden and drive nothing (the document's reader needs a steered and a driven one).
+ */
+struct MANTLERUNTIME_API FMantleChassisBoat
+{
+	/** The preset has a boat block. */
+	bool bSet = false;
+	/** The hull (chassis.boat.hull): how deep a point lifts more, its V, its points along each row, its water drag and its up-and-down damping ratio. */
+	double HullDepth = 0.0;
+	double DeadriseDegrees = 0.0;
+	int32 Points = 6;
+	double DragAlong = 0.0;
+	double DragAcross = 0.0;
+	double HeaveDamping = 0.0;
+	/** Where the hull is fully on plane; 0 never planes. */
+	double PlaningSpeedCmPerSec = 0.0;
+	/** The drive (chassis.boat.drive): a jet or a propeller, its push at rest (the preset's own; a resized boat's is in its handling), where it pushes from
+	 *  on the centerline, and how. */
+	bool bJet = false;
+	double DriveThrustNewtons = 0.0;
+	double ReverseShare = 0.0;
+	double VectorAngle = 0.0;
+	double TopSpeedCmPerSec = 0.0;
+	double PropWalk = 0.0;
+	double DriveX = 0.0;
+	double DriveZ = 0.0;
+	/** The optional rudder (chassis.boat.rudder): where it acts on the centerline, its area (the preset's own; a resized boat's is in its handling), m^2,
+	 *  and how far it turns. */
+	bool bRudder = false;
+	double RudderX = 0.0;
+	double RudderZ = 0.0;
+	double RudderAreaM2 = 0.0;
+	double RudderMaxControlAngle = 0.0;
+	/** The body's angular damping, per second. */
+	double AngularDamping = 0.3;
+};
+
+/**
  * A preset's own size: the dimensions its hand-tuned handling belongs to. FMantleChassisDerive multiplies that handling by how a chassis's
  * dimensions differ from these, so a chassis with these dimensions has exactly the preset's handling and a dimension edited on its own moves only
  * the numbers that depend on it. Set when the preset is read; Scaled and any edit of the chassis leave it alone. WheelWidth is kept with the rest
@@ -341,6 +383,8 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	FMantleChassisHelicopter Helicopter;
 	/** A hovercraft's pads, fan, fin, skirt and damping (chassis.hovercraft); bSet is false for everything else. */
 	FMantleChassisHovercraft Hovercraft;
+	/** A boat's or jet ski's hull, drive and rudder (chassis.boat); bSet is false for everything else. */
+	FMantleChassisBoat Boat;
 
 	/** Whether axle Axle has one wheel, on the centerline: the whole layout's, or the axle's own. */
 	bool AxleIsCenterline(const int32 Axle) const { return bCenterline || Axles[Axle].bCenterline; }
@@ -475,7 +519,18 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	FMantleChassisBlock FanPodBlock() const;
 	FMantleChassisBlock HoverFinBlock() const;
 
-	/** A type's name as a preset spells it ("car", "truck", "motorcycle", "plane", "helicopter", "hovercraft"), and the type a name spells. */
+	/** A boat's keel middle: the body box's bottom, on the centerline, at its middle along X. */
+	FVector BoatHullLocation() const;
+
+	/** Where a boat's drive pushes from, and where its rudder acts: on the centerline. */
+	FVector BoatDriveLocation() const;
+	FVector BoatRudderLocation() const;
+
+	/** A boat's drive as the gray body draws it (no collision): a short pod around where it pushes from. */
+	FMantleChassisBlock BoatDriveBlock() const;
+
+	/** A type's name as a preset spells it ("car", "truck", "motorcycle", "plane", "helicopter", "hovercraft", "boat", "jetski"), and the type a name
+	 *  spells. */
 	static const TCHAR* TypeName(EMantleChassisType Kind);
 	static bool ParseType(const FString& Name, EMantleChassisType& OutType);
 

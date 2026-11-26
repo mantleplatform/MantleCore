@@ -255,6 +255,30 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("hover/damping/skirtBrakePerSecond"), 0.0, 50.0 },
 		{ TEXT("hover/damping/maxSkirtBrakeAccel"), 0.0, 5000.0 },
 		{ TEXT("hover/angularDamping"), 0.0, 5.0 },
+		// A boat's block (#15).
+		{ TEXT("boat/hull/location/*"), -1000.0, 1000.0 },
+		{ TEXT("boat/hull/length"), 100.0, 3000.0 },
+		{ TEXT("boat/hull/beam"), 50.0, 1000.0 },
+		{ TEXT("boat/hull/depth"), 20.0, 300.0 },
+		{ TEXT("boat/hull/deadrise"), 0.0, 30.0 },
+		{ TEXT("boat/hull/points"), 3.0, 8.0 },
+		{ TEXT("boat/hull/dragAlong"), 0.001, 0.1 },
+		{ TEXT("boat/hull/dragAcross"), 0.1, 2.0 },
+		{ TEXT("boat/hull/heaveDamping"), 0.0, 1.0 },
+		{ TEXT("boat/planingSpeed"), 0.0, 4000.0 },
+		{ TEXT("boat/propulsion/location/*"), -1000.0, 1000.0 },
+		{ TEXT("boat/propulsion/direction/*"), -1.0, 1.0 },
+		{ TEXT("boat/propulsion/maxThrust"), 0.0, 500000.0 },
+		{ TEXT("boat/propulsion/reverseShare"), 0.0, 1.0 },
+		{ TEXT("boat/propulsion/vectorAngle"), 0.0, 45.0 },
+		{ TEXT("boat/propulsion/topSpeed"), 0.0, 6000.0 },
+		{ TEXT("boat/propulsion/brakeFade"), 1.0, 1000.0 },
+		{ TEXT("boat/propulsion/propWalk"), 0.0, 0.2 },
+		{ TEXT("boat/rudder/location/*"), -1000.0, 1000.0 },
+		{ TEXT("boat/rudder/area"), 0.01, 5.0 },
+		{ TEXT("boat/rudder/maxControlAngle"), 0.0, 45.0 },
+		{ TEXT("boat/rudder/stallAngle"), 1.0, 90.0 },
+		{ TEXT("boat/angularDamping"), 0.0, 5.0 },
 	};
 
 	/** The longest wheel bone name the schema allows, in characters. */
@@ -1908,6 +1932,98 @@ namespace MantleVehicleAssetPrivate
 		D.Hover = MoveTemp(H);
 	}
 
+	/**
+	 * A boat's block (#15): its hull, the optional planing speed, its drive (a propeller or a jet), the optional rudder and angular damping, and the optional
+	 * numbers the contract's defaults.
+	 */
+	void ReadVehicleBoat(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
+	{
+		const FString Pointer = TEXT("/boat");
+		TSharedPtr<FJsonObject> Block;
+		FMantleVehicleBoatDesc B;
+		if (!P.Object(Root, TEXT(""), TEXT("boat"), Block)
+			|| !P.Keys(Block, Pointer, { TEXT("hull"), TEXT("planingSpeed"), TEXT("propulsion"), TEXT("rudder"), TEXT("angularDamping") },
+				{ TEXT("hull"), TEXT("propulsion") }))
+		{
+			return;
+		}
+
+		TSharedPtr<FJsonObject> Hull;
+		FMantleVehicleBoatHullDesc& H = B.Hull;
+		const FString HullPointer = Pointer + TEXT("/hull");
+		if (!P.Object(Block, Pointer, TEXT("hull"), Hull)
+			|| !P.Keys(Hull, HullPointer,
+				{ TEXT("location"), TEXT("length"), TEXT("beam"), TEXT("depth"), TEXT("deadrise"), TEXT("points"), TEXT("dragAlong"), TEXT("dragAcross"),
+				  TEXT("heaveDamping") },
+				{ TEXT("location"), TEXT("length"), TEXT("beam") })
+			|| !P.Vector(Hull->TryGetField(TEXT("location")), HullPointer + TEXT("/location"), TEXT("boat/hull/location/*"), H.Location)
+			|| !P.Number(Hull, HullPointer, TEXT("length"), TEXT("boat/hull/length"), H.Length)
+			|| !P.Number(Hull, HullPointer, TEXT("beam"), TEXT("boat/hull/beam"), H.Beam)
+			|| !P.OptNumber(Hull, HullPointer, TEXT("depth"), TEXT("boat/hull/depth"), H.Depth)
+			|| !P.OptNumber(Hull, HullPointer, TEXT("deadrise"), TEXT("boat/hull/deadrise"), H.DeadriseDegrees)
+			|| (Hull->HasField(TEXT("points")) && !P.Int(Hull, HullPointer, TEXT("points"), TEXT("boat/hull/points"), H.Points))
+			|| !P.OptNumber(Hull, HullPointer, TEXT("dragAlong"), TEXT("boat/hull/dragAlong"), H.DragAlong)
+			|| !P.OptNumber(Hull, HullPointer, TEXT("dragAcross"), TEXT("boat/hull/dragAcross"), H.DragAcross)
+			|| !P.OptNumber(Hull, HullPointer, TEXT("heaveDamping"), TEXT("boat/hull/heaveDamping"), H.HeaveDamping))
+		{
+			return;
+		}
+		if (!P.OptNumber(Block, Pointer, TEXT("planingSpeed"), TEXT("boat/planingSpeed"), B.PlaningSpeedCmPerSec))
+		{
+			return;
+		}
+
+		TSharedPtr<FJsonObject> Drive;
+		FMantleVehicleBoatPropulsionDesc& T = B.Propulsion;
+		const FString DrivePointer = Pointer + TEXT("/propulsion");
+		static const TCHAR* const DriveKinds[] = { TEXT("propeller"), TEXT("jet") };
+		if (!P.Object(Block, Pointer, TEXT("propulsion"), Drive)
+			|| !P.Keys(Drive, DrivePointer,
+				{ TEXT("kind"), TEXT("location"), TEXT("direction"), TEXT("maxThrust"), TEXT("reverseShare"), TEXT("vectorAngle"), TEXT("topSpeed"),
+				  TEXT("brakeFade"), TEXT("propWalk") },
+				{ TEXT("kind"), TEXT("location"), TEXT("maxThrust") })
+			|| !ReadVehicleEnumName(P, Drive, DrivePointer, TEXT("kind"), DriveKinds, T.Kind)
+			|| !P.Vector(Drive->TryGetField(TEXT("location")), DrivePointer + TEXT("/location"), TEXT("boat/propulsion/location/*"), T.Location)
+			|| !ReadVehicleDirection(P, Drive, DrivePointer, TEXT("direction"), TEXT("boat/propulsion/direction"), T.Direction)
+			|| !P.Number(Drive, DrivePointer, TEXT("maxThrust"), TEXT("boat/propulsion/maxThrust"), T.MaxThrustNewtons)
+			|| !P.OptNumber(Drive, DrivePointer, TEXT("reverseShare"), TEXT("boat/propulsion/reverseShare"), T.ReverseShare)
+			|| !P.OptNumber(Drive, DrivePointer, TEXT("vectorAngle"), TEXT("boat/propulsion/vectorAngle"), T.VectorAngleDegrees)
+			|| !P.OptNumber(Drive, DrivePointer, TEXT("topSpeed"), TEXT("boat/propulsion/topSpeed"), T.TopSpeedCmPerSec)
+			|| !P.OptNumber(Drive, DrivePointer, TEXT("brakeFade"), TEXT("boat/propulsion/brakeFade"), T.BrakeFadeCmPerSec)
+			|| !P.OptNumber(Drive, DrivePointer, TEXT("propWalk"), TEXT("boat/propulsion/propWalk"), T.PropWalk))
+		{
+			return;
+		}
+		if (T.Kind == 1 && Drive->HasField(TEXT("propWalk")))
+		{
+			P.Fail(DrivePointer + TEXT("/propWalk"), TEXT("is a propeller's; a jet has none"));
+			return;
+		}
+
+		if (Block->HasField(TEXT("rudder")))
+		{
+			TSharedPtr<FJsonObject> Fin;
+			FMantleVehicleBoatRudderDesc& R = B.Rudder;
+			const FString FinPointer = Pointer + TEXT("/rudder");
+			if (!P.Object(Block, Pointer, TEXT("rudder"), Fin)
+				|| !P.Keys(Fin, FinPointer, { TEXT("location"), TEXT("area"), TEXT("maxControlAngle"), TEXT("stallAngle") },
+					{ TEXT("location"), TEXT("area"), TEXT("maxControlAngle") })
+				|| !P.Vector(Fin->TryGetField(TEXT("location")), FinPointer + TEXT("/location"), TEXT("boat/rudder/location/*"), R.Location)
+				|| !P.Number(Fin, FinPointer, TEXT("area"), TEXT("boat/rudder/area"), R.AreaM2)
+				|| !P.Number(Fin, FinPointer, TEXT("maxControlAngle"), TEXT("boat/rudder/maxControlAngle"), R.MaxControlAngle)
+				|| !P.OptNumber(Fin, FinPointer, TEXT("stallAngle"), TEXT("boat/rudder/stallAngle"), R.StallAngle))
+			{
+				return;
+			}
+			B.bRudder = true;
+		}
+		if (!P.OptNumber(Block, Pointer, TEXT("angularDamping"), TEXT("boat/angularDamping"), B.AngularDamping))
+		{
+			return;
+		}
+		D.Boat = MoveTemp(B);
+	}
+
 	/** A seat's kind (seat.kind or passengerSeat.kind) when it names one: car, motorcycle or pilot. */
 	bool ReadVehicleSeatKind(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Seat, const FString& Pointer, EMantleVehicleSeatKind& Out)
 	{
@@ -2079,14 +2195,14 @@ namespace MantleVehicleAssetPrivate
 		return true;
 	}
 
-	/** The movement type the document names: wheeled when it names none, else wheeled, plane, helicopter or hover. */
+	/** The movement type the document names: wheeled when it names none, else wheeled, plane, helicopter, hover or boat. */
 	bool ReadVehicleMovementType(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
 	{
 		if (!Root->HasField(TEXT("movementType")))
 		{
 			return true;
 		}
-		static const TCHAR* const Kinds[] = { TEXT("wheeled"), TEXT("plane"), TEXT("helicopter"), TEXT("hover") };
+		static const TCHAR* const Kinds[] = { TEXT("wheeled"), TEXT("plane"), TEXT("helicopter"), TEXT("hover"), TEXT("boat") };
 		int32 Kind = 0;
 		if (!ReadVehicleEnumName(P, Root, TEXT(""), TEXT("movementType"), Kinds, Kind))
 		{
@@ -2112,8 +2228,9 @@ namespace MantleVehicleAssetPrivate
 			{ EMantleVehicleMovementKind::Plane, TEXT("flight"), TEXT("plane") },
 			{ EMantleVehicleMovementKind::Helicopter, TEXT("helicopter"), TEXT("helicopter") },
 			{ EMantleVehicleMovementKind::Hover, TEXT("hover"), TEXT("hover") },
+			{ EMantleVehicleMovementKind::Boat, TEXT("boat"), TEXT("boat") },
 		};
-		static const TCHAR* const Names[] = { TEXT("wheeled"), TEXT("plane"), TEXT("helicopter"), TEXT("hover") };
+		static const TCHAR* const Names[] = { TEXT("wheeled"), TEXT("plane"), TEXT("helicopter"), TEXT("hover"), TEXT("boat") };
 		for (const FBlock& Block : Blocks)
 		{
 			const bool bHas = Root->HasField(Block.Key);
@@ -2246,7 +2363,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 		  TEXT("engine"), TEXT("transmission"), TEXT("suspension"), TEXT("steering"), TEXT("brakes"), TEXT("tires"), TEXT("wheels"),
 		  TEXT("seat"), TEXT("camera"), TEXT("collision"), TEXT("materials"), TEXT("paint"), TEXT("lights"), TEXT("liveries"), TEXT("liveryNames"), TEXT("liveryGlow"), TEXT("liveryUV"),
 		  TEXT("defaultLivery"), TEXT("linkage"), TEXT("parts"), TEXT("passengerSeat"), TEXT("trunk"), TEXT("hood"), TEXT("rearLeftDoor"), TEXT("rearRightDoor"), TEXT("horn"), TEXT("preset"), TEXT("movementType"),
-		  TEXT("flight"), TEXT("helicopter"), TEXT("hover") },
+		  TEXT("flight"), TEXT("helicopter"), TEXT("hover"), TEXT("boat") },
 		{ TEXT("schemaVersion"), TEXT("mass"), TEXT("dragCoefficient"), TEXT("frontalArea"), TEXT("engine"),
 		  TEXT("transmission"), TEXT("suspension"), TEXT("steering"), TEXT("brakes"), TEXT("tires"), TEXT("wheels"), TEXT("seat"),
 		  TEXT("camera"), TEXT("collision") });
@@ -2658,6 +2775,10 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	if (P.Ok() && D.MovementType == EMantleVehicleMovementKind::Hover)
 	{
 		ReadVehicleHover(P, Root, D);
+	}
+	if (P.Ok() && D.MovementType == EMantleVehicleMovementKind::Boat)
+	{
+		ReadVehicleBoat(P, Root, D);
 	}
 
 	if (P.Ok())

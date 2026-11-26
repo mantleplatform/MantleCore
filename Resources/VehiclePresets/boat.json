@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "id": "boat",
+  "name": "Runabout",
+  "description": "A 20-foot outboard runabout: it floats on a place's water, rides its waves, gets up on plane, and steers by turning its outboard. It only moves in the water.",
+  "comment": "A vehicle preset (#15): see sedan.json for the format. movementType boat is the Boat movement type (FMantleVehicleBoat): no wheels, engine or gearbox. Real reference: the Bayliner VR5 Bowrider with a 200 hp outboard (bayliner.com MY2020 spec sheet: 6.19 m long, 2.44 m beam, 1516 kg with its standard engine, 20 degree deadrise; on plane in 4.5 s, 0-30 mph in 9.2 s, top 46.1 mph in a 200 hp test). The hull is the body box (619 x 244 cm), its keel the box's bottom along its middle: chassis.boat.hull makes three rows of six water points from it (the keel and two rows at 0.35 of the beam, 31 cm higher for the 20 degree V), each lifting the weight of the water it pushes aside down to the hull's 90 cm depth, damped up and down at 0.3 of critical and dragged along the hull (0.004) far less than across it (0.4). At 1516 kg the keel rests about 34 cm deep. Over 8 m/s (planingSpeed 800 cm/s) the hull is fully on plane: a planing lift rises with the speed squared, the bow's share fading so the lift moves aft, and a bow-up hump peaks at half that speed. The outboard pushes 6000 N at rest from its leg 30 cm below the keel at the stern, falling off with the speed through the water to nothing at 60 m/s (with the hull's drag it tops out near the reference's 20.6 m/s; tuned on the drive probe), its reverse 0.4 of that with a 5 percent prop walk, and it turns 30 degrees either way on A and D; it pushes only while its leg is in the water, so the boat cannot be driven on land. The layout's four wheels are hidden: the document needs a steered and a driven wheel (its reader's rule), and the definition keeps none. engine, transmission, suspension, steering, brakes and tires are the document's and drive nothing; the camera, mass and drag are the boat's own.",
+  "movementType": "boat",
+  "publishable": true,
+  "type": "boat",
+  "seats": {
+    "driver": "car",
+    "passenger": "car"
+  },
+  "fit": {
+    "wheelRadius": 15,
+    "trackWidth": 180,
+    "minScale": 0.7,
+    "maxScale": 1.5
+  },
+  "wheels": {
+    "min": 4,
+    "max": 4
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 400,
+      "track": 180,
+      "wheelRadius": 15,
+      "wheelWidth": 10,
+      "axles": [
+        { "steer": true, "drive": false },
+        { "steer": false, "drive": true }
+      ]
+    },
+    "body": { "length": 619, "width": 244, "height": 100, "groundClearance": 10 },
+    "centerOfMass": [-40, 0, 60],
+    "seat": {
+      "location": [20, -45, 75],
+      "steeringWheel": { "location": [62, -45, 95], "radius": 18 }
+    },
+    "boat": {
+      "hull": { "depth": 90, "deadrise": 20, "points": 6, "dragAlong": 0.004, "dragAcross": 0.4, "heaveDamping": 0.3 },
+      "planingSpeed": 800,
+      "drive": { "kind": "propeller", "thrust": 6000, "topSpeed": 6000, "reverseShare": 0.4, "vectorAngle": 30, "propWalk": 0.05, "x": -330, "z": -20 },
+      "angularDamping": 0.3
+    }
+  },
+  "derive": {
+    "stability": 1.15,
+    "cameraArmPerLength": 1.05,
+    "cameraHeightPerHeight": 2.0
+  },
+  "defaults": {
+    "mass": 1516,
+    "maxSpeed": 2100,
+    "dragCoefficient": 0.5,
+    "frontalArea": 2.5,
+    "engine": {
+      "maxTorque": 300,
+      "maxRPM": 6000,
+      "idleRPM": 700,
+      "torqueCurve": [[0, 0.6], [3000, 1], [6000, 0.8]]
+    },
+    "transmission": {
+      "gearRatios": [1.0],
+      "reverseRatio": 1.0,
+      "finalDrive": 1.0,
+      "changeUpRPM": 5000,
+      "changeDownRPM": 2000
+    },
+    "suspension": {
+      "maxRaise": 10,
+      "maxDrop": 10,
+      "springRate": 400,
+      "springPreload": 100,
+      "damping": 0.5
+    },
+    "steering": {
+      "maxAngle": 10,
+      "ackermann": false
+    },
+    "brakes": {
+      "brakeTorque": 1500,
+      "handbrakeTorque": 3000
+    },
+    "tires": {
+      "friction": 2
+    },
+    "camera": {
+      "armLength": 650,
+      "height": 200
+    }
+  },
+  "ranges": {
+    "mass": [500, 4000],
+    "maxSpeed": [1000, 4000],
+    "dragCoefficient": [0.2, 0.8],
+    "engine/maxTorque": [100, 2000],
+    "engine/maxRPM": [2000, 8000],
+    "engine/idleRPM": [400, 1000],
+    "suspension/maxRaise": [3, 20],
+    "suspension/maxDrop": [3, 20],
+    "suspension/springRate": [100, 3000],
+    "suspension/damping": [0.3, 0.95],
+    "steering/maxAngle": [5, 45],
+    "brakes/brakeTorque": [500, 12000],
+    "tires/friction": [1, 5],
+    "wheels/*/radius": [10, 40]
+  }
+}

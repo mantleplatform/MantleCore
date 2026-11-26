@@ -172,7 +172,7 @@ namespace MantleChassisDerivePrivate
 		for (double* Number : { &H.Mass, &H.MaxSpeed, &H.DragCoefficient, &H.FrontalArea, &H.MaxTorque, &H.FinalDrive, &H.MaxRaise, &H.MaxDrop, &H.SpringRate,
 				 &H.SpringPreload, &H.SpringDamping, &H.MaxSteerAngle, &H.BrakeTorque, &H.HandbrakeTorque, &H.EngineBraking, &H.TireFriction, &H.CameraArmLength, &H.CameraHeight,
 				 &H.WingAreaM2, &H.TailplaneAreaM2, &H.FinAreaM2, &H.EngineThrustNewtons, &H.RotorThrustNewtons, &H.HoverThrustNewtons, &H.PadSpringRate,
-				 &H.HoverFinAreaM2 })
+				 &H.HoverFinAreaM2, &H.BoatThrustNewtons, &H.BoatRudderAreaM2 })
 		{
 			*Number = RoundSignificant(*Number);
 		}
@@ -318,6 +318,12 @@ FMantleChassisHandling FMantleChassisDerive::Derive(const FMantleChassisSpec& Sp
 		H.HoverThrustNewtons = Arch.HoverThrustNewtons * MassRatio;
 		H.PadSpringRate = Arch.PadSpringRate * MassRatio * (BaseWheels / Wheels) * SizeRatio(BaseCompression, Compression);
 		H.HoverFinAreaM2 = Arch.HoverFinAreaM2 * SizeRatio(Spec.Hovercraft.FinHeight * Spec.Hovercraft.FinChord, Own.FinHeight * Own.FinChord);
+	}
+	// A boat's drive pushes the same share of its weight at every size, as a hovercraft's fan does; its rudder follows the hull's side (length by height).
+	if (Spec.Boat.bSet)
+	{
+		H.BoatThrustNewtons = Arch.BoatThrustNewtons * MassRatio;
+		H.BoatRudderAreaM2 = Arch.BoatRudderAreaM2 * SizeRatio(Spec.Length * Spec.Height, Base.Length * Base.Height);
 	}
 
 	RoundHandling(H);
