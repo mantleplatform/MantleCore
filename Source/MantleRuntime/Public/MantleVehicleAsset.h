@@ -387,10 +387,11 @@ struct FMantleVehicleHoverRudderDesc
 /** What stands in for a tire's grip on a hover (FMantleVehicleHoverDamping). */
 struct FMantleVehicleHoverDampingDesc
 {
-	double LateralPerSecond = 1.5;
-	double MaxLateralAccel = 400.0;
-	double YawPerSecond = 2.0;
-	double MaxYawAccelDegrees = 180.0;
+	/** The slide assist when a document gives none: real light hovercraft turn nose-first and keep sliding the old way (#381; DiscoverHover guide 12, Vanguard manual). */
+	double LateralPerSecond = 0.3;
+	double MaxLateralAccel = 100.0;
+	double YawPerSecond = 1.0;
+	double MaxYawAccelDegrees = 90.0;
 	double SkirtBrakePerSecond = 2.0;
 	double MaxSkirtBrakeAccel = 500.0;
 };

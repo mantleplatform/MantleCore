@@ -318,7 +318,9 @@ FMantleChassisHandling FMantleChassisDerive::Derive(const FMantleChassisSpec& Sp
 		const FMantleChassisHovercraft& Own = Base.Hovercraft;
 		const double Compression = FMath::Max(Spec.Hovercraft.Compression(Spec.Clearance), 1.0);
 		const double BaseCompression = FMath::Max(Own.Compression(Base.Clearance), 1.0);
-		H.HoverThrustNewtons = Arch.HoverThrustNewtons * MassRatio;
+		// The Power slider pushes harder or softer, by its 30 percent (#381); Grip goes to the slide dampers (FMantleVehicleChassisDocument).
+		H.HoverThrustNewtons = Arch.HoverThrustNewtons * MassRatio * (1.0 + Reach * Power);
+		H.HoverGrip = Grip;
 		H.PadSpringRate = Arch.PadSpringRate * MassRatio * (BaseWheels / Wheels) * SizeRatio(BaseCompression, Compression);
 		H.HoverFinAreaM2 = Arch.HoverFinAreaM2 * SizeRatio(Spec.Hovercraft.FinHeight * Spec.Hovercraft.FinChord, Own.FinHeight * Own.FinChord);
 	}

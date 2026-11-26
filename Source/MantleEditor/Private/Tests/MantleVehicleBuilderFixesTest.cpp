@@ -793,7 +793,7 @@ bool FMantleVehicleBuilderFeelTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("the bike's rear tire grips 15% more too"), Near(Session.GetShaped().Rider.RearTireFriction, Bike.Rider.RearTireFriction * 1.15, 0.01));
 	}
 
-	// What does not have them: a plane's handling is tuned to fly, and a hovercraft has the top speed alone.
+	// What does not have them: a plane's handling is tuned to fly, and a hovercraft has its top speed, its fan's power and its skirt's grip (#381).
 	FMantleChassisSpec Plane;
 	FMantleChassisSpec Hover;
 	if (FMantleVehicleChassisBuilder::LoadSpec(TEXT("plane"), Plane, Error) && FMantleVehicleChassisBuilder::LoadSpec(TEXT("hovercraft"), Hover, Error))
@@ -805,7 +805,7 @@ bool FMantleVehicleBuilderFeelTest::RunTest(const FString& Parameters)
 		for (const EMantleVehicleFeel Feel : MantleVehicleFeels)
 		{
 			TestFalse(TEXT("a plane has no feel sliders"), Flying.HasFeel(Feel) || Flying.SetFeel(Feel, 0.5));
-			TestEqual(TEXT("a hovercraft has the top speed alone"), Floating.HasFeel(Feel), Feel == EMantleVehicleFeel::TopSpeed);
+			TestEqual(TEXT("a hovercraft has top speed, power and grip, no suspension"), Floating.HasFeel(Feel), Feel != EMantleVehicleFeel::Stiffness);
 		}
 	}
 	return true;
