@@ -40,8 +40,8 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 // Covers the Build a vehicle window: the .fbx import, a build forgotten when the shape changes, what a flier is told on the
-// Build and drive step and where it is put, the scale limits said, one propeller count, one set of assets per vehicle and its undo, movement blocks that do not read, and the feel
-// sliders of the road types.
+// Build and drive step and where it is put, the scale limits said, one propeller count, one set of assets per vehicle and its undo, movement blocks that do not read, a tracked
+// vehicle's road wheels and tracks, and the feel sliders of the road types.
 
 // The window's state, which a test drives the way the buttons do. Named, not anonymous: MantleEditor builds as a unity build.
 struct FMantleVehicleBuilderFixAccess
@@ -318,7 +318,7 @@ bool FMantleVehicleBuilderFlierAdviceTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the plane needs about 350 m or a runway"), Advice(TEXT("plane")).Contains(TEXT("350 m")) && Advice(TEXT("plane")).Contains(TEXT("runway")));
 	TestTrue(TEXT("the jet needs about 150 m or a runway"), Advice(TEXT("jet")).Contains(TEXT("150 m")) && Advice(TEXT("jet")).Contains(TEXT("runway")));
 	TestTrue(TEXT("the helicopter needs open space above"), Advice(TEXT("helicopter")).Contains(TEXT("open space above")));
-	for (const TCHAR* Id : { TEXT("sedan"), TEXT("motorcycle"), TEXT("hovercraft") })
+	for (const TCHAR* Id : { TEXT("sedan"), TEXT("motorcycle"), TEXT("hovercraft"), TEXT("tank"), TEXT("bulldozer") })
 	{
 		TestTrue(*FString::Printf(TEXT("%s has no advice to give"), Id), Advice(Id).IsEmpty());
 	}
@@ -704,6 +704,143 @@ bool FMantleVehicleBuilderMovementBlocksTest::RunTest(const FString& Parameters)
 			return Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(TEXT("movement settings"));
 		}));
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleBuilderTrackedTest,
+	"Mantle.Vehicle.Builder.TrackedRoadWheelsAndTracks",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleBuilderTrackedTest::RunTest(const FString& Parameters)
+{
+	// A tank built from a model (#448): its wheels are road wheels (none steered, all driven, all on the handbrake), its document says tracked with its tracks, it
+	// rolls as a track does, and the check holds its two tracks as the cook does, in plain words.
+	FString Error;
+	USkeletalMesh* Model = MantleVehicleScratchBody::Make(TEXT("/Temp/MantleFixTank"), TEXT("FixTankModel"), Error);
+	if (!TestNotNull(*FString::Printf(TEXT("the sample model is made (%s)"), *Error), Model))
+	{
+		return false;
+	}
+	ON_SCOPE_EXIT { MantleVehicleScratchBody::Discard(Model); };
+	FMantleVehicleModelOptions Options;
+	Options.Folder = TEXT("/Temp/MantleFixTank");
+	Options.Name = TEXT("FixTank");
+	const FMantleVehicleBuildResult Built = FMantleVehicleBuilder::BuildFromModel(Model, TEXT("tank"), Options);
+	if (!TestTrue(*FString::Printf(TEXT("a tank is built from a model (%s)"), *FString::Join(Built.Problems, TEXT(" "))), Built.bOk && Built.Source != nullptr))
+	{
+		return false;
+	}
+	UMantleVehicleSource& Source = *Built.Source;
+	TestEqual(TEXT("it is a tracked vehicle"), Source.MovementType, EMantleVehicleMovementKind::Tracked);
+	TestEqual(TEXT("with the tank's 14 road wheels"), Source.Wheels.Num(), 14);
+	TestEqual(TEXT("rolling as a track does"), Source.Tuning.TireRollingResistance, 0.04f);
+
+	const auto RoadWheels = [this](const TSharedRef<FJsonObject>& Document, const TCHAR* What)
+	{
+		const TArray<TSharedPtr<FJsonValue>>* Wheels = nullptr;
+		if (!TestTrue(*FString::Printf(TEXT("%s: the document has wheels"), What), Document->TryGetArrayField(TEXT("wheels"), Wheels) && Wheels && Wheels->Num() > 0))
+		{
+			return;
+		}
+		for (const TSharedPtr<FJsonValue>& Value : *Wheels)
+		{
+			const TSharedPtr<FJsonObject> Wheel = Value.IsValid() ? Value->AsObject() : nullptr;
+			bool bSteering = true;
+			bool bDriven = false;
+			bool bHandbrake = false;
+			TestTrue(*FString::Printf(TEXT("%s: every road wheel is unsteered, driven and on the handbrake"), What), Wheel.IsValid() && Wheel->TryGetBoolField(TEXT("steering"), bSteering)
+				&& Wheel->TryGetBoolField(TEXT("driven"), bDriven) && Wheel->TryGetBoolField(TEXT("handbrake"), bHandbrake) && !bSteering && bDriven && bHandbrake);
+		}
+	};
+
+	// The document: movementType tracked, the tracks' block with their width, the track's rolling resistance and road wheels.
+	FString MergeError;
+	const TSharedRef<FJsonObject> Document = FMantleVehicleConverter::MakeDocument(Source, TMap<FString, FString>(), &MergeError);
+	TestTrue(*FString::Printf(TEXT("its movement blocks read (%s)"), *MergeError), MergeError.IsEmpty());
+	FString Movement;
+	TestTrue(TEXT("its document says tracked"), Document->TryGetStringField(TEXT("movementType"), Movement) && Movement == TEXT("tracked"));
+	const TSharedPtr<FJsonObject>* Tracked = nullptr;
+	double TrackWidth = 0.0;
+	TestTrue(TEXT("and has the tracks with their width"), Document->TryGetObjectField(TEXT("tracked"), Tracked) && Tracked && (*Tracked)->TryGetNumberField(TEXT("trackWidth"), TrackWidth) && TrackWidth > 0.0);
+	const TSharedPtr<FJsonObject>* Tires = nullptr;
+	double Rolling = 0.0;
+	TestTrue(TEXT("and a track's rolling resistance"), Document->TryGetObjectField(TEXT("tires"), Tires) && Tires && (*Tires)->TryGetNumberField(TEXT("rollingResistance"), Rolling)
+		&& FMath::IsNearlyEqual(Rolling, 0.04, 1.0e-6));
+	RoadWheels(Document, TEXT("as built"));
+
+	// Whatever a wheel's row says, the document writes it as a road wheel.
+	Source.Wheels[0].bSteering = true;
+	Source.Wheels[0].bDriven = false;
+	Source.Wheels[0].bHandbrake = false;
+	RoadWheels(FMantleVehicleConverter::MakeDocument(Source, TMap<FString, FString>()), TEXT("a wheel set to steer"));
+
+	// Positive control: the built tank has none of the tracked errors, and no car's (a steered wheel, 2 to 8 wheels).
+	const auto Errors = [&Source]()
+	{
+		TArray<FMantleValidationIssue> Issues;
+		FMantleVehicleConverter::CheckSource(&Source, FString(), Issues);
+		TArray<FString> Said;
+		for (const FMantleValidationIssue& Issue : Issues)
+		{
+			if (Issue.Severity == EMantleIssueSeverity::Error)
+			{
+				Said.Add(Issue.Problem);
+			}
+		}
+		return Said;
+	};
+	const auto Has = [](const TArray<FString>& Said, const TCHAR* Text) { return Said.ContainsByPredicate([Text](const FString& Line) { return Line.Contains(Text); }); };
+	{
+		const TArray<FString> Said = Errors();
+		const FString All = FString::Join(Said, TEXT(" | "));
+		for (const TCHAR* Text : { TEXT("road wheel"), TEXT("middle line"), TEXT("turn on the spot"), TEXT("no steering wheel"), TEXT("no driven wheel"), TEXT("wheels; a vehicle has"),
+			TEXT("have no tracks"), TEXT("Rolling Resistance") })
+		{
+			TestFalse(*FString::Printf(TEXT("the built tank has no '%s' error (%s)"), Text, *All), Has(Said, Text));
+		}
+	}
+	const TArray<FMantleVehicleSourceWheel> AllWheels = Source.Wheels;
+	const FString AllBlocks = Source.MovementBlocks;
+
+	// Two road wheels left on the left track: each track has 3 to 10.
+	Source.Wheels.RemoveAll([](const FMantleVehicleSourceWheel& Wheel) { return Wheel.Bone.ToString().EndsWith(TEXT("_l")) && !Wheel.Bone.ToString().StartsWith(TEXT("wheel_a1")) && !Wheel.Bone.ToString().StartsWith(TEXT("wheel_a2")); });
+	TestTrue(TEXT("two road wheels on the left track is said plainly"), Has(Errors(), TEXT("has 2 road wheels on its left track; each track has 3 to 10")));
+	Source.Wheels = AllWheels;
+
+	// Too few road wheels in all.
+	Source.Wheels.SetNum(4);
+	TestTrue(TEXT("four road wheels in all is too few"), Has(Errors(), TEXT("has 4 road wheels; a tracked vehicle has 6 to 20")));
+	Source.Wheels = AllWheels;
+
+	// A road wheel on the middle line (the root bone, which carries the chassis, is at Y 0) is on neither track.
+	const USkeletalMesh* Body = Source.Body.LoadSynchronous();
+	if (TestNotNull(TEXT("the tank has a body"), Body))
+	{
+		FMantleVehicleSourceWheel& Middle = Source.Wheels.AddDefaulted_GetRef();
+		Middle.Bone = Body->GetRefSkeleton().GetBoneName(0);
+		Middle.Radius = AllWheels[0].Radius;
+		Middle.Width = AllWheels[0].Width;
+		TestTrue(TEXT("a road wheel on the middle line is said plainly"), Has(Errors(), TEXT("on its middle line")));
+		Source.Wheels = AllWheels;
+	}
+
+	// Tracks too long for their gauge can't turn it on the spot: the tank's 1.35 at a lateral share of 0.8 is 2.5 at 1.5 (still inside the share's own range).
+	FMantleChassisSpec Spec;
+	if (TestTrue(TEXT("the tank chassis loads"), FMantleVehicleChassisBuilder::LoadSpec(TEXT("tank"), Spec, Error)))
+	{
+		Spec.Tracked.LateralShare = 1.5;
+		Source.MovementBlocks = FMantleVehicleChassisDocument::MovementBlocksJson(Spec);
+		const TArray<FString> Said = Errors();
+		TestTrue(*FString::Printf(TEXT("tracks that can't pivot are said plainly (%s)"), *FString::Join(Said, TEXT(" | "))), Has(Said, TEXT("can't turn on the spot")));
+		TestFalse(TEXT("and the share itself is inside the document's range"), Has(Said, TEXT("Lateral Share is 1.5, outside what a vehicle may have")));
+		Source.MovementBlocks = AllBlocks;
+	}
+
+	// A tracked vehicle with no tracks block is an error that says how to get one.
+	Source.MovementBlocks.Reset();
+	TestTrue(TEXT("a tracked vehicle without its tracks is an error"), Has(Errors(), TEXT("Movement Blocks have no tracks")));
+	Source.MovementBlocks = AllBlocks;
 	return true;
 }
 

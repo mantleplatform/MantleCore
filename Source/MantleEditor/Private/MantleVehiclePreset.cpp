@@ -128,7 +128,7 @@ namespace MantleVehiclePresetPrivate
 			TEXT("suspension/springPreload"), TEXT("suspension/damping"),
 			TEXT("steering/maxAngle"), TEXT("steering/ackermann"), TEXT("steering/speedCurve"),
 			TEXT("brakes/brakeTorque"), TEXT("brakes/handbrakeTorque"), TEXT("brakes/abs"), TEXT("brakes/frontShare"),
-			TEXT("tires/friction"), TEXT("tires/rearFriction"),
+			TEXT("tires/friction"), TEXT("tires/rearFriction"), TEXT("tires/rollingResistance"),
 			TEXT("camera/armLength"), TEXT("camera/height") };
 		return Known;
 	}
@@ -602,6 +602,8 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 	{
 		T.bTireRearFriction = true;
 	}
+	// #447, #448: how much every wheel loses to rolling; absent, the tuning keeps its own (a car tire's 0.012).
+	Reader.Float(TEXT("tires/rollingResistance"), T.TireRollingResistance);
 
 	Reader.Float(TEXT("camera/armLength"), T.CameraArmLength);
 	Reader.Float(TEXT("camera/height"), T.CameraHeight);

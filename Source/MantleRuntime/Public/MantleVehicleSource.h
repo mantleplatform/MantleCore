@@ -462,6 +462,10 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tires", meta = (EditCondition = "bTireRearFriction", ClampMin = "0.1", ClampMax = "10"))
 	float TireRearFriction = 2.f;
 
+	/** How much every wheel loses to rolling (tires.rollingResistance, #448, shared with #447): a car tyre's 0.012, which its absence means; a track's road wheels 0.04. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tires", meta = (ClampMin = "0.002", ClampMax = "0.05"))
+	float TireRollingResistance = 0.012f;
+
 	/** For a model with no inside: the driver isn't drawn while driving, so only the vehicle shows. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Seat", meta = (DisplayName = "Hide the driver"))
 	bool bHideDriver = false;

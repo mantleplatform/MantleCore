@@ -447,7 +447,7 @@ void SMantleVehicleBuilder::PickPreset(const FString& PresetId, const FText& Nam
 	TypeProblem = FText::GetEmpty();
 	SelectedPresetId = PresetId;
 	SelectedPresetName = Name;
-	// A plane, helicopter or hovercraft is sized by one Size held to the preset's own fit range.
+	// A plane, helicopter, hovercraft or tracked vehicle is sized by one Size held to the preset's own fit range.
 	const FMantleVehiclePreset* Picked = FMantleVehiclePresets::Find(PresetId);
 	Shape.Start(Loaded, Picked ? Picked->FitMinScale : 0.0, Picked ? Picked->FitMaxScale : 0.0);
 	bPreviewDirty = false;
