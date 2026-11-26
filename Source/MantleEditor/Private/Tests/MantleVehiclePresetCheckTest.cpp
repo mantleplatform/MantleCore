@@ -23,6 +23,9 @@ namespace MantleVehiclePresetCheckTestPrivate
 		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage());
 		Source->Preset = Preset;
 		Source->Tuning.Mass = Mass;
+		// Inside the sedan's maxSpeed range (2500-6500 cm/s): the tuning's own default, 12000 (no speed limit without a preset, cars step 6), is
+		// past it, and its "Lower it" would be counted against the mass checks below.
+		Source->Tuning.MaxSpeed = 5000.f;
 		return Source;
 	}
 

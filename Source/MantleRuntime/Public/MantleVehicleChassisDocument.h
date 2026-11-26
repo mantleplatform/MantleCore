@@ -29,6 +29,16 @@ struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 	static constexpr double HelicopterCollectiveRate = 1.0;
 	/** A hovercraft's rigid-body angular damping, per second, on the ground and in the air alike (default 0.5): hover.angularDamping. */
 	static constexpr double HovercraftAngularDamping = 0.5;
+	/** A hovercraft's slide assist with the builder's Grip all the way to grippy (#381): the car-like hold every hovercraft had before #381. */
+	static constexpr double HovercraftGrippyLateralPerSecond = 1.5;
+	static constexpr double HovercraftGrippyMaxLateralAccel = 400.0;
+	static constexpr double HovercraftGrippyYawPerSecond = 2.0;
+	static constexpr double HovercraftGrippyMaxYawAccelDegrees = 180.0;
+	/**
+	 * One of a hovercraft's slide dampers for the builder's Grip (-1 to 1, #381): in two halves, from nothing (-1, a true hovercraft) to the preset's
+	 * own Own (0, a real one) and on to Grippy (1), in straight lines. Pure.
+	 */
+	static double HovercraftSlide(double Grip, double Own, double Grippy);
 	/**
 	 * How much of the elevator's travel the player's keys and stick reach (flight.pitchAuthority): half of its 20 degrees, a visible flap and a real climb that is
 	 * still hard to stall from one held key.
@@ -36,6 +46,8 @@ struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 	static constexpr double PlanePitchAuthority = 0.5;
 	/** How far to the side a bike's rider steps off, cm: a body-width, not a car's door (seat.exitSideDistance). */
 	static constexpr double BikeExitSideDistance = 100.0;
+	/** A quad rider (#376 step 9d) steps off this far beyond the quad's half-width (body or wheels, whichever is wider), cm. */
+	static constexpr double QuadExitClearance = 50.0;
 	/**
 	 * A car's (a ground chassis on more than two wheels) tire grip per axle, as shares of its preset's one friction: the steered front's and the rest's, 3.0 and 4.0
 	 * of a 3.5, the built-in sports car's balance. The front's is written as tires.friction and the rear's as tires.rearFriction. A bike's tires keep their own.
@@ -85,6 +97,8 @@ struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 
 	/** The steering speed curve ComposeGroundHandling writes: (mph, share of the lock), set from the drive probe's steering sweeps (#376). */
 	static TArray<FVector2D> GroundSteeringSpeedCurve();
+	/** The steering speed curve ComposeGroundHandling writes for a two-wheeler (a rider on two wheels, #378), set the same way from the probe's sweeps on the bike. */
+	static TArray<FVector2D> TwoWheelerSteeringSpeedCurve();
 
 	/**
 	 * The movement keys of Spec's chassis alone, as the JSON object text UMantleVehicleSource::MovementBlocks holds: the flight, helicopter or hover block, and

@@ -134,7 +134,8 @@ bool FMantleVehicleChassisPresetsMakeAssetsTest::RunTest(const FString& Paramete
 		}
 		TestEqual(*FString::Printf(TEXT("%s: one collision box"), *Id), Desc.Collision.Num(), 1);
 		TestTrue(*FString::Printf(TEXT("%s: it has a center of mass"), *Id), Desc.bCenterOfMass);
-		if (Reference.bCenterline)
+		// A rider straddles a bike (on the centerline) or a quad (the ATV's wheels in pairs, #376 step 9d): on the centerline, no wheel, no passenger.
+		if (Reference.bCenterline || Reference.Rider.bSet)
 		{
 			TestTrue(*FString::Printf(TEXT("%s: the rider sits on the centerline"), *Id), FMath::IsNearlyZero(Desc.SeatLocation.Y));
 			TestFalse(*FString::Printf(TEXT("%s: a rider has handlebars, not a steering wheel"), *Id), Desc.bSteeringWheel);
