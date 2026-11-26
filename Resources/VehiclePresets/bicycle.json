@@ -102,8 +102,7 @@
       "maxRPM": 1000,
       "idleRPM": 300,
       "torqueCurve": [[0, 1], [1000, 1]],
-      "tractionControl": false,
-      "engineBraking": 0
+      "tractionControl": false
     },
     "transmission": {
       "gearRatios": [0.941, 0.824, 0.618, 0.529, 0.42, 0.36, 0.3, 0.22],
