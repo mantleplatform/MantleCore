@@ -130,7 +130,8 @@ namespace MantleVehiclePresetPrivate
 			TEXT("suspension/springPreload"), TEXT("suspension/damping"),
 			TEXT("steering/maxAngle"), TEXT("steering/ackermann"), TEXT("steering/speedCurve"),
 			TEXT("brakes/brakeTorque"), TEXT("brakes/handbrakeTorque"), TEXT("brakes/abs"), TEXT("brakes/frontShare"),
-			TEXT("tires/friction"), TEXT("tires/rearFriction"),
+			TEXT("tires/friction"), TEXT("tires/rearFriction"), TEXT("tires/rollingResistance"),
+			TEXT("pedal/riderPower"), TEXT("pedal/sprintPower"), TEXT("pedal/sprintReserve"), TEXT("pedal/maxCadence"), TEXT("pedal/cadence"),
 			TEXT("camera/armLength"), TEXT("camera/height") };
 		return Known;
 	}
@@ -657,6 +658,16 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 	{
 		T.bTireRearFriction = true;
 	}
+	// #447, #448: how much every wheel loses to rolling; absent, the tuning keeps its own (a car tire's 0.012).
+	Reader.Float(TEXT("tires/rollingResistance"), T.TireRollingResistance);
+	// #447: a pedalled preset (the Bicycle): any pedal number makes the vehicle pedalled; an absent one keeps the tuning's own.
+	bool bAnyPedal = false;
+	bAnyPedal |= Reader.Float(TEXT("pedal/riderPower"), T.PedalRiderPower);
+	bAnyPedal |= Reader.Float(TEXT("pedal/sprintPower"), T.PedalSprintPower);
+	bAnyPedal |= Reader.Float(TEXT("pedal/sprintReserve"), T.PedalSprintReserve);
+	bAnyPedal |= Reader.Float(TEXT("pedal/maxCadence"), T.PedalMaxCadence);
+	bAnyPedal |= Reader.Float(TEXT("pedal/cadence"), T.PedalCadence);
+	T.bPedal = bAnyPedal;
 
 	Reader.Float(TEXT("camera/armLength"), T.CameraArmLength);
 	Reader.Float(TEXT("camera/height"), T.CameraHeight);

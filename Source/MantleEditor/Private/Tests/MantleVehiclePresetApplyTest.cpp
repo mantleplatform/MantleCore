@@ -303,4 +303,59 @@ bool FMantleVehiclePresetDriverAidsTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehiclePresetPedalTest,
+	"Mantle.Vehicle.Presets.Pedal",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehiclePresetPedalTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehiclePresetApplyTestPrivate;
+	// #447: a pedalled preset's pedal block and rolling resistance are read into the tuning and written back out.
+	FMantleVehiclePreset Preset;
+	FString Error;
+	const TCHAR* Defaults = TEXT("{ "pedal": { "riderPower": 250, "sprintPower": 900, "sprintReserve": 15, "maxCadence": 200, "cadence": 85 }, "tires": { "friction": 1.12, "rollingResistance": 0.005 } }");
+	if (TestTrue(TEXT("the inline preset parses"), FMantleVehiclePresets::Parse(PresetWithDefaults(Defaults), Preset, Error)))
+	{
+		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		TArray<FString> Notes;
+		TestTrue(TEXT("the pedal keys are known"), FMantleVehiclePresets::ApplyDefaults(Preset, *Source, Notes));
+		TestTrue(TEXT("pedalled"), Source->Tuning.bPedal);
+		TestEqual(TEXT("250 W"), Source->Tuning.PedalRiderPower, 250.f);
+		TestEqual(TEXT("0.005 rolling"), Source->Tuning.TireRollingResistance, 0.005f);
+		const TSharedRef<FJsonObject> Document = FMantleVehicleConverter::MakeDocument(*Source, TMap<FString, FString>());
+		ExpectFragment(*this, TEXT("pedal"), Preset.Defaults, Document);
+		TArray<FMantleValidationIssue> Issues;
+		FMantleVehicleConverter::CheckSource(Source, FString(), Issues);
+		TestFalse(TEXT("no pedal error on the preset's numbers"), Issues.ContainsByPredicate([](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Severity == EMantleIssueSeverity::Error && (Issue.Problem.Contains(TEXT("Power")) || Issue.Problem.Contains(TEXT("Cadence")));
+		}));
+	}
+
+	// Not pedalled: no pedal block, so every other vehicle's document is what it was.
+	UMantleVehicleSource* Fresh = NewObject<UMantleVehicleSource>(GetTransientPackage());
+	TestFalse(TEXT("a fresh source isn't pedalled"), Fresh->Tuning.bPedal);
+	TestFalse(TEXT("no pedal block"), FMantleVehicleConverter::MakeDocument(*Fresh, TMap<FString, FString>())->HasField(TEXT("pedal")));
+
+	// The two rules: a sprint at least the held power, and the cadence 20 under the max.
+	UMantleVehicleSource* Wrong = NewObject<UMantleVehicleSource>(GetTransientPackage());
+	Wrong->Tuning.bPedal = true;
+	Wrong->Tuning.PedalRiderPower = 400.f;
+	Wrong->Tuning.PedalSprintPower = 300.f;
+	Wrong->Tuning.PedalCadence = 190.f;
+	Wrong->Tuning.PedalMaxCadence = 200.f;
+	TArray<FMantleValidationIssue> Issues;
+	FMantleVehicleConverter::CheckSource(Wrong, FString(), Issues);
+	TestTrue(TEXT("a sprint under the held power is an error"), Issues.ContainsByPredicate([](const FMantleValidationIssue& Issue)
+	{
+		return Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(TEXT("Sprint Power")) && Issue.Problem.Contains(TEXT("under its Rider Power"));
+	}));
+	TestTrue(TEXT("a cadence too near the max is an error"), Issues.ContainsByPredicate([](const FMantleValidationIssue& Issue)
+	{
+		return Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(TEXT("within 20 of its Max Cadence"));
+	}));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

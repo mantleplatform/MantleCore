@@ -4012,7 +4012,24 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 	{
 		Tires->SetField(TEXT("rearFriction"), VehicleNumber(T.TireRearFriction));
 	}
+	// Rolling resistance (#447, #448): only when it is not what its absence means (a car tire's), so a car's document is what it was before the key.
+	if (!FMath::IsNearlyEqual(static_cast<double>(T.TireRollingResistance), FMantleVehicleDesc().TiresRollingResistance, 1.0e-6))
+	{
+		Tires->SetField(TEXT("rollingResistance"), VehicleNumber(T.TireRollingResistance));
+	}
 	Doc->SetObjectField(TEXT("tires"), Tires);
+
+	// #447: a pedalled vehicle (a bicycle): the rider is its engine. Absent on every other vehicle, so their documents are what they were.
+	if (T.bPedal)
+	{
+		TSharedRef<FJsonObject> Pedal = MakeShared<FJsonObject>();
+		Pedal->SetField(TEXT("riderPower"), VehicleNumber(T.PedalRiderPower));
+		Pedal->SetField(TEXT("sprintPower"), VehicleNumber(T.PedalSprintPower));
+		Pedal->SetField(TEXT("sprintReserve"), VehicleNumber(T.PedalSprintReserve));
+		Pedal->SetField(TEXT("maxCadence"), VehicleNumber(T.PedalMaxCadence));
+		Pedal->SetField(TEXT("cadence"), VehicleNumber(T.PedalCadence));
+		Doc->SetObjectField(TEXT("pedal"), Pedal);
+	}
 
 	TArray<TSharedPtr<FJsonValue>> Wheels;
 	for (const FMantleVehicleSourceWheel& Wheel : Source.Wheels)
@@ -4653,6 +4670,26 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 	if (T.bTireRearFriction)
 	{
 		VehicleCheckRange(Subject, TEXT("Tire Rear Friction"), TEXT("tires/rearFriction"), T.TireRearFriction, OutIssues);
+	}
+	VehicleCheckRange(Subject, TEXT("Tire Rolling Resistance"), TEXT("tires/rollingResistance"), T.TireRollingResistance, OutIssues);
+	// #447: a pedalled vehicle's rider, and the two rules the cook holds them to.
+	if (T.bPedal)
+	{
+		VehicleCheckRange(Subject, TEXT("Rider Power"), TEXT("pedal/riderPower"), T.PedalRiderPower, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Sprint Power"), TEXT("pedal/sprintPower"), T.PedalSprintPower, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Sprint Reserve"), TEXT("pedal/sprintReserve"), T.PedalSprintReserve, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Max Cadence"), TEXT("pedal/maxCadence"), T.PedalMaxCadence, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Cadence"), TEXT("pedal/cadence"), T.PedalCadence, OutIssues);
+		if (T.PedalSprintPower < T.PedalRiderPower)
+		{
+			AddError(FString::Printf(TEXT("has a Sprint Power (%g W) under its Rider Power (%g W)."), T.PedalSprintPower, T.PedalRiderPower),
+				TEXT("Set Sprint Power to at least the Rider Power."));
+		}
+		if (T.PedalCadence + 20.f > T.PedalMaxCadence)
+		{
+			AddError(FString::Printf(TEXT("has a Cadence (%g rpm) within 20 of its Max Cadence (%g rpm)."), T.PedalCadence, T.PedalMaxCadence),
+				TEXT("Lower Cadence or raise Max Cadence so they are at least 20 rpm apart."));
+		}
 	}
 	if (T.GearRatios.Num() < 1 || T.GearRatios.Num() > FMantleVehicleLimits::MaxGears)
 	{
