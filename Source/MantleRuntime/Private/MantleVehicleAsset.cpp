@@ -62,7 +62,7 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("suspension/maxDrop"), 0.0, 50.0 },
 		{ TEXT("suspension/springRate"), 1.0, 5000.0 },
 		{ TEXT("suspension/springPreload"), 0.0, 5000.0 },
-		{ TEXT("suspension/damping"), 0.0, 1.0 },
+		{ TEXT("suspension/damping"), 0.0, 5.0 },
 		{ TEXT("steering/maxAngle"), 5.0, 70.0 },
 		{ TEXT("steering/speedCurve/*/0"), 0.0, 200.0 },
 		{ TEXT("steering/speedCurve/*/1"), 0.1, 1.0 },
