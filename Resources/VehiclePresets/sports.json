@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "sports",
   "name": "Sports car",
-  "description": "A low, fast, stiffly sprung car: sports cars, supercars and race cars. Plenty of torque to the rear wheels, so it needs a steady foot, and it sits low enough to feel very quick.",
+  "description": "A low, fast, stiffly sprung car: sports cars and race cars. Plenty of torque to the rear wheels, so it needs a steady foot, and it sits low enough to feel very quick.",
   "comment": "A vehicle preset (#728); see sedan.json for the format. The driver sits 46.8 cm behind the steering wheel hub, here on a 262 cm wheelbase with the seat 42 cm behind the middle. Rear drive, stiff springs, a low center of mass, high torque.",
   "movementType": "wheeled",
   "publishable": true,
@@ -67,10 +67,10 @@
     },
     "suspension": {
       "maxRaise": 8,
-      "maxDrop": 8,
-      "springRate": 400,
+      "maxDrop": 10,
+      "springRate": 285,
       "springPreload": 80,
-      "damping": 0.6
+      "damping": 0.62
     },
     "steering": {
       "maxAngle": 38,
@@ -83,7 +83,7 @@
       "frontShare": 0.65
     },
     "tires": {
-      "friction": 1.9
+      "friction": 1.5
     },
     "camera": {
       "armLength": 400,
@@ -101,7 +101,7 @@
     "transmission/shiftTime": [0.05, 1],
     "suspension/maxRaise": [3, 15],
     "suspension/maxDrop": [3, 15],
-    "suspension/springRate": [200, 900],
+    "suspension/springRate": [100, 900],
     "suspension/damping": [0.3, 0.9],
     "steering/maxAngle": [25, 50],
     "brakes/brakeTorque": [1500, 8000],

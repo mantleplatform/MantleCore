@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "sedan",
   "name": "Sedan",
-  "description": "A four-door road car: hatchbacks, saloons, coupes and estates. Handles like a sports car, a little softer.",
+  "description": "A four-door road car: saloons and estates. Handles like a sports car, a little softer.",
   "comment": "A vehicle preset (#728): the starting point a creator picks before choosing their mesh. defaults is a vehicle document fragment (schema/vehicle.schema.json) the plugin writes into a new vehicle; ranges narrows placeAssets.vehicle.ranges in schema/avatar/limits.json for a vehicle built from this preset, by the same paths, and never widens them. fit sizes the creator's mesh for the 165.6 cm Mantle character: one uniform scale from the mesh's wheel radius and track width (wheel-center to wheel-center across an axle) against these typical values, never from the wheelbase, so a stretched limousine keeps its length. Values are tuned against the owner's Fab test pack, where the real-scale Vol 2 sedan comes out at about 1.0.",
   "movementType": "wheeled",
   "publishable": true,
@@ -67,10 +67,10 @@
     },
     "suspension": {
       "maxRaise": 10,
-      "maxDrop": 10,
-      "springRate": 250,
+      "maxDrop": 16,
+      "springRate": 150,
       "springPreload": 50,
-      "damping": 0.5
+      "damping": 0.57
     },
     "steering": {
       "maxAngle": 40,
@@ -83,7 +83,7 @@
       "frontShare": 0.65
     },
     "tires": {
-      "friction": 1.7
+      "friction": 1.25
     },
     "camera": {
       "armLength": 420,
@@ -100,8 +100,8 @@
     "engine/engineBraking": [0, 0.3],
     "transmission/shiftTime": [0.05, 1],
     "suspension/maxRaise": [3, 20],
-    "suspension/maxDrop": [3, 20],
-    "suspension/springRate": [100, 800],
+    "suspension/maxDrop": [3, 25],
+    "suspension/springRate": [50, 800],
     "suspension/damping": [0.2, 0.9],
     "steering/maxAngle": [25, 50],
     "brakes/brakeTorque": [1000, 6000],

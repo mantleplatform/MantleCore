@@ -70,7 +70,8 @@ struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 	 * chassis on more than two wheels that is not a plane, a helicopter or a hovercraft, the steering eases off with speed (steering.speedCurve, the built-in
 	 * sports car's curve: mph, share of the lock) and the tires grip front and rear as the built-in sports car's do (tires.friction times FrontTireGripShare, and
 	 * tires.rearFriction times RearTireGripShare): at full lock at 100 km/h a tap of the key slid the front tires past their grip and spun the car, and equal
-	 * tires let the driven rear go first. Document's tires and steering objects must exist. Nothing for any other chassis.
+	 * tires let the driven rear go first. A preset whose defaults set tires.rearFriction (the drift car, rear under the front) keeps that rear instead, times
+	 * the friction over the preset's own, so a resized car keeps its balance. Document's tires and steering objects must exist. Nothing for any other chassis.
 	 */
 	static void ComposeGroundHandling(const FMantleChassisSpec& Spec, FJsonObject& Document, TArray<FString>* OutHeld = nullptr);
 

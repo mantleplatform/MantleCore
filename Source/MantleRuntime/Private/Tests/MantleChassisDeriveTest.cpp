@@ -446,7 +446,8 @@ bool FMantleChassisDeriveIsDeterministicTest::RunTest(const FString& Parameters)
 	// Every machine rebuilds the same chassis from the same selector: the same inputs give bit-for-bit the same handling and the same document,
 	// however often, in whatever order, and from however many separate reads of the preset.
 	const FString Selectors[] = { TEXT("sedan@0.7"), TEXT("sedan@1.6"), TEXT("sports@0.5"), TEXT("pickup@1.3"), TEXT("truck@0.7"), TEXT("sixwheeler@1.3"), TEXT("van@0.5"),
-		TEXT("limousine@1.6"), TEXT("motorcycle@0.7"), TEXT("motorcycle@1.3"), TEXT("plane@0.7"), TEXT("plane@1.3"), TEXT("plane@2.5") };
+		TEXT("limousine@1.6"), TEXT("motorcycle@0.7"), TEXT("motorcycle@1.3"), TEXT("plane@0.7"), TEXT("plane@1.3"), TEXT("plane@2.5"), TEXT("muscle@0.7"), TEXT("drift@1.3"),
+		TEXT("compact@0.7"), TEXT("supercar@1.3") };
 	for (const FString& Selector : Selectors)
 	{
 		FMantleChassisSpec A;
@@ -561,8 +562,12 @@ bool FMantleChassisDeriveScalingLawsTest::RunTest(const FString& Parameters)
 			TestTrue(*FString::Printf(TEXT("%s: engine braking gives the same lift-off deceleration, S^4"), *Label), ScalesRounded(H.EngineBraking, Own.EngineBraking, S * S * S * S));
 			// The lock is the archetype's own angle, so a uniform scale leaves it alone (and the turning circle, which follows the wheelbase, grows with the size).
 			TestEqual(*FString::Printf(TEXT("%s: the steering lock is an angle, the same"), *Label), H.MaxSteerAngle, Own.MaxSteerAngle);
-			TestTrue(*FString::Printf(TEXT("%s: the archetype's tire, drag and damping are kept"), *Label),
-				H.TireFriction == Own.TireFriction && H.DragCoefficient == Own.DragCoefficient && H.SpringDamping == Own.SpringDamping);
+			TestTrue(*FString::Printf(TEXT("%s: the archetype's tire and drag are kept"), *Label), H.TireFriction == Own.TireFriction && H.DragCoefficient == Own.DragCoefficient);
+			// The damper follows one wheel's critical damping, sqrt(spring x mass per wheel) = sqrt(S^2 x S^3), so the damping ratio stays the archetype's;
+			// past the document's 5 it is held there, and the hold is listed.
+			const bool bDampingHeld = H.Clamped.ContainsByPredicate([](const FString& Entry) { return Entry.StartsWith(TEXT("suspension/damping ")); });
+			TestTrue(*FString::Printf(TEXT("%s: the damping keeps the damping ratio, S^2.5"), *Label),
+				bDampingHeld ? (H.SpringDamping == 5.0 && Own.SpringDamping * FMath::Pow(S, 2.5) > 5.0) : ScalesRounded(H.SpringDamping, Own.SpringDamping, FMath::Pow(S, 2.5)));
 			// A smaller wheel moves less road a step: the top speed falls with it, and the final drive keeps the top gear at the same share of the
 			// redline. A larger one keeps the archetype's top speed and gears down for it.
 			TestTrue(*FString::Printf(TEXT("%s: the top speed is the archetype's, less in proportion to a smaller wheel"), *Label), ScalesRounded(H.MaxSpeed, Own.MaxSpeed, FMath::Min(1.0, S)));
@@ -770,7 +775,7 @@ bool FMantleChassisDeriveHoldsAreVisibleTest::RunTest(const FString& Parameters)
 	using namespace MantleChassisDeriveTestPrivate;
 	// Every path Derive holds a result to is one the document has a range for: a path the document did not know would hold nothing, silently.
 	const TArray<FString> Paths = FMantleChassisDerive::LimitedPaths();
-	TestEqual(TEXT("Derive holds sixteen numbers"), Paths.Num(), 16);
+	TestEqual(TEXT("Derive holds seventeen numbers"), Paths.Num(), 17);
 	for (const FString& Path : Paths)
 	{
 		double Min = 0.0;

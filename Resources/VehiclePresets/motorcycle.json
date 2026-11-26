@@ -43,7 +43,7 @@
       "pelvisOffset": [0, 0, 18.9],
       "stopPelvisShift": [0, 12, -24],
       "kneeSplayDegrees": 8,
-      "rearTireFriction": 8,
+      "rearTireFriction": 5.88,
       "rearBrakeTorque": 1220,
       "rotationControl": {
         "torqueControl": true,
@@ -101,7 +101,7 @@
       "frontShare": 0.5
     },
     "tires": {
-      "friction": 4
+      "friction": 2.94
     },
     "camera": {
       "armLength": 380,
