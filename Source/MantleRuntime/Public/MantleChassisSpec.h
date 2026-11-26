@@ -372,6 +372,10 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	bool bPassenger = false;
 	/** One wheel per axle, on the centerline (layout.centerline): a motorcycle. A plane has only its nose axle so (FMantleChassisAxle::bCenterline). */
 	bool bCenterline = false;
+	/** #447: the preset's defaults have a pedal block (a bicycle): its rider is the engine, and the rider's weight (PedalRiderMassKg) doesn't resize. */
+	bool bPedal = false;
+	/** #447: the rider a pedalled preset's mass includes (the drive probe's standard driver). */
+	static constexpr double PedalRiderMassKg = 75.0;
 	/** The seat has a steering wheel (a rider's has handlebars instead, and a pilot's a stick and a throttle). */
 	bool bSteeringWheel = true;
 	FString DriverSeat = TEXT("car");

@@ -303,6 +303,19 @@ namespace MantleVehicleChassisDocumentPrivate
 		{
 			Out->SetField(TEXT("rearBrakeTorque"), Number(R.RearBrakeTorque));
 		}
+		// #447: a bicycle's crank and sprint stance; absent on a motorcycle, so its document is as it was.
+		if (R.bCrank)
+		{
+			const TSharedRef<FJsonObject> Crank = MakeShared<FJsonObject>();
+			Crank->SetField(TEXT("center"), Triple(R.CrankCenter));
+			Crank->SetField(TEXT("length"), Number(R.CrankLength));
+			SetBone(*Crank, R.CrankBone);
+			Out->SetObjectField(TEXT("crank"), Crank);
+		}
+		if (!R.SprintPelvisShift.IsZero())
+		{
+			Out->SetField(TEXT("sprintPelvisShift"), Triple(R.SprintPelvisShift));
+		}
 		const FMantleVehicleRotationControlDesc& C = R.RotationControl;
 		const TSharedRef<FJsonObject> Control = MakeShared<FJsonObject>();
 		Control->SetBoolField(TEXT("torqueControl"), C.bTorqueControl);
@@ -369,6 +382,12 @@ namespace MantleVehicleChassisDocumentPrivate
 		Out.PelvisOffset = Rider.PelvisOffset;
 		Out.StopPelvisShift = Rider.StopPelvisShift;
 		Out.KneeSplayDegrees = Rider.KneeSplayDegrees;
+		// #447: the crank's centre rides the root bone (the frame), as the pegs do; a preset's bare bicycle has no crank bone to turn.
+		Out.bCrank = Rider.bCrank;
+		Out.CrankCenter = Rider.CrankCenter;
+		Out.CrankLength = Rider.CrankLength;
+		Out.CrankBone = NAME_None;
+		Out.SprintPelvisShift = Rider.SprintPelvisShift;
 		// The document's one friction and brake torque are the front wheel's; the rear has its own, when the preset gives one.
 		Out.bRearTireFriction = Rider.RearTireFriction > 0.0;
 		Out.RearTireFriction = Out.bRearTireFriction ? Rider.RearTireFriction : 0.0;
@@ -675,6 +694,12 @@ namespace MantleVehicleChassisDocumentPrivate
 			HoldVector(TEXT("seat/rider/pelvisOffset/*"), R.PelvisOffset);
 			HoldVector(TEXT("seat/rider/stopPelvisShift/*"), R.StopPelvisShift);
 			Hold(TEXT("seat/rider/kneeSplayDegrees"), R.KneeSplayDegrees);
+			if (R.bCrank)
+			{
+				HoldVector(TEXT("seat/rider/crank/center/*"), R.CrankCenter);
+				Hold(TEXT("seat/rider/crank/length"), R.CrankLength);
+			}
+			HoldVector(TEXT("seat/rider/sprintPelvisShift/*"), R.SprintPelvisShift);
 			if (R.bRearTireFriction)
 			{
 				Hold(TEXT("seat/rider/rearTireFriction"), R.RearTireFriction);
@@ -1071,21 +1096,40 @@ TArray<FVector2D> FMantleVehicleChassisDocument::GroundSteeringSpeedCurve()
 		FVector2D(120.0, 0.24) };
 }
 
+TArray<FVector2D> FMantleVehicleChassisDocument::TwoWheelerSteeringSpeedCurve()
+{
+	// #378, from the drive probe's steering sweeps on the bike at its real grip: at each speed 1.3x the road-wheel angle that gives its peak
+	// sideways g, as a share of its 40 deg lock (this tyre model has no camber thrust, so the front tyre's slip angle turns the bike, as on a car).
+	// Full lock to 20 mph for walking-pace turns.
+	return { FVector2D(0.0, 1.0), FVector2D(20.0, 0.8), FVector2D(25.0, 0.75), FVector2D(37.5, 0.53), FVector2D(56.0, 0.35), FVector2D(75.0, 0.27),
+		FVector2D(120.0, 0.24) };
+}
+
 void FMantleVehicleChassisDocument::ComposeGroundHandling(const FMantleChassisSpec& Spec, FJsonObject& Document, TArray<FString>* OutHeld)
 {
 	using namespace MantleVehicleChassisDocumentPrivate;
 
-	if (Spec.Aircraft.bSet || Spec.Helicopter.bSet || Spec.Hovercraft.bSet || Spec.Boat.bSet || Spec.WheelCount() <= 2)
+	if (Spec.Aircraft.bSet || Spec.Helicopter.bSet || Spec.Hovercraft.bSet || Spec.Boat.bSet)
+	{
+		return;
+	}
+	// A rider on two wheels (#378) gets its own steering curve and keeps its tyres' own grip (a bike's front and rear are the preset's, not a car's split).
+	const bool bTwoWheeler = Spec.WheelCount() == 2 && Spec.Rider.bSet;
+	if (Spec.WheelCount() <= 2 && !bTwoWheeler)
 	{
 		return;
 	}
 	TArray<TSharedPtr<FJsonValue>> Curve;
-	for (const FVector2D& Point : GroundSteeringSpeedCurve())
+	for (const FVector2D& Point : bTwoWheeler ? TwoWheelerSteeringSpeedCurve() : GroundSteeringSpeedCurve())
 	{
 		const TArray<TSharedPtr<FJsonValue>> Pair = { Number(Point.X), Number(Point.Y) };
 		Curve.Add(MakeShared<FJsonValueArray>(Pair));
 	}
 	ChildObject(Document, TEXT("steering"))->SetArrayField(TEXT("speedCurve"), Curve);
+	if (bTwoWheeler)
+	{
+		return;
+	}
 
 	// The preset's one friction is the middle, so a two-axle car's average grip is unchanged. Held to the document's ranges, as the movement numbers are.
 	const TSharedPtr<FJsonObject> Tires = ChildObject(Document, TEXT("tires"));

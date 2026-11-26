@@ -229,7 +229,9 @@ FMantleChassisHandling FMantleChassisDerive::Derive(const FMantleChassisSpec& Sp
 
 	// Mass: the archetype's, by the body's volume (length x width x (height + ground clearance)) against its own.
 	const double VolumeRatio = SizeRatio(Spec.Length * Spec.Width * (Spec.Height + Spec.Clearance), Base.Length * Base.Width * (Base.Height + Base.Clearance));
-	H.Mass = Limited(H.Clamped, DocPath::Mass, Arch.Mass * VolumeRatio);
+	// A pedalled vehicle (#447) carries its rider in its mass, and the rider doesn't shrink or grow with the frame: only the rest goes by the volume.
+	const double FixedRiderKg = Spec.bPedal ? FMath::Min(FMantleChassisSpec::PedalRiderMassKg, Arch.Mass) : 0.0;
+	H.Mass = Limited(H.Clamped, DocPath::Mass, FixedRiderKg + (Arch.Mass - FixedRiderKg) * VolumeRatio);
 	const double MassRatio = SizeRatio(H.Mass, Arch.Mass);
 
 	// Center of mass: forward by the archetype's share of the wheelbase, up by its share of the body above the wheel centers, lowered if the track needs it

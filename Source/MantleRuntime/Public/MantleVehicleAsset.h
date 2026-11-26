@@ -536,6 +536,30 @@ struct FMantleVehicleRiderDesc
 	bool bRearBrakeTorque = false;
 	double RearBrakeTorque = 0.0;
 	FMantleVehicleRotationControlDesc RotationControl;
+	/**
+	 * #447: a bicycle's crank (seat.rider.crank). bCrank: the feet pedal round CrankCenter (the body's space, cm), each pedal CrankLength from it, the
+	 * left on the left foot peg's Y and the right on the right's; the foot pegs are then the pedals with the cranks level. CrankBone: a body bone the
+	 * crank turns (about Y); NAME_None, nothing on the body turns.
+	 */
+	bool bCrank = false;
+	FVector CrankCenter = FVector::ZeroVector;
+	double CrankLength = 0.0;
+	FName CrankBone;
+	/** #447: how much more the pelvis moves while sprinting, standing on the pedals (seat.rider.sprintPelvisShift), seat frame, cm. */
+	FVector SprintPelvisShift = FVector::ZeroVector;
+};
+
+/**
+ * #447: a pedalled vehicle's rider (the document's pedal block): the rider is the engine. The power a rider holds, the power of a sprint, how much
+ * effort above the held power a sprint spends (W', kJ), the cadence where the push runs out and the one the gears shift to hold.
+ */
+struct FMantleVehiclePedalDesc
+{
+	double RiderPower = 250.0;
+	double SprintPower = 900.0;
+	double SprintReserve = 15.0;
+	double MaxCadence = 200.0;
+	double Cadence = 85.0;
 };
 
 /** A livery that lights up with one of the car's lights (the document's liveryGlow entry). */
@@ -607,6 +631,12 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	/** The grip of every wheel that does not steer (tires.rearFriction), where TireFriction is the steered wheels'; unset, TireFriction is every wheel's. */
 	bool bTireRearFriction = false;
 	double TireRearFriction = 0.0;
+	/** tires.rollingResistance: the rolling-resistance coefficient every wheel uses (a track's road wheels 0.04). Absent: 0.012, a car tyre's. */
+	double TiresRollingResistance = 0.012;
+
+	/** #447: the pedal block; bPedal, the rider pedals it and the engine block drives nothing (as a plane's). */
+	bool bPedal = false;
+	FMantleVehiclePedalDesc Pedal;
 
 	TArray<FMantleVehicleWheelDesc> Wheels;
 

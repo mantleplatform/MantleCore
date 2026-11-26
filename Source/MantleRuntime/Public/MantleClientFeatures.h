@@ -49,6 +49,8 @@ namespace MantleClientFeatures
 	inline const TCHAR* const VehiclePaintLayers = TEXT("vehiclePaintLayers");
 	/** A vehicle's livery names (the vehicle-livery-names cook fixtures). */
 	inline const TCHAR* const VehicleLiveryNames = TEXT("vehicleLiveryNames");
+	/** A vehicle document's pedal block, a pedalling rider's crank and sprintPelvisShift, and tires.rollingResistance (#447). */
+	inline const TCHAR* const VehiclePedal = TEXT("vehiclePedal");
 	/** A vehicle document's movementType trailer and its trailer block, and a wheeled vehicle's hitch (#446). */
 	inline const TCHAR* const VehicleTrailer = TEXT("vehicleTrailer");
 	inline const TCHAR* const Effect = TEXT("effect");
@@ -108,7 +110,7 @@ namespace MantleClientFeatures
 	{
 		return {
 			InstancedMesh, CrowdSpawner, CrowdPointsOfInterest, SkeletalMesh, RectLight, Decal, LightShape, Terrain, TerrainGrass,
-			Vehicle, VehicleLinkage, VehicleParts, VehicleCarInteraction, VehicleContactPoints, VehicleHiddenSeat, VehicleFliers, VehicleHover, VehicleBoat, VehicleSeatKind, VehicleWeaponArc, VehicleLights, VehiclePaintLayers, VehicleLiveryNames, VehicleTrailer, Effect, EffectSprites, Constraint, Scatter, ReflectionProbes, Storage,
+			Vehicle, VehicleLinkage, VehicleParts, VehicleCarInteraction, VehicleContactPoints, VehicleHiddenSeat, VehicleFliers, VehicleHover, VehicleBoat, VehicleSeatKind, VehicleWeaponArc, VehicleLights, VehiclePaintLayers, VehicleLiveryNames, VehiclePedal, VehicleTrailer, Effect, EffectSprites, Constraint, Scatter, ReflectionProbes, Storage,
 			UIDocuments, EnvironmentDefaults, EnvironmentLighting, AvatarHeight, SoundEmitterAutoplay, StaticMeshPhysics, PhysicsMaterial, Surface, DrawDistance, CarPaint,
 			MaterialFidelity, MaterialAdditive, WeaponDocument, WorldText, VoxelWorld, ScatterDrawDistance, ScatterTerrain, ScatterShapes, ScatterCollision, ScatterPaintLayer, ScatterGroundAlign, ScatterMinSpacing, ScatterPathStep, ScatterPathExclusions, ScatterLarge
 		};

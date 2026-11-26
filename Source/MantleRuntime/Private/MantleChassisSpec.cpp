@@ -134,6 +134,26 @@ namespace MantleChassisSpecPrivate
 		Rider->TryGetNumberField(TEXT("kneeSplayDegrees"), Read.KneeSplayDegrees);
 		Rider->TryGetNumberField(TEXT("rearTireFriction"), Read.RearTireFriction);
 		Rider->TryGetNumberField(TEXT("rearBrakeTorque"), Read.RearBrakeTorque);
+		// #447: a bicycle's crank and its rider's sprint stance.
+		if (Rider->HasField(TEXT("sprintPelvisShift"))
+			&& !GetVector(Rider, TEXT("sprintPelvisShift"), TEXT("chassis.rider.sprintPelvisShift"), Read.SprintPelvisShift, OutError))
+		{
+			return false;
+		}
+		if (Rider->HasField(TEXT("crank")))
+		{
+			TSharedPtr<FJsonObject> Crank;
+			if (!GetObject(Rider, TEXT("crank"), TEXT("chassis.rider.crank"), Crank, OutError)
+				|| !GetVector(Crank, TEXT("center"), TEXT("chassis.rider.crank.center"), Read.CrankCenter, OutError))
+			{
+				return false;
+			}
+			if (!Crank->TryGetNumberField(TEXT("length"), Read.CrankLength) || !(Read.CrankLength > 0.0))
+			{
+				return Refuse(OutError, TEXT("chassis.rider.crank.length must be a number above 0"));
+			}
+			Read.bCrank = true;
+		}
 		const TSharedPtr<FJsonObject>* Rotation = nullptr;
 		if (Rider->TryGetObjectField(TEXT("rotationControl"), Rotation) && Rotation && Rotation->IsValid())
 		{
@@ -1038,6 +1058,9 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 		return false;
 	}
 	Spec.Defaults = DefaultsJson;
+	// #447: a pedalled preset (a bicycle) keeps its rider's weight whatever its size.
+	const TSharedPtr<FJsonObject>* PedalBlock = nullptr;
+	Spec.bPedal = DefaultsJson.IsValid() && DefaultsJson->TryGetObjectField(TEXT("pedal"), PedalBlock) && PedalBlock && PedalBlock->IsValid();
 	// A plane's areas and thrust are the archetype's own too: what its handling holds them to is a ratio of how its airframe differs from this one.
 	Spec.Archetype.WingAreaM2 = Spec.Aircraft.Wing.AreaM2;
 	Spec.Archetype.TailplaneAreaM2 = Spec.Aircraft.Tailplane.AreaM2;
@@ -1511,6 +1534,9 @@ FMantleChassisSpec FMantleChassisSpec::Scaled(const FMantleChassisSpec& Spec, co
 	RiderOut.RightPeg *= Factor;
 	RiderOut.PelvisOffset *= Factor;
 	RiderOut.StopPelvisShift *= Factor;
+	RiderOut.CrankCenter *= Factor;
+	RiderOut.CrankLength *= Factor;
+	RiderOut.SprintPelvisShift *= Factor;
 	// A plane's body box, airframe and cockpit grow with it. Its angles do not, and its areas and thrust follow from the handling below.
 	Out.BodyX *= Factor;
 	// A hitch, a coupler, a trailer's legs and where its cargo sits grow with it; how much cargo it carries is a weight, which follows its mass (#446).

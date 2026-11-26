@@ -71,6 +71,7 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("brakes/frontShare"), 0.0, 1.0 },
 		{ TEXT("tires/friction"), 0.1, 5.0 },
 		{ TEXT("tires/rearFriction"), 0.1, 10.0 },
+		{ TEXT("tires/rollingResistance"), 0.002, 0.05 },
 		{ TEXT("wheels/*/radius"), 5.0, 150.0 },
 		{ TEXT("wheels/*/width"), 2.0, 100.0 },
 		{ TEXT("wheels/*/rimRadius"), 2.0, 150.0 },
@@ -178,6 +179,15 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("seat/rider/footPegs/right/location/*"), -1000.0, 1000.0 },
 		{ TEXT("seat/rider/pelvisOffset/*"), -100.0, 100.0 },
 		{ TEXT("seat/rider/stopPelvisShift/*"), -100.0, 100.0 },
+		// #447: a bicycle's rider (the crank the feet pedal round, the pelvis standing to sprint) and its pedal block.
+		{ TEXT("seat/rider/sprintPelvisShift/*"), -100.0, 100.0 },
+		{ TEXT("seat/rider/crank/center/*"), -1000.0, 1000.0 },
+		{ TEXT("seat/rider/crank/length"), 5.0, 30.0 },
+		{ TEXT("pedal/riderPower"), 50.0, 600.0 },
+		{ TEXT("pedal/sprintPower"), 100.0, 2500.0 },
+		{ TEXT("pedal/sprintReserve"), 0.0, 60.0 },
+		{ TEXT("pedal/maxCadence"), 60.0, 300.0 },
+		{ TEXT("pedal/cadence"), 40.0, 150.0 },
 		{ TEXT("seat/rider/kneeSplayDegrees"), -30.0, 45.0 },
 		{ TEXT("seat/rider/rearTireFriction"), 0.1, 20.0 },
 		{ TEXT("seat/rider/rearBrakeTorque"), 0.0, 20000.0 },
@@ -2164,6 +2174,39 @@ namespace MantleVehicleAssetPrivate
 		return true;
 	}
 
+	/**
+	 * #447: the pedal block. Exactly its keys, each optional with its default; the rider can't sprint weaker than it rides, and the gears shift
+	 * to a cadence at least 20 rpm under the one where the push runs out (the cook's rules).
+	 */
+	void ReadVehiclePedal(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
+	{
+		const FString Pointer = TEXT("/pedal");
+		TSharedPtr<FJsonObject> Block;
+		FMantleVehiclePedalDesc Pedal;
+		if (!P.Object(Root, TEXT(""), TEXT("pedal"), Block)
+			|| !P.Keys(Block, Pointer, { TEXT("riderPower"), TEXT("sprintPower"), TEXT("sprintReserve"), TEXT("maxCadence"), TEXT("cadence") }, {})
+			|| !P.OptNumber(Block, Pointer, TEXT("riderPower"), TEXT("pedal/riderPower"), Pedal.RiderPower)
+			|| !P.OptNumber(Block, Pointer, TEXT("sprintPower"), TEXT("pedal/sprintPower"), Pedal.SprintPower)
+			|| !P.OptNumber(Block, Pointer, TEXT("sprintReserve"), TEXT("pedal/sprintReserve"), Pedal.SprintReserve)
+			|| !P.OptNumber(Block, Pointer, TEXT("maxCadence"), TEXT("pedal/maxCadence"), Pedal.MaxCadence)
+			|| !P.OptNumber(Block, Pointer, TEXT("cadence"), TEXT("pedal/cadence"), Pedal.Cadence))
+		{
+			return;
+		}
+		if (Pedal.SprintPower < Pedal.RiderPower)
+		{
+			P.Fail(Pointer + TEXT("/sprintPower"), FString::Printf(TEXT("is %g W, under riderPower's %g; a sprint is at least the rider's own power"), Pedal.SprintPower, Pedal.RiderPower));
+			return;
+		}
+		if (Pedal.Cadence + 20.0 > Pedal.MaxCadence)
+		{
+			P.Fail(Pointer + TEXT("/cadence"), FString::Printf(TEXT("is %g rpm; keep it at least 20 under maxCadence (%g), where the push runs out"), Pedal.Cadence, Pedal.MaxCadence));
+			return;
+		}
+		D.Pedal = Pedal;
+		D.bPedal = true;
+	}
+
 	/** The driver's motorcycle rider fit (seat.rider): exactly its keys, the fork bone, both grip pairs, the offsets and the rotation control. That the seat is a motorcycle's is CheckVehicleMovementRules'. */
 	void ReadVehicleRider(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Seat, FMantleVehicleDesc& D)
 	{
@@ -2173,7 +2216,7 @@ namespace MantleVehicleAssetPrivate
 		if (!P.Object(Seat, TEXT("/seat"), TEXT("rider"), Rider)
 			|| !P.Keys(Rider, Pointer,
 				{ TEXT("forkBone"), TEXT("handlebar"), TEXT("footPegs"), TEXT("pelvisOffset"), TEXT("stopPelvisShift"), TEXT("kneeSplayDegrees"), TEXT("rearTireFriction"),
-				  TEXT("rearBrakeTorque"), TEXT("rotationControl") },
+				  TEXT("rearBrakeTorque"), TEXT("rotationControl"), TEXT("crank"), TEXT("sprintPelvisShift") },
 				{ TEXT("forkBone"), TEXT("handlebar"), TEXT("footPegs") })
 			|| !ReadLinkageBone(P, Rider, Pointer, TEXT("forkBone"), R.ForkBone)
 			|| !ReadVehicleGripPair(P, Rider, Pointer, TEXT("handlebar"), TEXT("seat/rider/handlebar"), R.Handlebar)
@@ -2182,9 +2225,26 @@ namespace MantleVehicleAssetPrivate
 			|| (Rider->HasField(TEXT("stopPelvisShift"))
 				&& !P.Vector(Rider->TryGetField(TEXT("stopPelvisShift")), Pointer + TEXT("/stopPelvisShift"), TEXT("seat/rider/stopPelvisShift/*"), R.StopPelvisShift))
 			|| !P.OptNumber(Rider, Pointer, TEXT("kneeSplayDegrees"), TEXT("seat/rider/kneeSplayDegrees"), R.KneeSplayDegrees)
-			|| (Rider->HasField(TEXT("rotationControl")) && !ReadVehicleRotationControl(P, Rider, Pointer, R.RotationControl)))
+			|| (Rider->HasField(TEXT("rotationControl")) && !ReadVehicleRotationControl(P, Rider, Pointer, R.RotationControl))
+			|| (Rider->HasField(TEXT("sprintPelvisShift"))
+				&& !P.Vector(Rider->TryGetField(TEXT("sprintPelvisShift")), Pointer + TEXT("/sprintPelvisShift"), TEXT("seat/rider/sprintPelvisShift/*"), R.SprintPelvisShift)))
 		{
 			return;
+		}
+		// #447: a bicycle's crank, which the feet pedal round.
+		if (Rider->HasField(TEXT("crank")))
+		{
+			const FString CrankPointer = Pointer + TEXT("/crank");
+			TSharedPtr<FJsonObject> Crank;
+			if (!P.Object(Rider, Pointer, TEXT("crank"), Crank)
+				|| !P.Keys(Crank, CrankPointer, { TEXT("center"), TEXT("length"), TEXT("bone") }, { TEXT("center"), TEXT("length") })
+				|| !P.Vector(Crank->TryGetField(TEXT("center")), CrankPointer + TEXT("/center"), TEXT("seat/rider/crank/center/*"), R.CrankCenter)
+				|| !P.Number(Crank, CrankPointer, TEXT("length"), TEXT("seat/rider/crank/length"), R.CrankLength)
+				|| (Crank->HasField(TEXT("bone")) && !ReadLinkageBone(P, Crank, CrankPointer, TEXT("bone"), R.CrankBone)))
+			{
+				return;
+			}
+			R.bCrank = true;
 		}
 		if (Rider->HasField(TEXT("rearTireFriction")))
 		{
@@ -2266,6 +2326,10 @@ namespace MantleVehicleAssetPrivate
 				return false;
 			}
 		}
+		if (D.bPedal && D.MovementType != EMantleVehicleMovementKind::Wheeled)
+		{
+			return P.Fail(TEXT("/pedal"), TEXT("is for a wheeled vehicle a rider pedals; a plane, helicopter or hovercraft has none"));
+		}
 		if (D.MovementType == EMantleVehicleMovementKind::Helicopter && D.Helicopter.bPilotGrips && !CheckGrips(TEXT("/helicopter/pilotGrips"), D.Helicopter.PilotGrips))
 		{
 			return false;
@@ -2280,6 +2344,10 @@ namespace MantleVehicleAssetPrivate
 			{
 				return P.Fail(TEXT("/seat/rider/forkBone"), FString::Printf(TEXT("is %s, a wheel's bone; the fork is the bone the steered wheel hangs under"),
 					*D.Rider.ForkBone.ToString()));
+			}
+			if (D.Rider.bCrank && OnWheel(D.Rider.CrankBone))
+			{
+				return P.Fail(TEXT("/seat/rider/crank/bone"), FString::Printf(TEXT("is %s, a wheel's bone; the crank turns a bone of its own"), *D.Rider.CrankBone.ToString()));
 			}
 			return CheckGrips(TEXT("/seat/rider/handlebar"), D.Rider.Handlebar) && CheckGrips(TEXT("/seat/rider/footPegs"), D.Rider.FootPegs);
 		}
@@ -2455,7 +2523,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 		  TEXT("engine"), TEXT("transmission"), TEXT("suspension"), TEXT("steering"), TEXT("brakes"), TEXT("tires"), TEXT("wheels"),
 		  TEXT("seat"), TEXT("camera"), TEXT("collision"), TEXT("materials"), TEXT("paint"), TEXT("lights"), TEXT("liveries"), TEXT("liveryNames"), TEXT("liveryGlow"), TEXT("liveryUV"),
 		  TEXT("defaultLivery"), TEXT("linkage"), TEXT("parts"), TEXT("passengerSeat"), TEXT("trunk"), TEXT("hood"), TEXT("rearLeftDoor"), TEXT("rearRightDoor"), TEXT("horn"), TEXT("preset"), TEXT("movementType"),
-		  TEXT("flight"), TEXT("helicopter"), TEXT("hover"), TEXT("boat"), TEXT("trailer"), TEXT("hitch") },
+		  TEXT("flight"), TEXT("helicopter"), TEXT("hover"), TEXT("boat"), TEXT("trailer"), TEXT("hitch"), TEXT("pedal") },
 		{ TEXT("schemaVersion"), TEXT("mass"), TEXT("dragCoefficient"), TEXT("frontalArea"), TEXT("engine"),
 		  TEXT("transmission"), TEXT("suspension"), TEXT("steering"), TEXT("brakes"), TEXT("tires"), TEXT("wheels"), TEXT("seat"),
 		  TEXT("camera"), TEXT("collision") });
@@ -2614,7 +2682,8 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	}
 
 	TSharedPtr<FJsonObject> Tires;
-	if (P.Ok() && P.Object(Root, TEXT(""), TEXT("tires"), Tires) && P.Keys(Tires, TEXT("/tires"), { TEXT("friction"), TEXT("rearFriction") }, { TEXT("friction") }))
+	if (P.Ok() && P.Object(Root, TEXT(""), TEXT("tires"), Tires)
+		&& P.Keys(Tires, TEXT("/tires"), { TEXT("friction"), TEXT("rearFriction"), TEXT("rollingResistance") }, { TEXT("friction") }))
 	{
 		P.Number(Tires, TEXT("/tires"), TEXT("friction"), TEXT("tires/friction"), D.TireFriction);
 		// Optional, and absent from a vehicle whose every wheel grips alike.
@@ -2622,6 +2691,17 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 		{
 			D.bTireRearFriction = P.Number(Tires, TEXT("/tires"), TEXT("rearFriction"), TEXT("tires/rearFriction"), D.TireRearFriction);
 		}
+		// Optional (#448, shared with #447): absent is a car tyre's 0.012, so a vehicle cooked before it existed rolls as it did.
+		if (P.Ok())
+		{
+			P.OptNumber(Tires, TEXT("/tires"), TEXT("rollingResistance"), TEXT("tires/rollingResistance"), D.TiresRollingResistance);
+		}
+	}
+
+	// #447: a pedalled vehicle. Optional; every number has its default when absent.
+	if (P.Ok() && Root->HasField(TEXT("pedal")))
+	{
+		ReadVehiclePedal(P, Root, D);
 	}
 
 	const TArray<TSharedPtr<FJsonValue>>* Wheels = nullptr;

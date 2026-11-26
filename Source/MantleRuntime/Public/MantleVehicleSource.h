@@ -469,6 +469,29 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tires", meta = (EditCondition = "bTireRearFriction", ClampMin = "0.1", ClampMax = "10"))
 	float TireRearFriction = 2.f;
 
+	/** How much every wheel loses to rolling (tires.rollingResistance, #448, shared with #447): a car tyre's 0.012, which its absence means; a track's road wheels 0.04. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tires", meta = (ClampMin = "0.002", ClampMax = "0.05"))
+	float TireRollingResistance = 0.012f;
+
+	/** #447: the rider pedals it (the document's pedal block, set by a pedalled preset such as the Bicycle): the rider is its engine. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pedal", meta = (DisplayName = "Pedalled"))
+	bool bPedal = false;
+	/** W the rider holds at full effort (a fit rider ~250). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pedal", meta = (EditCondition = "bPedal", ClampMin = "50", ClampMax = "600", DisplayName = "Rider Power (W)"))
+	float PedalRiderPower = 250.f;
+	/** W while sprinting, standing on the pedals (at least the rider power). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pedal", meta = (EditCondition = "bPedal", ClampMin = "100", ClampMax = "2500", DisplayName = "Sprint Power (W)"))
+	float PedalSprintPower = 900.f;
+	/** kJ of effort above the rider power a full sprint holds; 0: no sprint. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pedal", meta = (EditCondition = "bPedal", ClampMin = "0", ClampMax = "60", DisplayName = "Sprint Reserve (kJ)"))
+	float PedalSprintReserve = 15.f;
+	/** rpm where the rider's push runs out. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pedal", meta = (EditCondition = "bPedal", ClampMin = "60", ClampMax = "300", DisplayName = "Max Cadence (rpm)"))
+	float PedalMaxCadence = 200.f;
+	/** rpm the gears shift to hold (at least 20 under the max cadence). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pedal", meta = (EditCondition = "bPedal", ClampMin = "40", ClampMax = "150", DisplayName = "Cadence (rpm)"))
+	float PedalCadence = 85.f;
+
 	/** For a model with no inside: the driver isn't drawn while driving, so only the vehicle shows. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Seat", meta = (DisplayName = "Hide the driver"))
 	bool bHideDriver = false;
