@@ -1228,7 +1228,7 @@
         "suspension/maxDrop": [0, 50],
         "suspension/springRate": [1, 5000],
         "suspension/springPreload": [0, 5000],
-        "suspension/damping": [0, 1],
+        "suspension/damping": [0, 5],
         "steering/maxAngle": [5, 70],
         "steering/speedCurve/*/0": [0, 200],
         "steering/speedCurve/*/1": [0.1, 1],

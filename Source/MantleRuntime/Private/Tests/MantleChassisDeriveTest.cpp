@@ -169,12 +169,12 @@ namespace MantleChassisDeriveTestPrivate
 			H.CenterOfMass = FVector(Parts[0], Parts[1], Parts[2]);
 			// Engine braking is left out of a document that has none.
 			Number(Json, TEXT("engine"), TEXT("engineBraking"), H.EngineBraking);
-			// A ground car's document holds its preset's one friction as the front's and the rear's (6/7 and 8/7 of it, so their mean is the preset's).
+			// A ground car's document holds its preset's one friction as the front's (6/7 of it) and the rear's (8/7, or the preset's own rearFriction scaled), so the front gives it back.
 			const TSharedPtr<FJsonObject>* Tires = nullptr;
 			double RearFriction = 0.0;
 			if (Json->TryGetObjectField(TEXT("tires"), Tires) && Tires && Tires->IsValid() && (*Tires)->TryGetNumberField(TEXT("rearFriction"), RearFriction))
 			{
-				H.TireFriction = FMath::RoundToDouble(0.5 * (H.TireFriction + RearFriction) * 1.0e9) / 1.0e9;
+				H.TireFriction = FMath::RoundToDouble(H.TireFriction * 7.0 / 6.0 * 1.0e9) / 1.0e9;
 			}
 			Out = H;
 		}
@@ -446,7 +446,8 @@ bool FMantleChassisDeriveIsDeterministicTest::RunTest(const FString& Parameters)
 	// Every machine rebuilds the same chassis from the same selector: the same inputs give bit-for-bit the same handling and the same document,
 	// however often, in whatever order, and from however many separate reads of the preset.
 	const FString Selectors[] = { TEXT("sedan@0.7"), TEXT("sedan@1.6"), TEXT("sports@0.5"), TEXT("pickup@1.3"), TEXT("truck@0.7"), TEXT("sixwheeler@1.3"), TEXT("van@0.5"),
-		TEXT("limousine@1.6"), TEXT("motorcycle@0.7"), TEXT("motorcycle@1.3"), TEXT("plane@0.7"), TEXT("plane@1.3"), TEXT("plane@2.5") };
+		TEXT("limousine@1.6"), TEXT("motorcycle@0.7"), TEXT("motorcycle@1.3"), TEXT("plane@0.7"), TEXT("plane@1.3"), TEXT("plane@2.5"), TEXT("muscle@0.7"), TEXT("drift@1.3"),
+		TEXT("compact@0.7"), TEXT("supercar@1.3"), TEXT("offroad@1.3"), TEXT("bus@0.8"), TEXT("atv@1.3") };
 	for (const FString& Selector : Selectors)
 	{
 		FMantleChassisSpec A;
@@ -558,11 +559,17 @@ bool FMantleChassisDeriveScalingLawsTest::RunTest(const FString& Parameters)
 			const bool bBrakesHeld = H.Clamped.ContainsByPredicate([](const FString& Entry) { return Entry.StartsWith(TEXT("brakes/brakeTorque ")); });
 			TestTrue(*FString::Printf(TEXT("%s: the brakes give the same deceleration, torque S^4"), *Label),
 				bBrakesHeld ? (H.BrakeTorque == 20000.0 && Own.BrakeTorque * S * S * S * S > 20000.0) : ScalesRounded(H.BrakeTorque, Own.BrakeTorque, S * S * S * S));
-			TestTrue(*FString::Printf(TEXT("%s: engine braking gives the same lift-off deceleration, S^4"), *Label), ScalesRounded(H.EngineBraking, Own.EngineBraking, S * S * S * S));
+			// The engine turns 1 / min(1, S) faster at a given speed (the final drive below), so it brakes S^4 x min(1, S) for the same deceleration.
+			TestTrue(*FString::Printf(TEXT("%s: engine braking gives the same lift-off deceleration, S^4 x min(1, S)"), *Label),
+				ScalesRounded(H.EngineBraking, Own.EngineBraking, S * S * S * S * FMath::Min(1.0, S)));
 			// The lock is the archetype's own angle, so a uniform scale leaves it alone (and the turning circle, which follows the wheelbase, grows with the size).
 			TestEqual(*FString::Printf(TEXT("%s: the steering lock is an angle, the same"), *Label), H.MaxSteerAngle, Own.MaxSteerAngle);
-			TestTrue(*FString::Printf(TEXT("%s: the archetype's tire, drag and damping are kept"), *Label),
-				H.TireFriction == Own.TireFriction && H.DragCoefficient == Own.DragCoefficient && H.SpringDamping == Own.SpringDamping);
+			TestTrue(*FString::Printf(TEXT("%s: the archetype's tire and drag are kept"), *Label), H.TireFriction == Own.TireFriction && H.DragCoefficient == Own.DragCoefficient);
+			// The damper follows one wheel's critical damping, sqrt(spring x mass per wheel) = sqrt(S^2 x S^3), so the damping ratio stays the archetype's;
+			// past the document's 5 it is held there, and the hold is listed.
+			const bool bDampingHeld = H.Clamped.ContainsByPredicate([](const FString& Entry) { return Entry.StartsWith(TEXT("suspension/damping ")); });
+			TestTrue(*FString::Printf(TEXT("%s: the damping keeps the damping ratio, S^2.5"), *Label),
+				bDampingHeld ? (H.SpringDamping == 5.0 && Own.SpringDamping * FMath::Pow(S, 2.5) > 5.0) : ScalesRounded(H.SpringDamping, Own.SpringDamping, FMath::Pow(S, 2.5)));
 			// A smaller wheel moves less road a step: the top speed falls with it, and the final drive keeps the top gear at the same share of the
 			// redline. A larger one keeps the archetype's top speed and gears down for it.
 			TestTrue(*FString::Printf(TEXT("%s: the top speed is the archetype's, less in proportion to a smaller wheel"), *Label), ScalesRounded(H.MaxSpeed, Own.MaxSpeed, FMath::Min(1.0, S)));
@@ -770,7 +777,7 @@ bool FMantleChassisDeriveHoldsAreVisibleTest::RunTest(const FString& Parameters)
 	using namespace MantleChassisDeriveTestPrivate;
 	// Every path Derive holds a result to is one the document has a range for: a path the document did not know would hold nothing, silently.
 	const TArray<FString> Paths = FMantleChassisDerive::LimitedPaths();
-	TestEqual(TEXT("Derive holds sixteen numbers"), Paths.Num(), 16);
+	TestEqual(TEXT("Derive holds seventeen numbers"), Paths.Num(), 17);
 	for (const FString& Path : Paths)
 	{
 		double Min = 0.0;

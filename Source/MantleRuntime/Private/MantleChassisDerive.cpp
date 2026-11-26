@@ -40,6 +40,7 @@ namespace MantleChassisDerivePrivate
 		constexpr const TCHAR* MaxDrop = TEXT("suspension/maxDrop");
 		constexpr const TCHAR* SpringRate = TEXT("suspension/springRate");
 		constexpr const TCHAR* SpringPreload = TEXT("suspension/springPreload");
+		constexpr const TCHAR* Damping = TEXT("suspension/damping");
 		constexpr const TCHAR* MaxSteerAngle = TEXT("steering/maxAngle");
 		constexpr const TCHAR* BrakeTorque = TEXT("brakes/brakeTorque");
 		constexpr const TCHAR* HandbrakeTorque = TEXT("brakes/handbrakeTorque");
@@ -67,7 +68,7 @@ namespace MantleChassisDerivePrivate
 	const TCHAR* const LimitedPathTable[] = {
 		DocPath::Mass, DocPath::MaxSpeed, DocPath::FrontalArea, DocPath::MaxTorque, DocPath::FinalDrive, DocPath::MaxRaise, DocPath::MaxDrop,
 		DocPath::SpringRate, DocPath::SpringPreload, DocPath::MaxSteerAngle, DocPath::BrakeTorque, DocPath::HandbrakeTorque, DocPath::TireFriction,
-		DocPath::CameraArmLength, DocPath::CameraHeight, DocPath::EngineBraking,
+		DocPath::CameraArmLength, DocPath::CameraHeight, DocPath::EngineBraking, DocPath::Damping,
 	};
 
 	/** Whether a rule's answer differs from what it was held to by more than the floating-point noise of working it out (a result at a bound must not look held). */
@@ -255,9 +256,11 @@ FMantleChassisHandling FMantleChassisDerive::Derive(const FMantleChassisSpec& Sp
 	H.SpringPreload = Limited(H.Clamped, DocPath::SpringPreload, Arch.SpringPreload * SizeRatio(H.SpringRate, Arch.SpringRate));
 	H.MaxRaise = Limited(H.Clamped, DocPath::MaxRaise, Arch.MaxRaise * RadiusRatio, MinTravel, MaxTravel);
 	H.MaxDrop = Limited(H.Clamped, DocPath::MaxDrop, Arch.MaxDrop * RadiusRatio, MinTravel, MaxTravel);
-	// Damping stays the archetype's absolute value: the Chaos solver reads it as an absolute (PBDSuspensionConstraints.cpp:579), not a share of the spring,
-	// so it is the first suspect if a scaled car pogoes.
-	H.SpringDamping = Arch.SpringDamping;
+	// Damping: the Chaos solver reads it as an absolute (PBDSuspensionConstraints.cpp:579), not a share of the spring, so for the archetype's damping
+	// ratio it follows the critical damping 2 sqrt(k m) of one wheel: the square root of the spring's ratio times the ratio of the mass each wheel
+	// carries (#376 step 9). Kept as it was, a car at 1.6x bounced at a third of the archetype's ratio and one at 0.7x was near critical.
+	const double WheelMassRatio = MassRatio * (BaseWheels / Wheels);
+	H.SpringDamping = Limited(H.Clamped, DocPath::Damping, Arch.SpringDamping * FMath::Sqrt(SizeRatio(H.SpringRate, Arch.SpringRate) * WheelMassRatio));
 
 	// Steering: the lock is an angle, the archetype's own whatever the size. The turning circle (the distance from the steered axles to the middle of the
 	// others over tan(lock)) then follows the wheelbase and the axle layout, as it does on a real car: a longer wheelbase turns wider.
@@ -274,9 +277,11 @@ FMantleChassisHandling FMantleChassisDerive::Derive(const FMantleChassisSpec& Sp
 	// Brakes: the same deceleration, so each wheel's torque follows the mass it carries and its radius; the handbrake follows the brakes.
 	H.BrakeTorque = Limited(H.Clamped, DocPath::BrakeTorque, Arch.BrakeTorque * MassRatio * (BaseWheels / Wheels) * RadiusRatio);
 	H.HandbrakeTorque = Limited(H.Clamped, DocPath::HandbrakeTorque, Arch.HandbrakeTorque * SizeRatio(H.BrakeTorque, Arch.BrakeTorque));
-	// Engine braking: the same lift-off deceleration, so like the brakes it follows the mass each wheel carries and its radius (the final drive keeps
-	// the engine's rpm at a given speed, so the rpm it multiplies does not change with the size).
-	H.EngineBraking = Limited(H.Clamped, DocPath::EngineBraking, Arch.EngineBraking * MassRatio * (BaseWheels / Wheels) * RadiusRatio);
+	// Engine braking: the same lift-off deceleration. Its torque is engineBraking x the engine's rpm, and at a given road speed the rpm follows the final
+	// drive over the wheel's radius, which is 1 / the top speed's ratio (above). So it follows the mass each wheel carries and its radius, like the
+	// brakes, and the top speed's ratio: a smaller car's engine turns faster at the same speed (#376 step 10: without it a 0.7 sedan slowed 0.18 g).
+	H.EngineBraking = Limited(H.Clamped, DocPath::EngineBraking,
+		Arch.EngineBraking * MassRatio * (BaseWheels / Wheels) * RadiusRatio * SizeRatio(H.MaxSpeed, Arch.MaxSpeed));
 
 	// Tires and drag: the archetype's tire and drag coefficient; the frontal area is the body's face against its own.
 	H.TireFriction = Limited(H.Clamped, DocPath::TireFriction, Arch.TireFriction * (1.0 + Reach * Grip));

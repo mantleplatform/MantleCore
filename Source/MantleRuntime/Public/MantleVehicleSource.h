@@ -480,10 +480,12 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Suspension", meta = (ClampMin = "1", ClampMax = "5000"))
 	float SpringRate = 250.f;
 
+	/** Kept in the format but has no effect: the physics engine ignores spring preload. Each wheel's spring follows the weight it carries instead. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Suspension", meta = (ClampMin = "0", ClampMax = "5000"))
 	float SpringPreload = 50.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Suspension", meta = (ClampMin = "0", ClampMax = "1"))
+	/** The dampers' strength, an absolute (a heavy vehicle needs more than a light one for the same damping ratio): 0-5 (#376 step 9). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Suspension", meta = (ClampMin = "0", ClampMax = "5"))
 	float SpringDamping = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Steering", meta = (ClampMin = "5", ClampMax = "70", Units = "deg"))

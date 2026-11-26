@@ -361,9 +361,9 @@ FString FMantleVehiclePresets::CardSentence(const FMantleVehiclePreset& Preset)
 {
 	// The cards of the three tall road vehicles: each names its own kinds, so no two cards offer the same vehicle.
 	static const TPair<const TCHAR*, const TCHAR*> OwnLines[] = {
-		{ TEXT("pickup"), TEXT("A tall road vehicle with long suspension: pickups, SUVs and off-roaders.") },
+		{ TEXT("pickup"), TEXT("A tall road vehicle with long suspension: pickups and SUVs.") },
 		{ TEXT("van"), TEXT("A tall box-bodied van: delivery vans, minibuses and ambulances.") },
-		{ TEXT("truck"), TEXT("A large, heavy road vehicle: box trucks, campervans and small buses.") },
+		{ TEXT("truck"), TEXT("A large, heavy road vehicle: box trucks, delivery trucks and campervans.") },
 	};
 	for (const TPair<const TCHAR*, const TCHAR*>& Own : OwnLines)
 	{
