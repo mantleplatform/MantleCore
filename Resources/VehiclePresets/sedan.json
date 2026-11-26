@@ -54,7 +54,8 @@
       "maxRPM": 7000,
       "idleRPM": 900,
       "torqueCurve": [[0, 0.6], [1000, 0.7], [2500, 0.88], [4800, 1], [6600, 0.877], [7000, 0.8]],
-      "tractionControl": true
+      "tractionControl": true,
+      "engineBraking": 0.08
     },
     "transmission": {
       "gearRatios": [5.25, 3.028, 1.95, 1.456, 1.22, 1.0, 0.808, 0.673],
@@ -95,6 +96,7 @@
     "engine/maxTorque": [120, 1200],
     "engine/maxRPM": [4000, 9000],
     "engine/idleRPM": [600, 1200],
+    "engine/engineBraking": [0, 0.3],
     "suspension/maxRaise": [3, 20],
     "suspension/maxDrop": [3, 20],
     "suspension/springRate": [100, 800],
