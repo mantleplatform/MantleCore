@@ -627,12 +627,12 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 	const TSharedPtr<FJsonObject>* Seats = nullptr;
 	Spec.bPassenger = Root->TryGetObjectField(TEXT("seats"), Seats) && Seats && (*Seats)->HasField(TEXT("passenger"));
 	// The extra seats (#449): optional, each with a location and the rest optional.
-	const TArray<TSharedPtr<FJsonValue>>* ExtraSeats = nullptr;
-	if (Chassis->TryGetArrayField(TEXT("extraSeats"), ExtraSeats) && ExtraSeats)
+	const TArray<TSharedPtr<FJsonValue>>* ExtraSeatsJson = nullptr;
+	if (Chassis->TryGetArrayField(TEXT("extraSeats"), ExtraSeatsJson) && ExtraSeatsJson)
 	{
-		for (int32 Index = 0; Index < ExtraSeats->Num(); ++Index)
+		for (int32 Index = 0; Index < ExtraSeatsJson->Num(); ++Index)
 		{
-			const TSharedPtr<FJsonObject> Item = (*ExtraSeats)[Index].IsValid() ? (*ExtraSeats)[Index]->AsObject() : nullptr;
+			const TSharedPtr<FJsonObject> Item = (*ExtraSeatsJson)[Index].IsValid() ? (*ExtraSeatsJson)[Index]->AsObject() : nullptr;
 			const FString Path = FString::Printf(TEXT("chassis.extraSeats[%d]"), Index);
 			FMantleChassisExtraSeat Extra;
 			if (!Item.IsValid() || !GetVector(Item, TEXT("location"), *(Path + TEXT(".location")), Extra.Location, OutError))

@@ -336,10 +336,6 @@ struct MANTLERUNTIME_API FMantleVehicleSourceWeaponArc
 	float PitchMax = 90.f;
 };
 
-/**
- * How a creator vehicle drives: schema/vehicle.schema.json, every default the schema's. Mantle holds
- * each number to limits.json placeAssets.vehicle.ranges when the place is checked and again when it is cooked.
- */
 /** How an extra seat's occupant rides (#449). */
 UENUM(BlueprintType)
 enum class EMantleVehicleSourceSeatPose : uint8
@@ -401,6 +397,10 @@ struct MANTLERUNTIME_API FMantleVehicleSourceSeat
 	FVector Hold = FVector::ZeroVector;
 };
 
+/**
+ * How a creator vehicle drives: schema/vehicle.schema.json, every default the schema's. Mantle holds
+ * each number to limits.json placeAssets.vehicle.ranges when the place is checked and again when it is cooked.
+ */
 USTRUCT(BlueprintType)
 struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 {
