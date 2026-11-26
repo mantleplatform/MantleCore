@@ -83,7 +83,7 @@ bool FMantleVehicleBuilderCardsTest::RunTest(const FString& Parameters)
 
 	// Every type a creator can build has a card: three kinds of ground vehicle, the bike and the three that leave the ground.
 	const TCHAR* const Expected[] = { TEXT("sedan"), TEXT("sports"), TEXT("limousine"), TEXT("pickup"), TEXT("van"), TEXT("truck"), TEXT("sixwheeler"),
-		TEXT("compact"), TEXT("muscle"), TEXT("drift"), TEXT("supercar"), TEXT("motorcycle"), TEXT("plane"), TEXT("jet"), TEXT("helicopter"), TEXT("hovercraft") };
+		TEXT("compact"), TEXT("muscle"), TEXT("drift"), TEXT("supercar"), TEXT("offroad"), TEXT("bus"), TEXT("atv"), TEXT("motorcycle"), TEXT("plane"), TEXT("jet"), TEXT("helicopter"), TEXT("hovercraft") };
 	for (const TCHAR* Id : Expected)
 	{
 		TestTrue(*FString::Printf(TEXT("%s has a card"), Id), Cards.ContainsByPredicate([Id](const FMantleVehiclePreset* Card) { return Card->Id == Id; }));

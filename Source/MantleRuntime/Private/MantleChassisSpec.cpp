@@ -603,7 +603,119 @@ bool FMantleChassisSpec::ParseType(const FString& Name, EMantleChassisType& OutT
 
 bool FMantleChassisSpec::IsPresetId(const FString& Text)
 {
-	return MantleChassisSpecPrivate::IsId(Text);
+	using namespace MantleChassisSpecPrivate;
+	FString FileId;
+	FString Engine;
+	SplitPresetId(Text, FileId, Engine);
+	if (!IsId(FileId))
+	{
+		return false;
+	}
+	if (!Text.Contains(TEXT("+")))
+	{
+		return true;
+	}
+	// An engine id: lowercase letters, digits and dashes (it may start with a digit, "600").
+	bool bValid = Engine.Len() > 0;
+	for (int32 Index = 0; bValid && Index < Engine.Len(); ++Index)
+	{
+		const TCHAR Char = Engine[Index];
+		bValid = (Char >= 'a' && Char <= 'z') || (Char >= '0' && Char <= '9') || Char == '-';
+	}
+	return bValid;
+}
+
+void FMantleChassisSpec::SplitPresetId(const FString& Text, FString& OutFileId, FString& OutEngine)
+{
+	int32 Plus = INDEX_NONE;
+	if (Text.FindChar(TEXT('+'), Plus))
+	{
+		OutFileId = Text.Left(Plus);
+		OutEngine = Text.Mid(Plus + 1);
+	}
+	else
+	{
+		OutFileId = Text;
+		OutEngine.Reset();
+	}
+}
+
+namespace MantleChassisSpecPrivate
+{
+	/** Overlay merged into Into, key by key: objects into objects, a null removes the key, anything else replaces it. */
+	void MergeInto(const TSharedPtr<FJsonObject>& Into, const TSharedPtr<FJsonObject>& Overlay)
+	{
+		for (const auto& Pair : Overlay->Values) // keyed by UE::TSharedString in 5.8, not FString
+		{
+			const FString Key(Pair.Key);
+			const TSharedPtr<FJsonValue>& Value = Pair.Value;
+			if (!Value.IsValid() || Value->IsNull())
+			{
+				Into->RemoveField(Key);
+				continue;
+			}
+			const TSharedPtr<FJsonObject>* Child = nullptr;
+			const TSharedPtr<FJsonObject>* Existing = nullptr;
+			if (Value->TryGetObject(Child) && Child && Child->IsValid() && Into->TryGetObjectField(Key, Existing) && Existing && Existing->IsValid())
+			{
+				// Merge into a copy, so a preset object shared elsewhere is never changed underneath it.
+				const TSharedPtr<FJsonObject> Copy = MakeShared<FJsonObject>(**Existing);
+				MergeInto(Copy, *Child);
+				Into->SetObjectField(Key, Copy);
+				continue;
+			}
+			Into->SetField(Key, Value);
+		}
+	}
+}
+
+bool FMantleChassisSpec::ApplyEngine(const TSharedPtr<FJsonObject>& InOutPreset, const FString& EngineId, FString& OutError)
+{
+	using namespace MantleChassisSpecPrivate;
+	const TArray<TSharedPtr<FJsonValue>>* Engines = nullptr;
+	if (!InOutPreset.IsValid() || !InOutPreset->TryGetArrayField(TEXT("engines"), Engines) || !Engines)
+	{
+		return Refuse(OutError, FString::Printf(TEXT("the preset has no engines, so no engine '%s'"), *EngineId));
+	}
+	for (const TSharedPtr<FJsonValue>& Entry : *Engines)
+	{
+		const TSharedPtr<FJsonObject>* Engine = nullptr;
+		FString Id;
+		if (!Entry.IsValid() || !Entry->TryGetObject(Engine) || !Engine || !(*Engine)->TryGetStringField(TEXT("id"), Id) || Id != EngineId)
+		{
+			continue;
+		}
+		for (const TCHAR* Key : { TEXT("defaults"), TEXT("ranges"), TEXT("chassis") })
+		{
+			const TSharedPtr<FJsonObject>* Overlay = nullptr;
+			if ((*Engine)->TryGetObjectField(Key, Overlay) && Overlay && Overlay->IsValid())
+			{
+				const TSharedPtr<FJsonObject> Wrapper = MakeShared<FJsonObject>();
+				Wrapper->SetObjectField(Key, *Overlay);
+				MergeInto(InOutPreset, Wrapper);
+			}
+		}
+		InOutPreset->SetStringField(TEXT("engine"), EngineId);
+		return true;
+	}
+	return Refuse(OutError, FString::Printf(TEXT("the preset has no engine '%s'"), *EngineId));
+}
+
+bool FMantleChassisSpec::ApplyEngine(const FString& PresetJsonText, const FString& EngineId, FString& OutText, FString& OutError)
+{
+	using namespace MantleChassisSpecPrivate;
+	TSharedPtr<FJsonObject> Root;
+	if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(PresetJsonText), Root) || !Root.IsValid())
+	{
+		return Refuse(OutError, TEXT("the preset is not a JSON object"));
+	}
+	if (!ApplyEngine(Root, EngineId, OutError))
+	{
+		return false;
+	}
+	OutText.Reset();
+	const TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer = TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&OutText);
+	return FJsonSerializer::Serialize(Root.ToSharedRef(), Writer) || Refuse(OutError, TEXT("the preset with its engine could not be written"));
 }
 
 bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec& OutSpec, FString& OutError)
@@ -642,7 +754,8 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 		return false;
 	}
 	Body->TryGetNumberField(TEXT("x"), Spec.BodyX);
-	// Which seat it is: a car's driver has a steering wheel, a rider's (a centerline chassis) handlebars and a pilot's a stick and a throttle.
+	// Which seat it is: a car's driver has a steering wheel, a rider's (a motorcycle on its centerline, or a quad on pairs) handlebars and a
+	// pilot's a stick and a throttle.
 	Layout->TryGetBoolField(TEXT("centerline"), Spec.bCenterline);
 	const TSharedPtr<FJsonObject>* Seats = nullptr;
 	Spec.bPassenger = Root->TryGetObjectField(TEXT("seats"), Seats) && Seats && (*Seats)->HasField(TEXT("passenger"));
@@ -651,7 +764,8 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 	{
 		Spec.DriverSeat = DriverKind;
 	}
-	Spec.bSteeringWheel = !Spec.bCenterline && !Spec.DriverSeat.Equals(TEXT("pilot"), ESearchCase::CaseSensitive);
+	Spec.bSteeringWheel = !Spec.bCenterline && !Spec.DriverSeat.Equals(TEXT("pilot"), ESearchCase::CaseSensitive)
+		&& !Spec.DriverSeat.Equals(TEXT("motorcycle"), ESearchCase::CaseSensitive);
 	if (Spec.bSteeringWheel
 		&& (!GetObject(SeatJson, TEXT("steeringWheel"), TEXT("chassis.seat.steeringWheel"), WheelJson, OutError)
 			|| !GetVector(WheelJson, TEXT("location"), TEXT("chassis.seat.steeringWheel.location"), Spec.Hub, OutError)
@@ -697,6 +811,11 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 	if (Spec.bCenterline && Spec.Axles[0].bSteer)
 	{
 		Spec.ForkBone = CenterlineForkBoneName(AxleCount, 0);
+	}
+	else if (!Spec.bCenterline && Spec.DriverSeat.Equals(TEXT("motorcycle"), ESearchCase::CaseSensitive))
+	{
+		// A quad's rider (#376 step 9d): its grips ride a handlebar bone that no wheel hangs from; its wheels steer themselves.
+		Spec.ForkBone = FMantleVehicleChassisBuilder::HandlebarBoneName();
 	}
 	if (Spec.DriverSeat.Equals(TEXT("motorcycle"), ESearchCase::CaseSensitive) && !ParseRider(Chassis, Spec.Rider, OutError))
 	{
@@ -1312,7 +1431,7 @@ bool FMantleChassisSpec::ParseSelector(const FString& Selector, FString& OutPres
 			return Refuse(OutError, FString::Printf(TEXT("the scale in '%s' is not a number from %g to %g with at most three decimals"), *Selector, MinScale, MaxScale));
 		}
 	}
-	if (!IsId(PresetText))
+	if (!IsPresetId(PresetText))
 	{
 		return Refuse(OutError, FString::Printf(TEXT("'%s' is not a vehicle preset id"), *PresetText));
 	}

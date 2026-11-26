@@ -720,8 +720,20 @@ FText FMantleVehicleShape::FeelLabel(const EMantleVehicleFeel Feel)
 	return FText::GetEmpty();
 }
 
-FText FMantleVehicleShape::FeelHelp(const EMantleVehicleFeel Feel)
+FText FMantleVehicleShape::FeelHelp(const EMantleVehicleFeel Feel, const EMantleVehicleFamily Family)
 {
+	// A hovercraft has no tires or engine: its grip is how well the skirt holds its line, its power the fan's push (#381).
+	if (Family == EMantleVehicleFamily::Hovercraft)
+	{
+		if (Feel == EMantleVehicleFeel::Grip)
+		{
+			return LOCTEXT("HelpGripHovercraft", "How well the skirt holds the hovercraft's line in turns. All the way to slippery: no help at all, it slides like a real hovercraft on ice. The middle is a real hovercraft: it turns nose-first and keeps sliding. All the way to grippy: it holds its line almost like a car.");
+		}
+		if (Feel == EMantleVehicleFeel::Power)
+		{
+			return LOCTEXT("HelpPowerHovercraft", "How hard the fan pushes for the hovercraft's weight. Slide towards strong for up to 30 percent more push (it pulls away harder and climbs steeper hills), or towards weak for up to 30 percent less.");
+		}
+	}
 	switch (Feel)
 	{
 	case EMantleVehicleFeel::Grip: return LOCTEXT("HelpGrip", "How well the tires hold the road. Slide towards grippy for up to 30 percent more grip, or towards slippery for up to 30 percent less.");
@@ -892,7 +904,8 @@ bool FMantleVehicleShapeSession::HasFeel(const EMantleVehicleFeel Which) const
 	case EMantleVehicleFamily::Ground:
 		return true;
 	case EMantleVehicleFamily::Hovercraft:
-		return Which == EMantleVehicleFeel::TopSpeed;
+		// Its top speed, its fan's push and its skirt's hold (#381); it has no springs to stiffen.
+		return Which == EMantleVehicleFeel::TopSpeed || Which == EMantleVehicleFeel::Power || Which == EMantleVehicleFeel::Grip;
 	default:
 		return false;
 	}

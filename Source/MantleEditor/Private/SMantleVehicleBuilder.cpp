@@ -4,6 +4,7 @@
 
 #include "MantleVehicleBlueprint.h"
 #include "MantleVehicleBuilder.h"
+#include "MantleChassisSpec.h"
 #include "MantleVehicleChassisBuilder.h"
 #include "MantleVehicleChassisSkin.h"
 #include "MantleVehicleConverter.h"
@@ -383,6 +384,10 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeTypeStep()
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
 					[
+						MakeEngineRow()
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
+					[
 						SNew(STextBlock)
 							.AutoWrapText(true)
 							.ColorAndOpacity(FSlateColor(Bad))
@@ -405,7 +410,7 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakePresetCard(const FString& PresetI
 		.ContentPadding(FMargin(12, 10))
 		.ButtonColorAndOpacity_Lambda([this, PresetId]()
 		{
-			return SelectedPresetId == PresetId ? FLinearColor(0.25f, 0.55f, 1.0f) : FLinearColor(1.f, 1.f, 1.f);
+			return SelectedTypeId() == PresetId ? FLinearColor(0.25f, 0.55f, 1.0f) : FLinearColor(1.f, 1.f, 1.f);
 		})
 		.OnClicked_Lambda([this, PresetId, Name]()
 		{
@@ -429,26 +434,111 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakePresetCard(const FString& PresetI
 		];
 }
 
-void SMantleVehicleBuilder::PickPreset(const FString& PresetId, const FText& Name)
+FString SMantleVehicleBuilder::SelectedTypeId() const
 {
-	if (PresetId == SelectedPresetId)
+	FString TypeId;
+	FString Engine;
+	FMantleChassisSpec::SplitPresetId(SelectedPresetId, TypeId, Engine);
+	return TypeId;
+}
+
+TSharedRef<SWidget> SMantleVehicleBuilder::MakeEngineRow()
+{
+	return SNew(SHorizontalBox)
+		.Visibility_Lambda([this] { return EngineIds.Num() > 0 ? EVisibility::Visible : EVisibility::Collapsed; })
+		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 2.f, 8.f, 2.f)
+		[
+			SNew(STextBlock)
+				.Text(LOCTEXT("EngineLabel", "Engine"))
+				.ToolTipText(LOCTEXT("EngineTip", "The engine fills in that engine's real numbers: power, gears, weight, top speed, brakes and how far it leans. You can tune any of them afterwards."))
+		]
+		+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
+		[
+			SNew(SComboBox<TSharedPtr<FString>>)
+				.OptionsSource(&EngineChoices)
+				.OnGenerateWidget_Lambda([](TSharedPtr<FString> Item) { return SNew(STextBlock).Text(FText::FromString(*Item)); })
+				.OnSelectionChanged_Lambda([this](TSharedPtr<FString> Item, ESelectInfo::Type)
+				{
+					const int32 At = EngineChoices.IndexOfByKey(Item);
+					if (At != INDEX_NONE)
+					{
+						PickEngine(EngineIds[At]);
+					}
+				})
+				[
+					SNew(STextBlock).Text_Lambda([this]
+					{
+						FString TypeId;
+						FString Engine;
+						FMantleChassisSpec::SplitPresetId(SelectedPresetId, TypeId, Engine);
+						const int32 At = EngineIds.IndexOfByKey(Engine);
+						return At != INDEX_NONE ? FText::FromString(*EngineChoices[At]) : FText::GetEmpty();
+					})
+				]
+		];
+}
+
+void SMantleVehicleBuilder::PickEngine(const FString& EngineId)
+{
+	const FString TypeId = SelectedTypeId();
+	const FString Selector = TypeId + TEXT("+") + EngineId;
+	if (TypeId.IsEmpty() || Selector == SelectedPresetId)
 	{
 		return;
+	}
+	FMantleChassisSpec Loaded;
+	FString Error;
+	if (!FMantleVehicleChassisBuilder::LoadSpec(Selector, Loaded, Error))
+	{
+		TypeProblem = FText::Format(LOCTEXT("EngineNotRead", "That engine could not be read ({0}). Reinstall the Mantle plugin, then open this window again."), FText::FromString(Error));
+		return;
+	}
+	TypeProblem = FText::GetEmpty();
+	SelectedPresetId = Selector;
+	const FMantleVehiclePreset* Picked = FMantleVehiclePresets::Find(Selector);
+	Shape.Start(Loaded, Picked ? Picked->FitMinScale : 0.0, Picked ? Picked->FitMaxScale : 0.0);
+	bPreviewDirty = false;
+	// Another engine is another vehicle's numbers: what was built for the last one stays in the project, and the model is read again.
+	ForgetBuild();
+	ReadModel();
+}
+
+void SMantleVehicleBuilder::PickPreset(const FString& PresetId, const FText& Name)
+{
+	if (PresetId == SelectedTypeId())
+	{
+		return;
+	}
+	// #378: a type with engines (the motorcycle) starts with its default engine; the Engine row lists the rest.
+	EngineChoices.Reset();
+	EngineIds.Reset();
+	FString Selector = PresetId;
+	if (const FMantleVehiclePreset* Type = FMantleVehiclePresets::Find(PresetId))
+	{
+		for (const FMantleVehiclePresetEngine& Engine : Type->Engines)
+		{
+			EngineChoices.Add(MakeShared<FString>(Engine.Description.IsEmpty() ? Engine.Name : Engine.Name + TEXT(" (") + Engine.Description.LeftChop(Engine.Description.EndsWith(TEXT(".")) ? 1 : 0) + TEXT(")")));
+			EngineIds.Add(Engine.Id);
+		}
+		if (!Type->DefaultEngine.IsEmpty())
+		{
+			Selector = PresetId + TEXT("+") + Type->DefaultEngine;
+		}
 	}
 	// The type's frame at its own size: the starting point of its sizes and feel.
 	FMantleChassisSpec Loaded;
 	FString Error;
-	if (!FMantleVehicleChassisBuilder::LoadSpec(PresetId, Loaded, Error))
+	if (!FMantleVehicleChassisBuilder::LoadSpec(Selector, Loaded, Error))
 	{
 		TypeProblem = FText::Format(LOCTEXT("TypeNotRead", "The {0}'s shape could not be read ({1}). Reinstall the Mantle plugin, then open this window again."),
 			Name, FText::FromString(Error));
 		return;
 	}
 	TypeProblem = FText::GetEmpty();
-	SelectedPresetId = PresetId;
+	SelectedPresetId = Selector;
 	SelectedPresetName = Name;
 	// A plane, helicopter or hovercraft is sized by one Size held to the preset's own fit range.
-	const FMantleVehiclePreset* Picked = FMantleVehiclePresets::Find(PresetId);
+	const FMantleVehiclePreset* Picked = FMantleVehiclePresets::Find(Selector);
 	Shape.Start(Loaded, Picked ? Picked->FitMinScale : 0.0, Picked ? Picked->FitMaxScale : 0.0);
 	bPreviewDirty = false;
 
@@ -544,7 +634,7 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeFeelRow(const EMantleVehicleFeel 
 		[
 			SNew(SBox).WidthOverride(150.f)
 			[
-				SNew(STextBlock).Text(FMantleVehicleShape::FeelLabel(Feel)).ToolTipText(FMantleVehicleShape::FeelHelp(Feel))
+				SNew(STextBlock).Text(FMantleVehicleShape::FeelLabel(Feel)).ToolTipText_Lambda([this, Feel] { return FMantleVehicleShape::FeelHelp(Feel, Shape.GetFamily()); })
 			]
 		]
 		+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center).Padding(0.f, 4.f)
@@ -555,7 +645,7 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeFeelRow(const EMantleVehicleFeel 
 				.Delta(0.05f)
 				.MinFractionalDigits(2)
 				.MaxFractionalDigits(2)
-				.ToolTipText(FMantleVehicleShape::FeelHelp(Feel))
+				.ToolTipText_Lambda([this, Feel] { return FMantleVehicleShape::FeelHelp(Feel, Shape.GetFamily()); })
 				.Value_Lambda([this, Feel] { return static_cast<float>(Shape.GetFeel(Feel)); })
 				.OnValueChanged_Lambda([this, Feel](float Value) { SetFeel(Feel, Value); })
 				.OnEndSliderMovement_Lambda([this](float) { FlushPreview(); })
