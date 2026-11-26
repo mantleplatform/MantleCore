@@ -57,6 +57,29 @@ namespace MantleVehicleTypeMatchTestPrivate
 			{ FName("Wheel_nose"), 0, FVector(250, 0, 30) }, { FName("Wheel_L"), 0, FVector(-50, -200, 30) }, { FName("Wheel_R"), 0, FVector(-50, 200, 30) } });
 	}
 
+	/**
+	 * Two rows of PerSide wheel bones (Name_L1, Name_R1, ...), Gap cm apart along X, a gauge of 310 cm, each hub Radius cm up: a tank's road wheels when they are
+	 * many and close, a truck's axles when they are few or far apart. Extra bones are added after the wheels.
+	 */
+	FMantleVehicleModel Rows(const TCHAR* Name, const int32 PerSide, const double Gap, const double Radius, const TArray<FName>& Extra = {})
+	{
+		TArray<TTuple<FName, int32, FVector>> Bones = { { FName("root"), INDEX_NONE, FVector::ZeroVector } };
+		const double First = -0.5 * Gap * (PerSide - 1);
+		for (int32 Index = 0; Index < PerSide; ++Index)
+		{
+			for (const TCHAR* Side : { TEXT("L"), TEXT("R") })
+			{
+				const double Y = FCString::Strcmp(Side, TEXT("L")) == 0 ? -155.0 : 155.0;
+				Bones.Add({ FName(*FString::Printf(TEXT("%s_%s%d"), Name, Side, Index + 1)), 0, FVector(First + Gap * Index, Y, Radius) });
+			}
+		}
+		for (const FName Bone : Extra)
+		{
+			Bones.Add({ Bone, 0, FVector(0, 0, 100) });
+		}
+		return MakeModel(FVector(FMath::Max(770.0, Gap * PerSide + 2.0 * Radius), 375, 250), Bones);
+	}
+
 	FString Describe(const FMantleVehicleTypeMatch& Match)
 	{
 		return FString::Printf(TEXT("verdict %d, suggests '%s', %s"), static_cast<int32>(Match.Verdict), *Match.SuggestedType, *Match.Message);
@@ -138,6 +161,77 @@ bool FMantleVehicleTypeMatchModelsTest::RunTest(const FString& Parameters)
 	// An unknown type or an empty model never refuses; it says so.
 	TestEqual(TEXT("an unknown type is unsure"), Check::Check(Car(), TEXT("spaceship")).Verdict, EMantleVehicleTypeVerdict::Unsure);
 	TestEqual(TEXT("an empty model is unsure"), Check::Check(FMantleVehicleModel(), TEXT("sedan")).Verdict, EMantleVehicleTypeVerdict::Unsure);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleTypeMatchTrackedTest,
+	"Mantle.Vehicle.TypeMatch.TrackedOnlyOnTrackEvidence",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleTypeMatchTrackedTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleTypeMatchTestPrivate;
+	using Check = FMantleVehicleTypeMatchCheck;
+	// A model reads as tracked (#448) only on real track evidence: a part named like a track's, or 4 or more wheels on each side packed into a track.
+	const auto FamilyOf = [](const FMantleVehicleModel& Model)
+	{
+		TArray<FString> Evidence;
+		EMantleVehicleTypeConfidence Confidence = EMantleVehicleTypeConfidence::Strong;
+		return Check::FamilyOfModel(Model, Evidence, Confidence);
+	};
+
+	// A tank-like rig with plain wheel names: 7 a side, 75 cm apart on 35 cm wheels (closer than a wheel across), so its wheels alone say tracks.
+	const FMantleVehicleModel Tank = Rows(TEXT("Wheel"), 7, 75.0, 35.0);
+	TArray<FString> Evidence;
+	EMantleVehicleTypeConfidence Confidence = EMantleVehicleTypeConfidence::Weak;
+	TestEqual(TEXT("7 wheels a side packed close is tracked"), Check::FamilyOfModel(Tank, Evidence, Confidence), EMantleVehicleModelFamily::Tracked);
+	TestTrue(*FString::Printf(TEXT("strongly, and it says why (%s)"), *FString::Join(Evidence, TEXT(", "))),
+		Confidence == EMantleVehicleTypeConfidence::Strong && Evidence.ContainsByPredicate([](const FString& Line) { return Line.Contains(TEXT("packed into two tracks")); }));
+	TestEqual(TEXT("it fits the tank"), Check::Check(Tank, TEXT("tank")).Verdict, EMantleVehicleTypeVerdict::Fits);
+	TestEqual(TEXT("and the bulldozer"), Check::Check(Tank, TEXT("bulldozer")).Verdict, EMantleVehicleTypeVerdict::Fits);
+	const FMantleVehicleTypeMatch AsSedan = Check::Check(Tank, TEXT("sedan"));
+	TestTrue(*FString::Printf(TEXT("picked as a sedan it suggests the tank (%s)"), *Describe(AsSedan)),
+		AsSedan.Suggests() && AsSedan.SuggestedType == TEXT("tank") && AsSedan.Message.Contains(TEXT("a tank or bulldozer")));
+	const FMantleVehicleTypeMatch CarAsTank = Check::Check(Car(), TEXT("tank"));
+	TestTrue(*FString::Printf(TEXT("a car picked as a tank suggests a car (%s)"), *Describe(CarAsTank)),
+		CarAsTank.Suggests() && CarAsTank.SuggestedType == TEXT("sedan") && CarAsTank.Message.Contains(TEXT("runs on two tracks")));
+	TestEqual(TEXT("the tank's type is tracked"), Check::FamilyOfType(TEXT("tank")), EMantleVehicleModelFamily::Tracked);
+	TestEqual(TEXT("and the bulldozer's"), Check::FamilyOfType(TEXT("bulldozer")), EMantleVehicleModelFamily::Tracked);
+
+	// A car's four wheels and a sprocket on each side: named like a track's, so tracked whatever its wheels say.
+	const FMantleVehicleModel Sprockets = Rows(TEXT("Wheel"), 2, 270.0, 35.0, { FName("Sprocket_L"), FName("Sprocket_R") });
+	Evidence.Reset();
+	TestEqual(TEXT("a rig with named sprockets is tracked"), Check::FamilyOfModel(Sprockets, Evidence, Confidence), EMantleVehicleModelFamily::Tracked);
+	TestTrue(*FString::Printf(TEXT("because of the name (%s)"), *FString::Join(Evidence, TEXT(", "))),
+		Evidence.ContainsByPredicate([](const FString& Line) { return Line.Contains(TEXT("Sprocket_")); }));
+	// A track material is evidence too.
+	TestEqual(TEXT("a model with a track material is tracked"), FamilyOf(MakeModel(FVector(770, 375, 250), {}, { FName("M_Hull"), FName("M_TankTracks") })),
+		EMantleVehicleModelFamily::Tracked);
+
+	// Two rows of 3 wheels, even close together, are a six-wheeled truck: a road vehicle that fits the six-wheeler.
+	const FMantleVehicleModel SixWheeler = Rows(TEXT("Wheel"), 3, 80.0, 35.0);
+	TestEqual(TEXT("two rows of 3 wheels stay a road vehicle"), FamilyOf(SixWheeler), EMantleVehicleModelFamily::Road);
+	TestEqual(TEXT("and fit the six-wheeler"), Check::Check(SixWheeler, TEXT("sixwheeler")).Verdict, EMantleVehicleTypeVerdict::Fits);
+	// Four a side spread far apart (an 8x8 truck's axles, 150 cm apart on 50 cm wheels: 1.5 wheels across) are a road vehicle too.
+	TestEqual(TEXT("an 8x8 truck's spread axles stay a road vehicle"), FamilyOf(Rows(TEXT("Wheel"), 4, 150.0, 50.0)), EMantleVehicleModelFamily::Road);
+	// Positive control for that: the same eight wheels packed close are tracks.
+	TestEqual(TEXT("the same eight packed close are tracked"), FamilyOf(Rows(TEXT("Wheel"), 4, 90.0, 50.0)), EMantleVehicleModelFamily::Tracked);
+	TestEqual(TEXT("and the car is still a road vehicle"), FamilyOf(Car()), EMantleVehicleModelFamily::Road);
+
+	// Names: whole words of a track, not a word that only has one in it, nor a car's belts, a tire's tread or a track rod.
+	for (const TCHAR* Name : { TEXT("Track_L"), TEXT("LeftTrack"), TEXT("tracks"), TEXT("Tread_R"), TEXT("track_belt"), TEXT("Sprocket_L"), TEXT("idler_r"),
+		TEXT("RoadWheel_L3"), TEXT("road_wheel_05"), TEXT("M_TankTracks"), TEXT("Belt01") })
+	{
+		TestTrue(*FString::Printf(TEXT("'%s' names a track part"), Name), Check::IsTrackPartName(Name));
+	}
+	for (const TCHAR* Name : { TEXT("Tracker"), TEXT("soundtrack"), TEXT("SeatBelt"), TEXT("seat_belt"), TEXT("FanBelt"), TEXT("Belt_Drive"), TEXT("Tire_Tread"),
+		TEXT("TrackRod_L"), TEXT("track_bar"), TEXT("Wheel_FL"), TEXT("Body"), TEXT("") })
+	{
+		TestFalse(*FString::Printf(TEXT("'%s' names no track part"), Name), Check::IsTrackPartName(Name));
+	}
+	TestTrue(TEXT("a belt is a belt"), Check::IsTrackBeltName(TEXT("Track_L")));
+	TestFalse(TEXT("a sprocket is a track part but not its belt"), Check::IsTrackBeltName(TEXT("Sprocket_L")));
 	return true;
 }
 

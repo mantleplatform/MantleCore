@@ -192,7 +192,7 @@ struct FMantleVehicleModelPlacement
 	FVector Direction(const FVector& ModelDirection) const { return FRotator(0.0, YawDegrees, 0.0).RotateVector(ModelDirection); }
 };
 
-/** How the chassis is sized to a model: a Size for a plane, a jet, a helicopter or a hovercraft, the eight sizes for a road vehicle. */
+/** How the chassis is sized to a model: a Size for a plane, a jet, a helicopter, a hovercraft or a tracked vehicle, the eight sizes for a road vehicle. */
 struct FMantleVehicleModelProposal
 {
 	/** The type is shaped by one Size (FMantleVehicleShape::UsesSize). */
@@ -346,7 +346,7 @@ struct MANTLEEDITOR_API FMantleVehicleChassisSkin
 	static FMantleVehicleModelProposal Propose(const FMantleChassisSpec& Archetype, const FMantleVehiclePreset& Preset, const FMantleVehicleModel& Model, double YawDegrees,
 		const FMantleVehicleModelMap& Map);
 
-	/** Turns, scales and moves Model onto Spec's chassis (Chassis is its gray body): the scale fits the footprint (a flier, a hovercraft) or the length (a road vehicle). */
+	/** Turns, scales and moves Model onto Spec's chassis (Chassis is its gray body): the scale fits the footprint (a flier, a hovercraft, a tracked vehicle) or the length (a road vehicle). */
 	static FMantleVehicleModelPlacement FitPlacement(const FMantleChassisSpec& Spec, const FMantleSkinnedMesh& Chassis, const FMantleVehicleModel& Model, double YawDegrees,
 		const FMantleVehicleModelMap& Map);
 

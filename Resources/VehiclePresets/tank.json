@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "id": "tank",
+  "name": "Tank",
+  "description": "A main battle tank on two tracks: very heavy, quick for its size on the road, and it turns on the spot. A and D run one track faster than the other; standing still they turn the tracks opposite ways and it pivots. The turret is a drawn block and does not turn.",
+  "comment": "A vehicle preset (#728, #448): see sedan.json for the format. movementType tracked is the Tracked movement type (#448): each side's road wheels (the layout's axles, a pair each) share one belt, every one driven and braked by the handbrake, none steered; it steers by running one track faster than the other, and in a pivot the tracks run opposite ways at chassis.tracked.pivotTrackSpeed. Reference: the Leopard 2A4, hull and drive only. Sourced: combat weight 55,150 kg (FAS data sheet; KNDS lists 55 t); 1,103 kW (1,500 hp) at 2,600 rpm (KNDS, Singapore MINDEF); top speed 68 km/h on the road (Canada DND; KNDS up to 70), so maxSpeed 1889 cm/s is the governor; ground pressure 0.83 kg/cm^2 (FAS, Canada DND); hull 7.7 m long and 3.75 m wide. Estimates: peak torque 4,700 Nm (the MTU MB 873's, secondary sources) on a flat torque curve peaking at 1,600 to 1,700 rpm; the gearbox's ratios (Renk HSWL 354, 4 forward, 2 reverse) are not published, so 4.3, 2.6, 1.6 and 1.0 step geometrically and with finalDrive 5.0 4th turns the 35 cm road wheels at 68.6 km/h at 2,600 rpm; reverse 2.2 tops out near 31 km/h (estimate); 7 road wheels a side of 35 cm radius, 60 cm wide, the first to the last 490 cm apart (layout.wheelbase); track width 63.5 cm (estimate); the gauge 310 cm (layout.track: the 375 cm hull less a track's width); pivotTrackSpeed 97 cm/s turns it 360 degrees in about 10 s (2 x 97 / 310 rad/s; no published hull figure, an estimate); lateralShare 0.8 (steel tracks on firm ground, U. Maryland ENAE 788X after Wong, Theory of Ground Vehicles); padPitch 18 cm. Checks (validate.py prints them): contact length l = 490 + 35 = 525 cm, l / gauge = 1.69 (real tanks 1.5 to 1.8), x lateralShare 0.8 = 1.35, below the 2 it must stay under to pivot; ground pressure 55,150 / (2 x 63.5 x 525) = 0.83 kg/cm^2, the FAS figure. brakeTorque 8,100 Nm on each of 14 road wheels stops it at about 0.6 g (estimate); handbrake 10,000 Nm holds it parked on a slope. Real tanks have neither ABS nor traction control, so both are off (a creator may switch them on). tires.rollingResistance 0.04: a track loses far more than a tyre to its pins and road wheels (#448, shared with #447). tires.friction 1.18 is the track's grip multiplier (1.6 x 0.735: the tyre load is the true load since #376 step 9); the movement type has its own track grip per surface. Suspension: torsion bars with long travel (25 cm up, 22 down) riding at about 1.1 Hz (estimate: tank torsion bars ride near 1 Hz); springRate 1,050 is the average road wheel's (each follows its own load), the 20 cm it sags at rest taken from the droop, and damping 4.6 gives a damping ratio near 0.27 for the 3.9 t each road wheel carries (#376 step 9's ride bars). The turret (460 x 330 x 80 cm on the hull's top, centred at x 0) is drawn only; the hull collides. Centre of mass 20 cm behind the middle (the engine at the back) and 110 cm up. Camera arm and height suit a 7.7 m, 2.5 m tall vehicle. Tuning after the probe (#448) may move the engine, brake and friction numbers.",
+  "movementType": "tracked",
+  "publishable": true,
+  "type": "tracked",
+  "seats": {
+    "driver": "car"
+  },
+  "fit": {
+    "wheelRadius": 35,
+    "trackWidth": 310,
+    "minScale": 0.5,
+    "maxScale": 2
+  },
+  "wheels": {
+    "min": 6,
+    "max": 20
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 490,
+      "track": 310,
+      "wheelRadius": 35,
+      "wheelWidth": 60,
+      "axles": [
+        { "steer": false, "drive": true, "handbrake": true },
+        { "steer": false, "drive": true, "handbrake": true },
+        { "steer": false, "drive": true, "handbrake": true },
+        { "steer": false, "drive": true, "handbrake": true },
+        { "steer": false, "drive": true, "handbrake": true },
+        { "steer": false, "drive": true, "handbrake": true },
+        { "steer": false, "drive": true, "handbrake": true }
+      ]
+    },
+    "body": { "length": 770, "width": 375, "height": 110, "groundClearance": 54 },
+    "centerOfMass": [-20, 0, 110],
+    "seat": {
+      "location": [250, -70, 145],
+      "steeringWheel": { "location": [296.8, -70, 148], "radius": 18 }
+    },
+    "tracked": {
+      "trackWidth": 63.5,
+      "padPitch": 18,
+      "pivotTrackSpeed": 97,
+      "lateralShare": 0.8,
+      "turret": { "x": 0, "length": 460, "width": 330, "height": 80 }
+    }
+  },
+  "derive": {
+    "stability": 1.1,
+    "cameraArmPerLength": 0.83,
+    "cameraHeightPerHeight": 1.82
+  },
+  "defaults": {
+    "mass": 55150,
+    "maxSpeed": 1889,
+    "dragCoefficient": 0.9,
+    "frontalArea": 9,
+    "engine": {
+      "maxTorque": 4700,
+      "maxRPM": 2700,
+      "idleRPM": 700,
+      "torqueCurve": [[0, 0.5], [700, 0.6], [1600, 1], [1700, 1], [2600, 0.86], [2700, 0.8]],
+      "tractionControl": false,
+      "engineBraking": 0.5
+    },
+    "transmission": {
+      "gearRatios": [4.3, 2.6, 1.6, 1.0],
+      "reverseRatio": 2.2,
+      "finalDrive": 5.0,
+      "changeUpRPM": 2400,
+      "changeDownRPM": 1400,
+      "shiftTime": 0.5
+    },
+    "suspension": {
+      "maxRaise": 25,
+      "maxDrop": 22,
+      "springRate": 1050,
+      "springPreload": 750,
+      "damping": 4.6
+    },
+    "brakes": {
+      "brakeTorque": 8100,
+      "handbrakeTorque": 10000,
+      "abs": false
+    },
+    "tires": {
+      "friction": 1.18,
+      "rollingResistance": 0.04
+    },
+    "camera": {
+      "armLength": 1300,
+      "height": 450
+    }
+  },
+  "ranges": {
+    "mass": [40000, 70000],
+    "maxSpeed": [1000, 2500],
+    "dragCoefficient": [0.6, 1.2],
+    "frontalArea": [6, 12],
+    "engine/maxTorque": [2500, 5000],
+    "engine/maxRPM": [1800, 4000],
+    "engine/idleRPM": [500, 1000],
+    "engine/engineBraking": [0, 2],
+    "transmission/gearRatios/*": [0.5, 6],
+    "transmission/reverseRatio": [1, 5],
+    "transmission/finalDrive": [2, 8],
+    "transmission/changeUpRPM": [1500, 4000],
+    "transmission/changeDownRPM": [800, 2500],
+    "transmission/shiftTime": [0.2, 1.5],
+    "suspension/maxRaise": [10, 40],
+    "suspension/maxDrop": [5, 30],
+    "suspension/springRate": [600, 3000],
+    "suspension/springPreload": [0, 2000],
+    "suspension/damping": [2, 5],
+    "brakes/brakeTorque": [4000, 16000],
+    "brakes/handbrakeTorque": [5000, 20000],
+    "tires/friction": [1, 2.5],
+    "tires/rollingResistance": [0.02, 0.05],
+    "camera/armLength": [800, 2000],
+    "camera/height": [250, 700],
+    "wheels/*/radius": [25, 45],
+    "wheels/*/width": [40, 80],
+    "tracked/trackWidth": [45, 80],
+    "tracked/padPitch": [12, 25],
+    "tracked/pivotTrackSpeed": [50, 150],
+    "tracked/lateralShare": [0.5, 1.1]
+  }
+}

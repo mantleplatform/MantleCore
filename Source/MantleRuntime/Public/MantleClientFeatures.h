@@ -39,6 +39,8 @@ namespace MantleClientFeatures
 	inline const TCHAR* const VehicleHover = TEXT("vehicleHover");
 	/** A vehicle document's movementType boat and its boat block (#15). */
 	inline const TCHAR* const VehicleBoat = TEXT("vehicleBoat");
+	/** A vehicle document's movementType tracked and its tracked block (#448): a tank's or a bulldozer's two tracks; and tires.rollingResistance (#448, shared with #447). */
+	inline const TCHAR* const VehicleTracked = TEXT("vehicleTracked");
 	/** A vehicle seat's kind (motorcycle, pilot), exit distance and a motorcycle driver's rider block. */
 	inline const TCHAR* const VehicleSeatKind = TEXT("vehicleSeatKind");
 	/** An authored per-seat yaw and pitch arc for held weapons. */
@@ -49,7 +51,7 @@ namespace MantleClientFeatures
 	inline const TCHAR* const VehiclePaintLayers = TEXT("vehiclePaintLayers");
 	/** A vehicle's livery names (the vehicle-livery-names cook fixtures). */
 	inline const TCHAR* const VehicleLiveryNames = TEXT("vehicleLiveryNames");
-	/** A vehicle document's pedal block, a pedalling rider's crank and sprintPelvisShift, and tires.rollingResistance (#447). */
+	/** A vehicle document's pedal block and a pedalling rider's crank and sprintPelvisShift (#447); tires.rollingResistance is VehicleTracked's. */
 	inline const TCHAR* const VehiclePedal = TEXT("vehiclePedal");
 	/** A vehicle document's movementType trailer and its trailer block, and a wheeled vehicle's hitch (#446). */
 	inline const TCHAR* const VehicleTrailer = TEXT("vehicleTrailer");
@@ -110,7 +112,7 @@ namespace MantleClientFeatures
 	{
 		return {
 			InstancedMesh, CrowdSpawner, CrowdPointsOfInterest, SkeletalMesh, RectLight, Decal, LightShape, Terrain, TerrainGrass,
-			Vehicle, VehicleLinkage, VehicleParts, VehicleCarInteraction, VehicleContactPoints, VehicleHiddenSeat, VehicleFliers, VehicleHover, VehicleBoat, VehicleSeatKind, VehicleWeaponArc, VehicleLights, VehiclePaintLayers, VehicleLiveryNames, VehiclePedal, VehicleTrailer, Effect, EffectSprites, Constraint, Scatter, ReflectionProbes, Storage,
+			Vehicle, VehicleLinkage, VehicleParts, VehicleCarInteraction, VehicleContactPoints, VehicleHiddenSeat, VehicleFliers, VehicleHover, VehicleBoat, VehicleTracked, VehicleSeatKind, VehicleWeaponArc, VehicleLights, VehiclePaintLayers, VehicleLiveryNames, VehiclePedal, VehicleTrailer, Effect, EffectSprites, Constraint, Scatter, ReflectionProbes, Storage,
 			UIDocuments, EnvironmentDefaults, EnvironmentLighting, AvatarHeight, SoundEmitterAutoplay, StaticMeshPhysics, PhysicsMaterial, Surface, DrawDistance, CarPaint,
 			MaterialFidelity, MaterialAdditive, WeaponDocument, WorldText, VoxelWorld, ScatterDrawDistance, ScatterTerrain, ScatterShapes, ScatterCollision, ScatterPaintLayer, ScatterGroundAlign, ScatterMinSpacing, ScatterPathStep, ScatterPathExclusions, ScatterLarge
 		};

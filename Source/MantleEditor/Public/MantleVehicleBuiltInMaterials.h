@@ -12,7 +12,8 @@ struct FMantleVehicleSourcePart;
  * The built-in vehicle materials a vehicle may name where it names a material (mantle#239: ast_mat_rubber, ast_mat_glass, ast_mat_chrome, ast_mat_light_lens, ast_mat_carbon): Mantle's own
  * tire rubber, windows, chrome, carbon fiber and light lenses, shipped in the client and shared by every car, so nothing uploads and creators do not pick them. The converter detects
  * the sections that are glass, tires, chrome, carbon fiber or lamps from what the model says (section and material names, translucency, the lights the builder found) and writes the
- * built-in id for them, as it gives paint slots car paint; every other section keeps the creator's own material. Nothing here is a creator setting.
+ * built-in id for them, as it gives paint slots car paint; every other section keeps the creator's own material. A tracked vehicle's belt sections get the scrolling
+ * track belt (#448: ast_mat_track) the same way. Nothing here is a creator setting.
  */
 struct MANTLEEDITOR_API FMantleVehicleBuiltInMaterials
 {
@@ -21,6 +22,8 @@ struct MANTLEEDITOR_API FMantleVehicleBuiltInMaterials
 	static const TCHAR* Chrome() { return TEXT("ast_mat_chrome"); }
 	static const TCHAR* LightLens() { return TEXT("ast_mat_light_lens"); }
 	static const TCHAR* Carbon() { return TEXT("ast_mat_carbon"); }
+	/** A tracked vehicle's belt (#448): its pad pattern scrolls with each track's speed. Only a tracked vehicle's belt sections get it (ForSection). */
+	static const TCHAR* Track() { return TEXT("ast_mat_track"); }
 
 	/** Every built-in vehicle material id. */
 	static TArray<FString> All();
@@ -35,7 +38,7 @@ struct MANTLEEDITOR_API FMantleVehicleBuiltInMaterials
 	 */
 	static FString Suggest(const FString& SectionName);
 
-	/** The material's name for a creator: "Tire rubber", "Glass", "Chrome", "Light lens", "Carbon fiber". */
+	/** The material's name for a creator: "Tire rubber", "Glass", "Chrome", "Light lens", "Carbon fiber", "Track belt (scrolls with the track)". */
 	static FText Label(const FString& Id);
 
 	/**
@@ -52,7 +55,11 @@ struct MANTLEEDITOR_API FMantleVehicleBuiltInMaterials
 	 */
 	static FString Detect(const UMaterialInterface* Material, const FString& SectionName, bool bLight);
 
-	/** Detect for the body section SectionName (the builder's unique section name) of Source drawing Material: its light sections and paint are Source's. */
+	/**
+	 * Detect for the body section SectionName (the builder's unique section name) of Source drawing Material: its light sections and paint are Source's. On a tracked
+	 * vehicle (#448), a section whose name or material's name names a track's belt (FMantleVehicleTypeMatchCheck::IsTrackBeltName: track, tread, belt) gets the
+	 * scrolling track belt; on any other vehicle no section does.
+	 */
 	static FString ForSection(const UMantleVehicleSource& Source, const FString& SectionName, const UMaterialInterface* Material);
 
 	/** Detect for slot Slot of Part's mesh (its paint slots are Part's; a part is never a light). */

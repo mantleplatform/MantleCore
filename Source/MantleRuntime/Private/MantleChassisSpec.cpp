@@ -36,7 +36,7 @@ namespace MantleChassisSpecPrivate
 
 	/**
 	 * The bone of the wheel of axle Axle (counted from the front) on Side (0 the left, -Y, 1 the right). Two axles keep the names
-	 * wheel_fl, wheel_fr, wheel_rl and wheel_rr; three or four are wheel_a1_l, wheel_a1_r, wheel_a2_l and so on, front axle first.
+	 * wheel_fl, wheel_fr, wheel_rl and wheel_rr; three or more (a tracked layout's up to ten) are wheel_a1_l, wheel_a1_r, wheel_a2_l and so on, front axle first.
 	 */
 	FName WheelBoneName(const int32 AxleCount, const int32 Axle, const int32 Side)
 	{
@@ -197,9 +197,14 @@ namespace MantleChassisSpecPrivate
 		}
 		Json->TryGetNumberField(TEXT("camber"), Read.Camber);
 		Json->TryGetNumberField(TEXT("stallAngle"), Read.StallAngle);
-		if (!FMath::IsFinite(Read.Camber) || !FMath::IsFinite(Read.StallAngle) || Read.StallAngle < 1.0)
+		Json->TryGetNumberField(TEXT("maxLift"), Read.MaxLift);
+		if (!FMath::IsFinite(Read.Camber) || !FMath::IsFinite(Read.StallAngle) || Read.StallAngle < 5.0 || Read.StallAngle > 30.0)
 		{
-			return Refuse(OutError, FString::Printf(TEXT("the preset's %s camber is not a number, or its stallAngle is below 1"), *Label));
+			return Refuse(OutError, FString::Printf(TEXT("the preset's %s camber is not a number, or its stallAngle is not 5 to 30"), *Label));
+		}
+		if (!FMath::IsFinite(Read.MaxLift) || Read.MaxLift < 0.0)
+		{
+			return Refuse(OutError, FString::Printf(TEXT("the preset's %s maxLift is not a number, or is below 0 (0: the type's)"), *Label));
 		}
 		Out = Read;
 		return true;
@@ -227,6 +232,21 @@ namespace MantleChassisSpecPrivate
 			|| !GetNumber(Engines, TEXT("x"), TEXT("chassis.aircraft.engines.x"), false, Read.EngineX, OutError))
 		{
 			return false;
+		}
+		// #379: a propeller engine's power and a jet's afterburner, both optional.
+		Engines->TryGetNumberField(TEXT("power"), Read.EnginePowerKw);
+		Engines->TryGetNumberField(TEXT("afterburnerThrust"), Read.AfterburnerNewtons);
+		Json->TryGetNumberField(TEXT("spoolTime"), Read.SpoolTime);
+		if (!FMath::IsFinite(Read.EnginePowerKw) || Read.EnginePowerKw < 0.0 || !FMath::IsFinite(Read.AfterburnerNewtons) || Read.AfterburnerNewtons < 0.0
+			|| !FMath::IsFinite(Read.SpoolTime))
+		{
+			return Refuse(OutError, TEXT("the preset's chassis.aircraft engines.power, engines.afterburnerThrust or spoolTime is not a number above 0"));
+		}
+		const TSharedPtr<FJsonObject>* Assists = nullptr;
+		if (Json->TryGetObjectField(TEXT("assists"), Assists) && Assists && Assists->IsValid())
+		{
+			(*Assists)->TryGetBoolField(TEXT("stallProtection"), Read.bStallProtection);
+			(*Assists)->TryGetBoolField(TEXT("coordinatedTurns"), Read.bCoordinatedTurns);
 		}
 		// A propeller block, when there is one, is read whole; a key that is there but is not an object is a mistake, not a jet.
 		Read.bPropeller = Json->HasField(TEXT("propeller"));
@@ -507,6 +527,49 @@ namespace MantleChassisSpecPrivate
 		return true;
 	}
 
+	/**
+	 * The tracked block of a tracked preset's chassis (chassis.tracked): the tracks' width, pad length, pivot speed and lateral share, all required, and the
+	 * optional turret and blade, each read whole when it is there (a key that is there but is not an object is a mistake, not no turret).
+	 */
+	bool ParseTracked(const TSharedPtr<FJsonObject>& Chassis, FMantleChassisTracked& Out, FString& OutError)
+	{
+		TSharedPtr<FJsonObject> Json;
+		TSharedPtr<FJsonObject> Turret;
+		TSharedPtr<FJsonObject> Blade;
+		FMantleChassisTracked Read;
+		if (!GetObject(Chassis, TEXT("tracked"), TEXT("chassis.tracked"), Json, OutError)
+			|| !GetNumber(Json, TEXT("trackWidth"), TEXT("chassis.tracked.trackWidth"), true, Read.TrackWidth, OutError)
+			|| !GetNumber(Json, TEXT("padPitch"), TEXT("chassis.tracked.padPitch"), true, Read.PadPitch, OutError)
+			|| !GetNumber(Json, TEXT("pivotTrackSpeed"), TEXT("chassis.tracked.pivotTrackSpeed"), true, Read.PivotTrackSpeed, OutError)
+			|| !GetNumber(Json, TEXT("lateralShare"), TEXT("chassis.tracked.lateralShare"), true, Read.LateralShare, OutError))
+		{
+			return false;
+		}
+		Read.bTurret = Json->HasField(TEXT("turret"));
+		if (Read.bTurret
+			&& (!GetObject(Json, TEXT("turret"), TEXT("chassis.tracked.turret"), Turret, OutError)
+				|| !GetNumber(Turret, TEXT("x"), TEXT("chassis.tracked.turret.x"), false, Read.TurretX, OutError)
+				|| !GetNumber(Turret, TEXT("length"), TEXT("chassis.tracked.turret.length"), true, Read.TurretLength, OutError)
+				|| !GetNumber(Turret, TEXT("width"), TEXT("chassis.tracked.turret.width"), true, Read.TurretWidth, OutError)
+				|| !GetNumber(Turret, TEXT("height"), TEXT("chassis.tracked.turret.height"), true, Read.TurretHeight, OutError)))
+		{
+			return false;
+		}
+		Read.bBlade = Json->HasField(TEXT("blade"));
+		if (Read.bBlade
+			&& (!GetObject(Json, TEXT("blade"), TEXT("chassis.tracked.blade"), Blade, OutError)
+				|| !GetNumber(Blade, TEXT("x"), TEXT("chassis.tracked.blade.x"), false, Read.BladeX, OutError)
+				|| !GetNumber(Blade, TEXT("width"), TEXT("chassis.tracked.blade.width"), true, Read.BladeWidth, OutError)
+				|| !GetNumber(Blade, TEXT("height"), TEXT("chassis.tracked.blade.height"), true, Read.BladeHeight, OutError)
+				|| !GetNumber(Blade, TEXT("thickness"), TEXT("chassis.tracked.blade.thickness"), true, Read.BladeThickness, OutError)))
+		{
+			return false;
+		}
+		Read.bSet = true;
+		Out = Read;
+		return true;
+	}
+
 	/** The number at Path ("engine/maxTorque", objects separated by '/') under Root. False when any step is missing or the last is not a number. */
 	bool FindNumber(const TSharedPtr<FJsonObject>& Root, const FString& Path, double& Out)
 	{
@@ -728,6 +791,8 @@ const TCHAR* FMantleChassisSpec::TypeName(const EMantleChassisType Kind)
 		return TEXT("jetski");
 	case EMantleChassisType::Trailer:
 		return TEXT("trailer");
+	case EMantleChassisType::Tracked:
+		return TEXT("tracked");
 	default:
 		return TEXT("car");
 	}
@@ -737,7 +802,7 @@ bool FMantleChassisSpec::ParseType(const FString& Name, EMantleChassisType& OutT
 {
 	for (const EMantleChassisType Kind : { EMantleChassisType::Car, EMantleChassisType::Truck, EMantleChassisType::Motorcycle, EMantleChassisType::Plane,
 			 EMantleChassisType::Helicopter, EMantleChassisType::Hovercraft, EMantleChassisType::Boat, EMantleChassisType::JetSki,
-			 EMantleChassisType::Trailer })
+			 EMantleChassisType::Trailer, EMantleChassisType::Tracked })
 	{
 		if (Name.Equals(TypeName(Kind), ESearchCase::CaseSensitive))
 		{
@@ -911,8 +976,11 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 	{
 		Spec.DriverSeat = DriverKind;
 	}
+	// A tank or a bulldozer is steered with two levers or a yoke, never a wheel: its driver sits in a car's seat with no steering wheel to hold.
+	FString EarlyType;
+	const bool bTrackedType = Root->TryGetStringField(TEXT("type"), EarlyType) && EarlyType.Equals(TypeName(EMantleChassisType::Tracked), ESearchCase::CaseSensitive);
 	Spec.bSteeringWheel = !Spec.bCenterline && !Spec.DriverSeat.Equals(TEXT("pilot"), ESearchCase::CaseSensitive)
-		&& !Spec.DriverSeat.Equals(TEXT("motorcycle"), ESearchCase::CaseSensitive);
+		&& !Spec.DriverSeat.Equals(TEXT("motorcycle"), ESearchCase::CaseSensitive) && !bTrackedType;
 	if (Spec.bSteeringWheel
 		&& (!GetObject(SeatJson, TEXT("steeringWheel"), TEXT("chassis.seat.steeringWheel"), WheelJson, OutError)
 			|| !GetVector(WheelJson, TEXT("location"), TEXT("chassis.seat.steeringWheel.location"), Spec.Hub, OutError)
@@ -920,10 +988,13 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 	{
 		return false;
 	}
+	// A tracked layout's axles are its road-wheel pairs, more than any other type has (its type is checked against its block below).
+	const int32 LeastAxles = bTrackedType ? MinTrackedAxles : MinAxles;
+	const int32 MostAxles = bTrackedType ? MaxTrackedAxles : MaxAxles;
 	const TArray<TSharedPtr<FJsonValue>>* AxlesJson = nullptr;
-	if (!Layout->TryGetArrayField(TEXT("axles"), AxlesJson) || !AxlesJson || AxlesJson->Num() < MinAxles || AxlesJson->Num() > MaxAxles)
+	if (!Layout->TryGetArrayField(TEXT("axles"), AxlesJson) || !AxlesJson || AxlesJson->Num() < LeastAxles || AxlesJson->Num() > MostAxles)
 	{
-		return Refuse(OutError, FString::Printf(TEXT("the preset's chassis.layout.axles is missing or not %d to %d axles"), MinAxles, MaxAxles));
+		return Refuse(OutError, FString::Printf(TEXT("the preset's chassis.layout.axles is missing or not %d to %d axles"), LeastAxles, MostAxles));
 	}
 	const int32 AxleCount = AxlesJson->Num();
 	Spec.Axles.SetNum(AxleCount);
@@ -994,12 +1065,16 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 		return false;
 	}
 	Spec.bTrailer = Chassis->HasField(TEXT("trailer"));
+	if (Chassis->HasField(TEXT("tracked")) && !ParseTracked(Chassis, Spec.Tracked, OutError))
+	{
+		return false;
+	}
 
 	// What the size derives from: the type, the derive block, the hand-tuned handling every derived number is a ratio of, and the dimensions it is a ratio against.
 	FString TypeText;
 	if (!Root->TryGetStringField(TEXT("type"), TypeText) || !ParseType(TypeText, Spec.Type))
 	{
-		return Refuse(OutError, TEXT("the preset's type is missing or not car, truck, motorcycle, plane, helicopter, hovercraft, boat, jetski or trailer"));
+		return Refuse(OutError, TEXT("the preset's type is missing or not car, truck, motorcycle, plane, helicopter, hovercraft, boat, jetski, trailer or tracked"));
 	}
 	if ((Spec.Type == EMantleChassisType::Motorcycle) != Spec.bCenterline)
 	{
@@ -1058,6 +1133,27 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 	{
 		return Refuse(OutError, TEXT("the preset's type jetski has a jet drive and is ridden astride (the motorcycle seat)"));
 	}
+	if ((Spec.Type == EMantleChassisType::Tracked) != Spec.Tracked.bSet)
+	{
+		return Refuse(OutError, TEXT("the preset's type tracked and its chassis.tracked go together"));
+	}
+	// A tracked vehicle's axles are its road-wheel pairs, a wheel each side: it turns by its tracks, so none steers; the belt drives every road wheel and the
+	// handbrake locks the whole track, so each is driven and braked. Its driver sits in a car's seat (with no steering wheel, above).
+	if (Spec.Type == EMantleChassisType::Tracked)
+	{
+		if (Spec.bCenterline || !Spec.DriverSeat.Equals(TEXT("car"), ESearchCase::CaseSensitive))
+		{
+			return Refuse(OutError, TEXT("the preset's type tracked has a road wheel each side of every axle and is driven from a car's seat"));
+		}
+		for (int32 Axle = 0; Axle < AxleCount; ++Axle)
+		{
+			const FMantleChassisAxle& Pair = Spec.Axles[Axle];
+			if (Pair.bSteer || !Pair.bDrive || !Pair.bHandbrake || Pair.bCenterline)
+			{
+				return Refuse(OutError, FString::Printf(TEXT("the preset's chassis.layout.axles[%d] of a tracked vehicle must be steer false, drive true and handbrake true"), Axle));
+			}
+		}
+	}
 	if (!GetObject(Root, TEXT("derive"), TEXT("derive"), DeriveJson, OutError) || !FMantleChassisDerive::ReadConstants(DeriveJson, Spec.Constants, OutError)
 		|| !ReadArchetype(DefaultsJson, Spec, OutError))
 	{
@@ -1095,6 +1191,7 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 	Size.Aircraft = Spec.Aircraft;
 	Size.Helicopter = Spec.Helicopter;
 	Size.Hovercraft = Spec.Hovercraft;
+	Size.Tracked = Spec.Tracked;
 	OutSpec = MoveTemp(Spec);
 	return true;
 }
@@ -1529,6 +1626,42 @@ FMantleChassisBlock FMantleChassisSpec::BoatDriveBlock() const
 	return { Middle - FVector(2.0 * Half, Half, 2.0 * Half), Middle + FVector(2.0 * Half, Half, 2.0 * Half) };
 }
 
+FMantleChassisBlock FMantleChassisSpec::TrackBlock(const bool bRight) const
+{
+	if (!Tracked.bSet || Axles.Num() == 0)
+	{
+		return FMantleChassisBlock();
+	}
+	// Along the side's road wheels, round the front and rearmost ones (the axles' X: the front axle is at +Wheelbase / 2), the pad's width about their Y,
+	// from the ground over the wheels' tops by the belt's own reach.
+	const double Front = Wheelbase * (0.5 - Axles[0].Position) + WheelRadius;
+	const double Rear = Wheelbase * (0.5 - Axles.Last().Position) - WheelRadius;
+	const double Y = (bRight ? 0.5 : -0.5) * Track;
+	const double HalfWidth = 0.5 * Tracked.TrackWidth;
+	return { FVector(Rear, Y - HalfWidth, 0.0), FVector(Front, Y + HalfWidth, 2.0 * WheelRadius + TrackAboveWheel * Scale) };
+}
+
+FMantleChassisBlock FMantleChassisSpec::TurretBlock() const
+{
+	if (!Tracked.bSet || !Tracked.bTurret)
+	{
+		return FMantleChassisBlock();
+	}
+	const FVector Half(0.5 * Tracked.TurretLength, 0.5 * Tracked.TurretWidth, 0.0);
+	return { FVector(Tracked.TurretX - Half.X, -Half.Y, BodyTop()), FVector(Tracked.TurretX + Half.X, Half.Y, BodyTop() + Tracked.TurretHeight) };
+}
+
+FMantleChassisBlock FMantleChassisSpec::BladeBlock() const
+{
+	if (!Tracked.bSet || !Tracked.bBlade)
+	{
+		return FMantleChassisBlock();
+	}
+	const double HalfThickness = 0.5 * Tracked.BladeThickness;
+	const double HalfWidth = 0.5 * Tracked.BladeWidth;
+	return { FVector(Tracked.BladeX - HalfThickness, -HalfWidth, 0.0), FVector(Tracked.BladeX + HalfThickness, HalfWidth, Tracked.BladeHeight) };
+}
+
 FMantleChassisSpec FMantleChassisSpec::Scaled(const FMantleChassisSpec& Spec, const double Factor)
 {
 	if (!FMath::IsFinite(Factor) || Factor <= 0.0 || Factor == 1.0)
@@ -1622,6 +1755,18 @@ FMantleChassisSpec FMantleChassisSpec::Scaled(const FMantleChassisSpec& Spec, co
 		}
 	}
 
+	// A tracked vehicle's tracks, turret and blade grow with it. Its pivot speed does too: it turns on the spot at 2 x that speed over the gauge, which grows
+	// with it, so it turns as fast as the preset. The lateral share is a ratio of frictions, which does not scale.
+	if (Out.Tracked.bSet)
+	{
+		FMantleChassisTracked& Tracks = Out.Tracked;
+		for (double* Length : { &Tracks.TrackWidth, &Tracks.PadPitch, &Tracks.PivotTrackSpeed, &Tracks.TurretX, &Tracks.TurretLength, &Tracks.TurretWidth,
+				 &Tracks.TurretHeight, &Tracks.BladeX, &Tracks.BladeWidth, &Tracks.BladeHeight, &Tracks.BladeThickness })
+		{
+			*Length *= Factor;
+		}
+	}
+
 	// The handling follows the new size. The handling before is what a rider's rear brake and tire are relative to.
 	const FMantleChassisHandling Before = Spec.Derived.IsSet() ? Spec.Derived.GetValue() : Spec.Archetype;
 	const FMantleChassisHandling After = FMantleChassisDerive::Derive(Out, FMantleChassisFeel());
@@ -1642,7 +1787,8 @@ FMantleChassisSpec FMantleChassisSpec::Scaled(const FMantleChassisSpec& Spec, co
 
 bool FMantleChassisSpec::IsDriveOffered() const
 {
-	if (bCenterline || Aircraft.bSet || Helicopter.bSet || Hovercraft.bSet || Axles.Num() < 2)
+	// A tracked vehicle drives every road wheel through its tracks (Parse requires it), so its drive is never a choice either.
+	if (bCenterline || Aircraft.bSet || Helicopter.bSet || Hovercraft.bSet || Tracked.bSet || Axles.Num() < 2)
 	{
 		return false;
 	}

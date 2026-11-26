@@ -56,6 +56,9 @@ struct MANTLERUNTIME_API FMantleChassisHandling
 	 *  that is not a boat. */
 	double BoatThrustNewtons = 0.0;
 	double BoatRudderAreaM2 = 0.0;
+	/** A hovercraft's Grip slider, -1 to 1 (#381): how much its skirt holds its line, which FMantleVehicleChassisDocument turns into its slide
+	 *  dampers (-1 none, 0 the preset's real hovercraft, 1 a car-like hold). 0 for everything that is not a hovercraft. */
+	double HoverGrip = 0.0;
 	/**
 	 * What a limit held back when FMantleChassisDerive made this, one line each: the document path, the number the rule gave and what it was held to
 	 * ("brakes/handbrakeTorque 39321.6 held to 20000"). The rules do not stop at a limit quietly: a number that is not the rule's answer is here.
@@ -66,8 +69,10 @@ struct MANTLERUNTIME_API FMantleChassisHandling
 
 /**
  * The four feel sliders of a chassis, each from -1 to 1 and 0 for the archetype's own: grip scales the tire friction, power the
- * engine's power-to-weight, stiffness the ride frequency and topSpeed the top speed, each by up to 30 percent either way. Never
- * physics beyond that: customization does not change how a vehicle drives.
+ * engine's power-to-weight (a hovercraft's fan push), stiffness the ride frequency and topSpeed the top speed, each by up to 30 percent
+ * either way. Never physics beyond that: customization does not change how a vehicle drives. The one exception is a hovercraft's grip
+ * (#381), which runs from no slide assist at all (-1, a true hovercraft) through its preset's real hovercraft (0) to a car-like hold (1):
+ * FMantleVehicleChassisDocument::HovercraftSlide.
  */
 struct MANTLERUNTIME_API FMantleChassisFeel
 {
@@ -133,6 +138,9 @@ struct MANTLERUNTIME_API FMantleChassisTrim
  *   a hovercraft's fan, pads and rudder   the fan's push thrust0 x (m / m0); each pad's spring rate0 x (m / m0) x (n0 / n) x (d0 / d), d a pad's travel
  *                   less the hover height (how far it comes down at rest, at least 1 cm), so the hull rests at its own hover height; the rudder's
  *                   area area0 x (height x chord) / (height0 x chord0)
+ *   a tracked vehicle   its road wheels are its wheels, so the rules above take them as any wheels (n is every road wheel). Its tracks' width, pad
+ *                   length and pivot speed are the chassis's geometry, which FMantleChassisSpec::Scaled scales with the rest (the pivot speed with the
+ *                   gauge, so it turns on the spot as fast at any size); its lateral share is a ratio and stays. None is a handling number here.
  * What no rule moves is the archetype's own: the drag coefficient, the spring damping and the tire friction (the friction by the grip slider), the
  * torque curve, gear ratios and rpm limits. A ratio is held to 0.001 to 1000 so a dimension that is zero or not a number gives a held number and not
  * a NaN. Every handling number is held inside the document's absolute ranges (limits.json), and each hold is listed in the result's

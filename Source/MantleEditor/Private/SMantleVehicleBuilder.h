@@ -81,9 +81,9 @@ private:
 	TSharedRef<SWidget> WithPicture(const TSharedRef<SWidget>& Left, bool bLights = false, bool bLiveries = false);
 	/** The picture: the model on its frame once there is one, else the line that says what to do next. */
 	TSharedRef<SWidget> MakePicture();
-	/** The Size row of a type shaped by one Size (a plane, helicopter or hovercraft). */
+	/** The Size row of a type shaped by one Size (a plane, helicopter, hovercraft or tracked vehicle). */
 	TSharedRef<SWidget> MakeSizeRow();
-	/** One feel slider (grip, power, suspension or top speed), -1 to 1. A road vehicle has all four, a hovercraft its top speed. */
+	/** One feel slider (grip, power, suspension or top speed), -1 to 1. A road vehicle and a tracked one have all four, a hovercraft its top speed. */
 	TSharedRef<SWidget> MakeFeelRow(EMantleVehicleFeel Feel);
 	TSharedRef<SWidget> MakePassengerRow();
 	/** The feel sliders the picked type has, and its passenger tickbox where its preset has a passenger seat, one under the other. */

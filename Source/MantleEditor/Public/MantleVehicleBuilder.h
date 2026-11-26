@@ -382,8 +382,8 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 * level"), and selects it. The creator then presses Test Locally. False, with OutProblem in plain words, when no level is open.
 	 * OutActor, when given, receives the new spawn.
 	 *
-	 * A plane or jet needs a long flat stretch to take off from: it is put where the ground ahead of the camera is flattest for its take-off run (about 150 m for a jet, 350 m for
-	 * a plane), not necessarily 6 m ahead. OutNote, when given, says in plain words where it went and what a flier needs: the run it needs and whether the spot has it, or that a
+	 * A plane or jet needs a long flat stretch to take off from: it is put where the ground ahead of the camera is flattest for its take-off run (about 375 m for a jet or a light plane,
+	 * 460 m for a warbird), not necessarily 6 m ahead. OutNote, when given, says in plain words where it went and what a flier needs: the run it needs and whether the spot has it, or that a
 	 * helicopter needs open space above. Empty for a vehicle that drives.
 	 */
 	static bool PlaceInLevel(UMantleVehicleSource& Source, FString& OutProblem, AMantleVehicleSpawnPoint** OutActor = nullptr, FString* OutNote = nullptr);

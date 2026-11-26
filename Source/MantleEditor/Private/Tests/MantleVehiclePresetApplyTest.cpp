@@ -380,7 +380,7 @@ bool FMantleVehiclePresetPedalTest::RunTest(const FString& Parameters)
 	// #447: a pedalled preset's pedal block and rolling resistance are read into the tuning and written back out.
 	FMantleVehiclePreset Preset;
 	FString Error;
-	const TCHAR* Defaults = TEXT("{ "pedal": { "riderPower": 250, "sprintPower": 900, "sprintReserve": 15, "maxCadence": 200, "cadence": 85 }, "tires": { "friction": 1.12, "rollingResistance": 0.005 } }");
+	const TCHAR* Defaults = TEXT(R"({ "pedal": { "riderPower": 250, "sprintPower": 900, "sprintReserve": 15, "maxCadence": 200, "cadence": 85 }, "tires": { "friction": 1.12, "rollingResistance": 0.005 } })");
 	if (TestTrue(TEXT("the inline preset parses"), FMantleVehiclePresets::Parse(PresetWithDefaults(Defaults), Preset, Error)))
 	{
 		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage());
@@ -421,6 +421,71 @@ bool FMantleVehiclePresetPedalTest::RunTest(const FString& Parameters)
 	{
 		return Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(TEXT("within 20 of its Max Cadence"));
 	}));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehiclePresetRollingResistanceTest,
+	"Mantle.Vehicle.Presets.RollingResistance",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehiclePresetRollingResistanceTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehiclePresetApplyTestPrivate;
+	// tires.rollingResistance (#447, #448): how much every wheel loses to rolling. A preset's is read in and written out.
+	FMantleVehiclePreset Preset;
+	FString Error;
+	if (TestTrue(TEXT("the inline preset parses"), FMantleVehiclePresets::Parse(PresetWithDefaults(TEXT("{ \"tires\": { \"friction\": 1.6, \"rollingResistance\": 0.04 } }")), Preset, Error)))
+	{
+		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		TArray<FString> Notes;
+		TestTrue(TEXT("rollingResistance is a known key"), FMantleVehiclePresets::ApplyDefaults(Preset, *Source, Notes));
+		TestEqual(TEXT("rollingResistance read in"), Source->Tuning.TireRollingResistance, 0.04f);
+		const TSharedRef<FJsonObject> Document = FMantleVehicleConverter::MakeDocument(*Source, TMap<FString, FString>());
+		ExpectFragment(*this, TEXT("rolling resistance"), Preset.Defaults, Document);
+	}
+
+	// The tracked presets carry a track's 0.04, and apply.
+	for (const TCHAR* Id : { TEXT("tank"), TEXT("bulldozer") })
+	{
+		const FMantleVehiclePreset* Tracked = FMantleVehiclePresets::Find(Id);
+		if (!TestNotNull(*FString::Printf(TEXT("the %s preset loads"), Id), Tracked))
+		{
+			continue;
+		}
+		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		TArray<FString> Notes;
+		const bool bApplied = FMantleVehiclePresets::ApplyDefaults(*Tracked, *Source, Notes);
+		TestTrue(*FString::Printf(TEXT("the %s applies (%s)"), Id, *FString::Join(Notes, TEXT(" "))), bApplied);
+		TestEqual(*FString::Printf(TEXT("the %s rolls as a track does"), Id), Source->Tuning.TireRollingResistance, 0.04f);
+	}
+
+	// Absent: a car tire's 0.012, which the document leaves out (its absence means the same), so a car's document is what it was.
+	UMantleVehicleSource* Fresh = NewObject<UMantleVehicleSource>(GetTransientPackage());
+	TestEqual(TEXT("absent: a car tire's 0.012"), Fresh->Tuning.TireRollingResistance, 0.012f);
+	const TSharedRef<FJsonObject> Plain = FMantleVehicleConverter::MakeDocument(*Fresh, TMap<FString, FString>());
+	const TSharedPtr<FJsonObject>* Tires = nullptr;
+	if (TestTrue(TEXT("the document has tires"), Plain->TryGetObjectField(TEXT("tires"), Tires) && Tires))
+	{
+		TestFalse(TEXT("a car tire's rolling resistance is left out"), (*Tires)->HasField(TEXT("rollingResistance")));
+	}
+
+	// Out of range, either way: the check says so, by name.
+	for (const float Value : { 0.2f, 0.001f })
+	{
+		UMantleVehicleSource* Wild = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		Wild->Tuning.TireRollingResistance = Value;
+		TArray<FMantleValidationIssue> Issues;
+		FMantleVehicleConverter::CheckSource(Wild, FString(), Issues);
+		TestTrue(*FString::Printf(TEXT("a rolling resistance of %g is an error"), Value), Issues.ContainsByPredicate([](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(TEXT("Tire Rolling Resistance")) && Issue.Problem.Contains(TEXT("outside what a vehicle may have"));
+		}));
+	}
+	// Positive control: in range is no such error.
+	TArray<FMantleValidationIssue> Fine;
+	FMantleVehicleConverter::CheckSource(Fresh, FString(), Fine);
+	TestFalse(TEXT("0.012 is no rolling-resistance error"), Fine.ContainsByPredicate([](const FMantleValidationIssue& Issue) { return Issue.Problem.Contains(TEXT("Tire Rolling Resistance")); }));
 	return true;
 }
 

@@ -16,7 +16,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// The movement part of a vehicle document (WP2): a chassis spec written as flat numbers (movementType, the flight, helicopter or hover block, the
+// The movement part of a vehicle document (WP2): a chassis spec written as flat numbers (movementType, the flight, helicopter, hover or tracked block, the
 // seats' kinds, the rider, the camera boom), read back by the client's own reader, equal to what the chassis demo path computed from the spec and to the
 // examples the schema ships, and refused when malformed. Pure data; no UObjects.
 
@@ -66,7 +66,7 @@ namespace MantleVehicleDocumentTestPrivate
 	/** Document minus the keys WP2 adds, so what it carried before is what remains. */
 	void StripMovement(FJsonObject& Doc)
 	{
-		for (const TCHAR* Key : { TEXT("movementType"), TEXT("flight"), TEXT("helicopter"), TEXT("hover") })
+		for (const TCHAR* Key : { TEXT("movementType"), TEXT("flight"), TEXT("helicopter"), TEXT("hover"), TEXT("tracked") })
 		{
 			Doc.RemoveField(Key);
 		}
@@ -92,7 +92,7 @@ namespace MantleVehicleDocumentTestPrivate
 		const TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
 		FJsonObject::Duplicate(Base, Out);
 		StripMovement(*Out);
-		for (const TCHAR* Key : { TEXT("movementType"), TEXT("flight"), TEXT("helicopter"), TEXT("hover") })
+		for (const TCHAR* Key : { TEXT("movementType"), TEXT("flight"), TEXT("helicopter"), TEXT("hover"), TEXT("tracked") })
 		{
 			if (Example->HasField(Key))
 			{
@@ -211,7 +211,7 @@ namespace MantleVehicleDocumentTestPrivate
 	}
 
 	/**
-	 * What the chassis demo path (FMantleChassisDefinitions: ApplySeatKind, ApplyAircraft, ApplyHelicopter, ApplyHovercraft) sets from a spec, transcribed here as
+	 * What the chassis demo path (FMantleChassisDefinitions: ApplySeatKind, DeriveAircraft, DeriveHelicopter, DeriveHovercraft) sets from a spec, transcribed here as
 	 * expected values and compared field by field with the Desc a composed document reads as. Every comparison is of the float the definition holds.
 	 */
 	void CheckAgainstDevPath(FAutomationTestBase& Test, const FString& Label, const FMantleChassisSpec& Spec, const FMantleVehicleDesc& D)
@@ -294,7 +294,30 @@ namespace MantleVehicleDocumentTestPrivate
 		Test.TestTrue(*(Label + TEXT(": the movement type")),
 			D.MovementType == (Spec.Aircraft.bSet ? EMantleVehicleMovementKind::Plane
 				: (Spec.Helicopter.bSet ? EMantleVehicleMovementKind::Helicopter : (Spec.Hovercraft.bSet ? EMantleVehicleMovementKind::Hover
-				: (Spec.Boat.bSet ? EMantleVehicleMovementKind::Boat : (Spec.bTrailer ? EMantleVehicleMovementKind::Trailer : EMantleVehicleMovementKind::Wheeled))))));
+				: (Spec.Boat.bSet ? EMantleVehicleMovementKind::Boat : (Spec.bTrailer ? EMantleVehicleMovementKind::Trailer
+				: (Spec.Tracked.bSet ? EMantleVehicleMovementKind::Tracked : EMantleVehicleMovementKind::Wheeled)))))));
+
+		// A tracked vehicle's tracks are the preset's (a resized one's scaled) numbers, and its road wheels are the document's wheels: none steers, each is
+		// driven and braked by the handbrake. The chassis has no rollers to name.
+		if (Spec.Tracked.bSet)
+		{
+			const FMantleChassisTracked& Tracks = Spec.Tracked;
+			const FMantleVehicleTrackedDesc& T = D.Tracked;
+			Eq(TEXT("pivot track speed"), T.PivotTrackSpeed, Tracks.PivotTrackSpeed);
+			Eq(TEXT("lateral share"), T.LateralShare, Tracks.LateralShare);
+			Eq(TEXT("track width"), T.TrackWidth, Tracks.TrackWidth);
+			Eq(TEXT("pad pitch"), T.PadPitch, Tracks.PadPitch);
+			Test.TestEqual(*(Label + TEXT(": no rollers")), T.Rollers.Num(), 0);
+			Test.TestEqual(*(Label + TEXT(": a road wheel each side of every axle")), D.Wheels.Num(), 2 * Spec.Axles.Num());
+			Test.TestTrue(*(Label + TEXT(": no road wheel steers, every one is driven and has the handbrake")), !D.Wheels.ContainsByPredicate([](const FMantleVehicleWheelDesc& Wheel)
+			{
+				return Wheel.bSteering || !Wheel.bDriven || !Wheel.bHandbrake;
+			}));
+		}
+		else
+		{
+			Test.TestEqual(*(Label + TEXT(": no track block")), D.Tracked.TrackWidth, 0.0);
+		}
 
 		if (Spec.Aircraft.bSet)
 		{
@@ -374,7 +397,7 @@ namespace MantleVehicleDocumentTestPrivate
 			Eq(TEXT("air speed limit"), He.AirSpeedLimit, Heli.AirSpeedLimitCmPerSec);
 			Eq(TEXT("the collective that holds the weight"), He.HoverCollective, Heli.HoverCollective);
 			Eq(TEXT("the collective's rate"), He.ThrottleLeverRate, 1.0);
-			Eq(TEXT("the rotor's drag"), He.LinearDamping, 0.1);
+			Eq(TEXT("no body damping (#380: the speed-squared drag is its drag)"), He.LinearDamping, FMantleVehicleChassisDocument::HelicopterLinearDamping);
 			Eq(TEXT("no angular damping"), He.AngularDamping, 0.0);
 			if (Test.TestEqual(*(Label + TEXT(": one main rotor")), He.Rotors.Num(), 1))
 			{
@@ -526,7 +549,7 @@ bool FMantleVehicleDocumentGoldenTest::RunTest(const FString& Parameters)
 			FromDocument.Equals(FromSpec, ESearchCase::CaseSensitive));
 
 		// The pure wheeled types write nothing new: a car composes to the document it did before the movement keys existed.
-		if (!Spec.Aircraft.bSet && !Spec.Helicopter.bSet && !Spec.Hovercraft.bSet && !Spec.Boat.bSet && !Spec.Rider.bSet && !Spec.bTrailer)
+		if (!Spec.Aircraft.bSet && !Spec.Helicopter.bSet && !Spec.Hovercraft.bSet && !Spec.Boat.bSet && !Spec.Tracked.bSet && !Spec.Rider.bSet && !Spec.bTrailer)
 		{
 			const TSharedPtr<FJsonObject> Doc = ParseObject(Text);
 			const TSharedPtr<FJsonObject> Copy = ParseObject(Text);
@@ -551,10 +574,15 @@ bool FMantleVehicleDocumentExamplesTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	for (const TCHAR* Id : { TEXT("plane"), TEXT("jet"), TEXT("helicopter"), TEXT("hovercraft"), TEXT("motorcycle") })
+	// Each example and the preset it is composed from (#379: valid-plane.json is the warbird's; the light plane has no example of its own).
+	const TPair<const TCHAR*, const TCHAR*> Pairs[] = { { TEXT("warbird"), TEXT("plane") }, { TEXT("jet"), TEXT("jet") }, { TEXT("helicopter"), TEXT("helicopter") },
+		{ TEXT("hovercraft"), TEXT("hovercraft") }, { TEXT("motorcycle"), TEXT("motorcycle") } };
+	for (const TPair<const TCHAR*, const TCHAR*>& Pair : Pairs)
 	{
+		const TCHAR* Id = Pair.Key;
+		const TCHAR* File = Pair.Value;
 		FString Example;
-		if (!TestTrue(*FString::Printf(TEXT("%s: the example exists"), Id), FFileHelper::LoadFileToString(Example, *FPaths::Combine(Directory, FString::Printf(TEXT("valid-%s.json"), Id)))))
+		if (!TestTrue(*FString::Printf(TEXT("%s: the example valid-%s.json exists"), Id, File), FFileHelper::LoadFileToString(Example, *FPaths::Combine(Directory, FString::Printf(TEXT("valid-%s.json"), File)))))
 		{
 			continue;
 		}
@@ -587,6 +615,11 @@ bool FMantleVehicleDocumentExamplesTest::RunTest(const FString& Parameters)
 		FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(B), JsonB);
 		const FString Difference = JsonDifference(JsonA, JsonB, FString(), 1.0e-3);
 		TestTrue(*FString::Printf(TEXT("%s: the document the editor composes is the example (differs at %s: %s)"), Id, *Difference, *FirstDifferenceOf(A, B)), Difference.IsEmpty());
+		if (!Difference.IsEmpty())
+		{
+			// The composed document, for refreshing the example (Saved/VehicleExamples/valid-<preset>.json; its movement part is what this compares).
+			FFileHelper::SaveStringToFile(Composed, *FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("VehicleExamples"), FString::Printf(TEXT("valid-%s.json"), File)));
+		}
 	}
 	return true;
 }
@@ -650,10 +683,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FMantleVehicleDocumentHeldTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleDocumentTestPrivate;
-	// A plane 1.6 times the preset's size has its tail surfaces 13 m back: past the +-1000 cm a document can say. Positive control: it is held, said so, and the
+	// The warbird 1.6 times the preset's size has its tail surfaces 13 m back (#379: the light plane's reach only 9.4 m): past the +-1000 cm a document can say. Positive control: it is held, said so, and the
 	// document still reads, with the held position at the range's end.
 	FMantleChassisSpec Plane;
-	if (!LoadSpec(*this, TEXT("plane@1.6"), Plane))
+	if (!LoadSpec(*this, TEXT("warbird@1.6"), Plane))
 	{
 		return false;
 	}
@@ -679,14 +712,14 @@ bool FMantleVehicleDocumentHeldTest::RunTest(const FString& Parameters)
 			if (LoadSpec(*this, Selector, Spec))
 			{
 				// A body past the collision box's range (the six-wheeler at 2.5) is refused for that, as it was before the movement keys existed
-				// (Mantle.Vehicle.Chassis.ScaledChassisMakesValidAssets): the movement part is not what refuses it. So is a bus at 2.5 (#376 step 9c),
-				// 31 m long with its driver 11.75 m forward: its seat is read before its collision, and both are past what a document can say (its
-				// fit stops at 1.6).
+				// (Mantle.Vehicle.Chassis.ScaledChassisMakesValidAssets), and so are wheels past the wheel ranges (a bulldozer's small, wide road wheels at
+				// the selectors' ends): the movement part is not what refuses it. So is a bus at 2.5 (#376 step 9c), 31 m long with its driver 11.75 m
+				// forward: its seat is read before its collision, and both are past what a document can say (its fit stops at 1.6).
 				// The semitrailer past 1.2 (#446, its fit's end) is 19 m long or more, with its center of mass and the seat it keeps for the reader
 				// (the hovercraft precedent) past what a document can say: refused for them before its collision.
 				const bool bRead = ParseDesc(FMantleChassisSpec::ComposeDocument(Spec), Read, Error);
 				TestTrue(*FString::Printf(TEXT("%s: the document reads (%s)"), *Selector, *Error), bRead || Error.StartsWith(TEXT("/collision/"))
-					|| (Id == TEXT("bus") && Scale > 2.0 && Error.StartsWith(TEXT("/seat/location/")))
+					|| Error.StartsWith(TEXT("/wheels/")) || (Id == TEXT("bus") && Scale > 2.0 && Error.StartsWith(TEXT("/seat/location/")))
 					|| (Id == TEXT("semitrailer") && Scale > 1.2 && (Error.StartsWith(TEXT("/seat/location/")) || Error.StartsWith(TEXT("/centerOfMass/")))));
 			}
 		}
@@ -717,7 +750,8 @@ bool FMantleVehicleDocumentGroundHandlingTest::RunTest(const FString& Parameters
 		{
 			continue;
 		}
-		const bool bFlier = Spec.Aircraft.bSet || Spec.Helicopter.bSet || Spec.Hovercraft.bSet || Spec.Boat.bSet;
+		// A tracked vehicle (#448) is no car here either: neither key is written.
+		const bool bFlier = Spec.Aircraft.bSet || Spec.Helicopter.bSet || Spec.Hovercraft.bSet || Spec.Boat.bSet || Spec.Tracked.bSet;
 		if (!bFlier && Spec.WheelCount() == 2 && Spec.Rider.bSet)
 		{
 			// A bike (#378): its own steering curve, and its tyres' own grip (no car split is written).
@@ -735,7 +769,7 @@ bool FMantleVehicleDocumentGroundHandlingTest::RunTest(const FString& Parameters
 		const bool bGround = !bFlier && Spec.WheelCount() > 2;
 		if (!bGround)
 		{
-			// A plane's, a helicopter's and a hovercraft's are not a car's: neither key is written.
+			// A plane's, a helicopter's, a hovercraft's and a tracked vehicle's are not a car's: neither key is written.
 			TestTrue(*FString::Printf(TEXT("%s: no curve and no rear grip"), *Selector), D.SteeringSpeedCurve.IsEmpty() && !D.bTireRearFriction);
 			continue;
 		}
@@ -867,12 +901,12 @@ bool FMantleVehicleDocumentDefaultsTest::RunTest(const FString& Parameters)
 	const FString Heli = Mutated(*this, TEXT("helicopter"), [](FJsonObject& Doc)
 	{
 		const TSharedPtr<FJsonObject> Block = Child(Doc, TEXT("helicopter"));
-		for (const TCHAR* Key : { TEXT("throttleLeverRate"), TEXT("linearDamping"), TEXT("angularDamping") })
+		for (const TCHAR* Key : { TEXT("throttleLeverRate"), TEXT("linearDamping"), TEXT("angularDamping"), TEXT("heightHold"), TEXT("yawHold"), TEXT("aerofoils") })
 		{
 			Block->RemoveField(Key);
 		}
 		const TSharedPtr<FJsonObject> Rotor = Item(*Block, TEXT("rotors"), 0);
-		for (const TCHAR* Key : { TEXT("axis"), TEXT("pitchAcceleration"), TEXT("rollAcceleration"), TEXT("yawAcceleration"), TEXT("stabilityAssist"), TEXT("stabilityStiffness"),
+		for (const TCHAR* Key : { TEXT("axis"), TEXT("diameter"), TEXT("pitchAcceleration"), TEXT("rollAcceleration"), TEXT("yawAcceleration"), TEXT("stabilityAssist"), TEXT("stabilityStiffness"),
 			TEXT("stabilityDamping"), TEXT("stabilityMaxAcceleration") })
 		{
 			Rotor->RemoveField(Key);
@@ -881,7 +915,10 @@ bool FMantleVehicleDocumentDefaultsTest::RunTest(const FString& Parameters)
 	if (TestTrue(*FString::Printf(TEXT("a helicopter with only its required keys reads (%s)"), *Error), ParseDesc(Heli, D, Error)))
 	{
 		TestEqual(TEXT("collective rate 1"), D.Helicopter.ThrottleLeverRate, 1.0);
-		TestEqual(TEXT("linear damping 0.1"), D.Helicopter.LinearDamping, 0.1);
+		TestEqual(TEXT("linear damping 0 (#380)"), D.Helicopter.LinearDamping, 0.0);
+		TestTrue(TEXT("height hold and the yaw assist on"), D.Helicopter.bHeightHold && D.Helicopter.bYawHold);
+		TestEqual(TEXT("no aerofoils"), D.Helicopter.Aerofoils.Num(), 0);
+		TestEqual(TEXT("the disc's size worked out later"), D.Helicopter.Rotors[0].Diameter, 0.0);
 		TestEqual(TEXT("angular damping 0"), D.Helicopter.AngularDamping, 0.0);
 		const FMantleVehicleRotorDesc& Rotor = D.Helicopter.Rotors[0];
 		TestTrue(TEXT("the rotor lifts along up"), Rotor.Axis.Equals(FVector::UpVector));
@@ -915,10 +952,10 @@ bool FMantleVehicleDocumentDefaultsTest::RunTest(const FString& Parameters)
 	{
 		TestFalse(TEXT("no fin"), D.Hover.bRudder);
 		TestEqual(TEXT("angular damping 0.5"), D.Hover.AngularDamping, 0.5);
-		TestEqual(TEXT("lateral 1.5"), D.Hover.Damping.LateralPerSecond, 1.5);
-		TestEqual(TEXT("max lateral accel 400"), D.Hover.Damping.MaxLateralAccel, 400.0);
-		TestEqual(TEXT("yaw 2"), D.Hover.Damping.YawPerSecond, 2.0);
-		TestEqual(TEXT("max yaw accel 180"), D.Hover.Damping.MaxYawAccelDegrees, 180.0);
+		TestEqual(TEXT("lateral 0.3 (a real hovercraft's slide, #381)"), D.Hover.Damping.LateralPerSecond, 0.3);
+		TestEqual(TEXT("max lateral accel 100"), D.Hover.Damping.MaxLateralAccel, 100.0);
+		TestEqual(TEXT("yaw 1"), D.Hover.Damping.YawPerSecond, 1.0);
+		TestEqual(TEXT("max yaw accel 90"), D.Hover.Damping.MaxYawAccelDegrees, 90.0);
 		TestEqual(TEXT("skirt brake 2"), D.Hover.Damping.SkirtBrakePerSecond, 2.0);
 		TestEqual(TEXT("max skirt brake accel 500"), D.Hover.Damping.MaxSkirtBrakeAccel, 500.0);
 		TestEqual(TEXT("reverse share 0.5"), D.Hover.Thruster.ReverseShare, 0.5);
@@ -929,6 +966,24 @@ bool FMantleVehicleDocumentDefaultsTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("pad drop 50"), D.Hover.Pads[0].MaxDrop, 50.0);
 		TestEqual(TEXT("pad spring 37"), D.Hover.Pads[0].SpringRate, 37.0);
 		TestEqual(TEXT("pad damping 0.6"), D.Hover.Pads[0].SpringDamping, 0.6);
+	}
+
+	// A tracked vehicle's block with only its track width.
+	const FString Tank = Mutated(*this, TEXT("tank"), [](FJsonObject& Doc)
+	{
+		const TSharedPtr<FJsonObject> Block = Child(Doc, TEXT("tracked"));
+		for (const TCHAR* Key : { TEXT("pivotTrackSpeed"), TEXT("lateralShare"), TEXT("padPitch"), TEXT("rollers") })
+		{
+			Block->RemoveField(Key);
+		}
+	});
+	if (TestTrue(*FString::Printf(TEXT("a tracked vehicle with only its required keys reads (%s)"), *Error), ParseDesc(Tank, D, Error)))
+	{
+		TestEqual(TEXT("pivot track speed 100"), D.Tracked.PivotTrackSpeed, 100.0);
+		TestEqual(TEXT("lateral share 0.8"), D.Tracked.LateralShare, 0.8);
+		TestEqual(TEXT("pad pitch 15"), D.Tracked.PadPitch, 15.0);
+		TestEqual(TEXT("no rollers"), D.Tracked.Rollers.Num(), 0);
+		TestEqual(TEXT("the track width is the document's"), D.Tracked.TrackWidth, 63.5);
 	}
 
 	// A rider's grips with no bone: the handlebar's on the fork, the pegs left for the body's root.
@@ -1050,7 +1105,7 @@ bool FMantleVehicleDocumentRefusalsTest::RunTest(const FString& Parameters)
 		}
 	};
 	// The baseline reads: the mutations below are the only reason a document does not.
-	for (const TCHAR* Id : { TEXT("plane"), TEXT("jet"), TEXT("helicopter"), TEXT("hovercraft"), TEXT("boat"), TEXT("motorcycle"), TEXT("sedan") })
+	for (const TCHAR* Id : { TEXT("plane"), TEXT("jet"), TEXT("helicopter"), TEXT("hovercraft"), TEXT("boat"), TEXT("motorcycle"), TEXT("sedan"), TEXT("tank") })
 	{
 		FMantleVehicleDesc D;
 		FString Error;
@@ -1194,6 +1249,87 @@ bool FMantleVehicleDocumentRefusalsTest::RunTest(const FString& Parameters)
 	Refuses(TEXT("a pad spring damping above 1"), TEXT("hovercraft"), TEXT("outside"), [](FJsonObject& Doc)
 	{
 		Item(*Child(Doc, TEXT("hover")), TEXT("pads"), 0)->SetNumberField(TEXT("springDamping"), 3);
+	});
+
+	// A tracked vehicle's: its block, and the rules its road wheels (the document's wheels) keep.
+	Refuses(TEXT("a tracked vehicle with no tracked block"), TEXT("tank"), TEXT("needs a tracked block"), [](FJsonObject& Doc) { Doc.RemoveField(TEXT("tracked")); });
+	Refuses(TEXT("a car with a tracked block"), TEXT("sedan"), TEXT("belongs to movementType \"tracked\""), [](FJsonObject& Doc)
+	{
+		const TSharedRef<FJsonObject> Block = MakeShared<FJsonObject>();
+		Block->SetNumberField(TEXT("trackWidth"), 60);
+		Doc.SetObjectField(TEXT("tracked"), Block);
+	});
+	Refuses(TEXT("a tank with a hover block"), TEXT("tank"), TEXT("/hover"), [](FJsonObject& Doc) { Doc.SetObjectField(TEXT("hover"), MakeShared<FJsonObject>()); });
+	Refuses(TEXT("a track with no width"), TEXT("tank"), TEXT("missing trackWidth"), [](FJsonObject& Doc) { Child(Doc, TEXT("tracked"))->RemoveField(TEXT("trackWidth")); });
+	Refuses(TEXT("a track width of 300"), TEXT("tank"), TEXT("outside"), [](FJsonObject& Doc) { Child(Doc, TEXT("tracked"))->SetNumberField(TEXT("trackWidth"), 300); });
+	Refuses(TEXT("a lateral share of 2"), TEXT("tank"), TEXT("outside"), [](FJsonObject& Doc) { Child(Doc, TEXT("tracked"))->SetNumberField(TEXT("lateralShare"), 2); });
+	Refuses(TEXT("a pivot track speed of 1"), TEXT("tank"), TEXT("outside"), [](FJsonObject& Doc) { Child(Doc, TEXT("tracked"))->SetNumberField(TEXT("pivotTrackSpeed"), 1); });
+	Refuses(TEXT("a pad pitch of 80"), TEXT("tank"), TEXT("outside"), [](FJsonObject& Doc) { Child(Doc, TEXT("tracked"))->SetNumberField(TEXT("padPitch"), 80); });
+	Refuses(TEXT("an unknown tracked key"), TEXT("tank"), TEXT("tracked has bogus"), [](FJsonObject& Doc) { Child(Doc, TEXT("tracked"))->SetNumberField(TEXT("bogus"), 1); });
+	struct FRoller
+	{
+		FString Bone;
+		double Radius;
+	};
+	auto SetRollers = [](FJsonObject& Doc, const TArray<FRoller>& Rollers)
+	{
+		TArray<TSharedPtr<FJsonValue>> Items;
+		for (const FRoller& Roller : Rollers)
+		{
+			const TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+			Entry->SetStringField(TEXT("bone"), Roller.Bone);
+			Entry->SetNumberField(TEXT("radius"), Roller.Radius);
+			Items.Add(MakeShared<FJsonValueObject>(Entry));
+		}
+		Child(Doc, TEXT("tracked"))->SetArrayField(TEXT("rollers"), Items);
+	};
+	Refuses(TEXT("a roller on a road wheel's bone"), TEXT("tank"), TEXT("a road wheel's bone"), [&SetRollers](FJsonObject& Doc) { SetRollers(Doc, { { TEXT("wheel_a1_l"), 30.0 } }); });
+	Refuses(TEXT("two rollers on one bone"), TEXT("tank"), TEXT("each roller has its own"), [&SetRollers](FJsonObject& Doc)
+	{
+		SetRollers(Doc, { { TEXT("sprocket_l"), 30.0 }, { TEXT("SPROCKET_L"), 30.0 } });
+	});
+	Refuses(TEXT("a roller of 1 cm"), TEXT("tank"), TEXT("outside"), [&SetRollers](FJsonObject& Doc) { SetRollers(Doc, { { TEXT("sprocket_l"), 1.0 } }); });
+	Refuses(TEXT("nine rollers"), TEXT("tank"), TEXT("9 entries"), [&SetRollers](FJsonObject& Doc)
+	{
+		TArray<FRoller> Nine;
+		for (int32 Index = 0; Index < 9; ++Index)
+		{
+			Nine.Add({ FString::Printf(TEXT("roller_%d"), Index), 10.0 });
+		}
+		SetRollers(Doc, Nine);
+	});
+	Refuses(TEXT("a road wheel that steers"), TEXT("tank"), TEXT("never steer"), [](FJsonObject& Doc) { Item(Doc, TEXT("wheels"), 3)->SetBoolField(TEXT("steering"), true); });
+	Refuses(TEXT("a road wheel that is not driven"), TEXT("tank"), TEXT("/wheels/5/driven"), [](FJsonObject& Doc) { Item(Doc, TEXT("wheels"), 5)->SetBoolField(TEXT("driven"), false); });
+	Refuses(TEXT("a road wheel with no handbrake"), TEXT("tank"), TEXT("/wheels/0/handbrake"), [](FJsonObject& Doc) { Item(Doc, TEXT("wheels"), 0)->SetBoolField(TEXT("handbrake"), false); });
+	Refuses(TEXT("five road wheels"), TEXT("tank"), TEXT("5 entries, not 6 to 20"), [](FJsonObject& Doc)
+	{
+		TArray<TSharedPtr<FJsonValue>> Wheels = Doc.GetArrayField(TEXT("wheels"));
+		Wheels.SetNum(5);
+		Doc.SetArrayField(TEXT("wheels"), Wheels);
+	});
+	Refuses(TEXT("twenty-one road wheels"), TEXT("tank"), TEXT("21 entries, not 6 to 20"), [](FJsonObject& Doc)
+	{
+		TArray<TSharedPtr<FJsonValue>> Wheels;
+		for (int32 Index = 0; Index < 21; ++Index)
+		{
+			const TSharedRef<FJsonObject> Wheel = MakeShared<FJsonObject>();
+			FJsonObject::Duplicate(Item(Doc, TEXT("wheels"), 0), Wheel);
+			Wheel->SetStringField(TEXT("bone"), FString::Printf(TEXT("road_%d"), Index));
+			Wheels.Add(MakeShared<FJsonValueObject>(Wheel));
+		}
+		Doc.SetArrayField(TEXT("wheels"), Wheels);
+	});
+	Refuses(TEXT("a car's nine wheels (the tracked limit is not a car's)"), TEXT("sedan"), TEXT("9 entries, not 2 to 8"), [](FJsonObject& Doc)
+	{
+		TArray<TSharedPtr<FJsonValue>> Wheels;
+		for (int32 Index = 0; Index < 9; ++Index)
+		{
+			const TSharedRef<FJsonObject> Wheel = MakeShared<FJsonObject>();
+			FJsonObject::Duplicate(Item(Doc, TEXT("wheels"), FMath::Min(Index, 3)), Wheel);
+			Wheel->SetStringField(TEXT("bone"), FString::Printf(TEXT("wheel_%d"), Index));
+			Wheels.Add(MakeShared<FJsonValueObject>(Wheel));
+		}
+		Doc.SetArrayField(TEXT("wheels"), Wheels);
 	});
 
 	// The seats.
@@ -1651,8 +1787,24 @@ bool FMantleVehicleDocumentCookedHelicopterTest::RunTest(const FString& Paramete
 	C.Number(TEXT("helicopter/airSpeedLimit"), Block, TEXT("airSpeedLimit"), H.AirSpeedLimit, 0.0);
 	C.Number(TEXT("helicopter/hoverCollective"), Block, TEXT("hoverCollective"), H.HoverCollective, 0.0);
 	C.Number(TEXT("helicopter/throttleLeverRate"), Block, TEXT("throttleLeverRate"), H.ThrottleLeverRate, 1.0);
-	C.Number(TEXT("helicopter/linearDamping"), Block, TEXT("linearDamping"), H.LinearDamping, 0.1);
+	C.Number(TEXT("helicopter/linearDamping"), Block, TEXT("linearDamping"), H.LinearDamping, 0.0);
 	C.Number(TEXT("helicopter/angularDamping"), Block, TEXT("angularDamping"), H.AngularDamping, 0.0);
+	// #380: the creator's assists and the fin.
+	C.Flag(TEXT("helicopter/heightHold"), Block, TEXT("heightHold"), H.bHeightHold, true);
+	C.Flag(TEXT("helicopter/yawHold"), Block, TEXT("yawHold"), H.bYawHold, true);
+	const TArray<TSharedPtr<FJsonValue>>* Fins = nullptr;
+	const int32 FinCount = Block->TryGetArrayField(TEXT("aerofoils"), Fins) && Fins ? Fins->Num() : 0;
+	if (TestEqual(TEXT("helicopter aerofoil count"), H.Aerofoils.Num(), FinCount))
+	{
+		for (int32 I = 0; I < FinCount; ++I)
+		{
+			const TSharedPtr<FJsonObject> Fin = (*Fins)[I]->AsObject();
+			const FString At = FString::Printf(TEXT("helicopter/aerofoils/%d"), I);
+			C.Vec(At + TEXT("/location"), VectorAt(Fin, TEXT("location")), H.Aerofoils[I].Location);
+			C.Number(At + TEXT("/area"), Fin, TEXT("area"), H.Aerofoils[I].AreaM2, 0.0);
+			C.Number(At + TEXT("/maxControlAngle"), Fin, TEXT("maxControlAngle"), H.Aerofoils[I].MaxControlAngle, 12.0);
+		}
+	}
 	const TArray<TSharedPtr<FJsonValue>>& Rotors = ArrayAt(Block, TEXT("rotors"));
 	if (TestEqual(TEXT("rotor count"), H.Rotors.Num(), Rotors.Num()))
 	{
@@ -1669,6 +1821,7 @@ bool FMantleVehicleDocumentCookedHelicopterTest::RunTest(const FString& Paramete
 			C.Vec(At + TEXT("/location"), VectorAt(Rotor, TEXT("location")), R.Location);
 			C.Vec(At + TEXT("/axis"), Rotor->HasField(TEXT("axis")) ? VectorAt(Rotor, TEXT("axis")) : FVector::UpVector, R.Axis);
 			C.Number(At + TEXT("/maxThrust"), Rotor, TEXT("maxThrust"), R.MaxThrustNewtons, 0.0);
+			C.Number(At + TEXT("/diameter"), Rotor, TEXT("diameter"), R.Diameter, 0.0);
 			C.Number(At + TEXT("/pitchAcceleration"), Rotor, TEXT("pitchAcceleration"), R.PitchAcceleration, 1.5);
 			C.Number(At + TEXT("/rollAcceleration"), Rotor, TEXT("rollAcceleration"), R.RollAcceleration, 1.5);
 			C.Number(At + TEXT("/yawAcceleration"), Rotor, TEXT("yawAcceleration"), R.YawAcceleration, 1.0);
@@ -1745,10 +1898,10 @@ bool FMantleVehicleDocumentCookedHoverTest::RunTest(const FString& Parameters)
 		C.Number(TEXT("hover/rudder/stallAngle"), Rudder, TEXT("stallAngle"), H.Rudder.StallAngle, 0.0);
 	}
 	const TSharedPtr<FJsonObject> Damping = ObjectAt(Block, TEXT("damping"));
-	C.Number(TEXT("hover/damping/lateralPerSecond"), Damping, TEXT("lateralPerSecond"), H.Damping.LateralPerSecond, 1.5);
-	C.Number(TEXT("hover/damping/maxLateralAccel"), Damping, TEXT("maxLateralAccel"), H.Damping.MaxLateralAccel, 400.0);
-	C.Number(TEXT("hover/damping/yawPerSecond"), Damping, TEXT("yawPerSecond"), H.Damping.YawPerSecond, 2.0);
-	C.Number(TEXT("hover/damping/maxYawAccel"), Damping, TEXT("maxYawAccel"), H.Damping.MaxYawAccelDegrees, 180.0);
+	C.Number(TEXT("hover/damping/lateralPerSecond"), Damping, TEXT("lateralPerSecond"), H.Damping.LateralPerSecond, 0.3);
+	C.Number(TEXT("hover/damping/maxLateralAccel"), Damping, TEXT("maxLateralAccel"), H.Damping.MaxLateralAccel, 100.0);
+	C.Number(TEXT("hover/damping/yawPerSecond"), Damping, TEXT("yawPerSecond"), H.Damping.YawPerSecond, 1.0);
+	C.Number(TEXT("hover/damping/maxYawAccel"), Damping, TEXT("maxYawAccel"), H.Damping.MaxYawAccelDegrees, 90.0);
 	C.Number(TEXT("hover/damping/skirtBrakePerSecond"), Damping, TEXT("skirtBrakePerSecond"), H.Damping.SkirtBrakePerSecond, 2.0);
 	C.Number(TEXT("hover/damping/maxSkirtBrakeAccel"), Damping, TEXT("maxSkirtBrakeAccel"), H.Damping.MaxSkirtBrakeAccel, 500.0);
 	C.Number(TEXT("hover/angularDamping"), Block, TEXT("angularDamping"), H.AngularDamping, 0.5);
@@ -1802,6 +1955,253 @@ bool FMantleVehicleDocumentCookedTrailerTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleDocumentCookedTankTest,
+	"Mantle.Vehicle.Document.ReadsTheCooksMVH1.Tank",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleDocumentCookedTankTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleDocumentTestPrivate;
+	if (!TestTrue(TEXT("the schema examples are beside this project"), FPaths::DirectoryExists(CookedFixtureDirectory())))
+	{
+		return false;
+	}
+	const FString Name = TEXT("valid-tank");
+	TArray<uint8> Bytes;
+	FMantleVehicleAsset Asset;
+	const TSharedPtr<FJsonObject> Json = LoadExampleJson(*this, Name);
+	if (!Json.IsValid() || !ReadCookedFixture(*this, Name, Bytes, Asset))
+	{
+		return false;
+	}
+	const FCookedCheck C{ *this, Name };
+	CheckCommonKeys(C, Json, Asset, EMantleVehicleMovementKind::Tracked);
+	const FMantleVehicleTrackedDesc& T = Asset.Desc.Tracked;
+	const TSharedPtr<FJsonObject> Block = ObjectAt(Json, TEXT("tracked"));
+	C.Number(TEXT("tracked/pivotTrackSpeed"), Block, TEXT("pivotTrackSpeed"), T.PivotTrackSpeed, 100.0);
+	C.Number(TEXT("tracked/lateralShare"), Block, TEXT("lateralShare"), T.LateralShare, 0.8);
+	C.Number(TEXT("tracked/trackWidth"), Block, TEXT("trackWidth"), T.TrackWidth, 0.0);
+	C.Number(TEXT("tracked/padPitch"), Block, TEXT("padPitch"), T.PadPitch, 15.0);
+	const TArray<TSharedPtr<FJsonValue>>& Rollers = ArrayAt(Block, TEXT("rollers"));
+	if (TestEqual(TEXT("roller count"), T.Rollers.Num(), Rollers.Num()))
+	{
+		for (int32 I = 0; I < Rollers.Num(); ++I)
+		{
+			const TSharedPtr<FJsonObject> Roller = Rollers[I]->AsObject();
+			const FString At = FString::Printf(TEXT("tracked/rollers/%d"), I);
+			FString Bone;
+			Roller->TryGetStringField(TEXT("bone"), Bone);
+			C.Bone(At + TEXT("/bone"), Bone, T.Rollers[I].Bone);
+			C.Number(At + TEXT("/radius"), Roller, TEXT("radius"), T.Rollers[I].Radius, 0.0);
+		}
+	}
+	// The shared rolling resistance (#447, #448) survives the cook: the tank's tracks lose 0.04 of their load to it.
+	C.Number(TEXT("tires/rollingResistance"), ObjectAt(Json, TEXT("tires")), TEXT("rollingResistance"), Asset.Desc.TiresRollingResistance, 0.012);
+
+	// Its road wheels are two tracks it can turn on: Read checked them where the cook put the bones, and so does this.
+	FString Why;
+	TestTrue(*FString::Printf(TEXT("the road wheels make two tracks it can turn on (%s)"), *Why), FMantleVehicleAssetReader::CheckTrackedLayout(Asset.Desc, Asset.WheelPositions, Why));
+	int32 Left = 0;
+	for (const FVector& Position : Asset.WheelPositions)
+	{
+		Left += Position.Y < 0.0 ? 1 : 0;
+	}
+	TestEqual(TEXT("as many road wheels on the left track as on the right"), 2 * Left, Asset.WheelPositions.Num());
+	TestTrue(TEXT("no road wheel steers, and every one is driven and braked"), !Asset.Desc.Wheels.ContainsByPredicate([](const FMantleVehicleWheelDesc& Wheel)
+	{
+		return Wheel.bSteering || !Wheel.bDriven || !Wheel.bHandbrake;
+	}));
+
+	// A cooked body whose wheels cannot pivot is refused by the client too: the same document over the same road wheels pulled in to a hundredth of their
+	// gauge, so the tracks are far too long for it.
+	TArray<FVector> Narrow = Asset.WheelPositions;
+	for (FVector& Position : Narrow)
+	{
+		Position.Y *= 0.01;
+	}
+	TestFalse(TEXT("tracks too long for their gauge are refused"), FMantleVehicleAssetReader::CheckTrackedLayout(Asset.Desc, Narrow, Why));
+	TestTrue(*FString::Printf(TEXT("and the refusal says it can't turn on the spot (%s)"), *Why), Why.Contains(TEXT("can't turn on the spot")));
+	TestEqual(TEXT("the document carries only its own block (no aerofoils, no rotors, no pads)"),
+		Asset.Desc.Flight.Aerofoils.Num() + Asset.Desc.Helicopter.Rotors.Num() + Asset.Desc.Hover.Pads.Num(), 0);
+	return true;
+}
+
+namespace MantleVehicleDocumentTestPrivate
+{
+	/**
+	 * A tracked example (an authoring document: the cook measures the collision and fills the defaults) as the cook would resolve its movement part and wheels,
+	 * laid over Base, a composed document that reads: Example's movementType and tracked block replace Base's, and when Example has wheels they replace Base's,
+	 * each with the schema's defaults filled (steering false, driven true, handbrake false) and Base's first wheel's radius and width where it gives none.
+	 */
+	TSharedRef<FJsonObject> WithExampleTracks(const TSharedPtr<FJsonObject>& Base, const TSharedPtr<FJsonObject>& Example)
+	{
+		// The movement part, the tracked block with it.
+		const TSharedRef<FJsonObject> Out = WithExampleMovement(Base, Example);
+		const TArray<TSharedPtr<FJsonValue>>* ExampleWheels = nullptr;
+		const TSharedPtr<FJsonObject> First = Item(*Out, TEXT("wheels"), 0);
+		if (!Example->TryGetArrayField(TEXT("wheels"), ExampleWheels) || !ExampleWheels || !First.IsValid())
+		{
+			return Out;
+		}
+		TArray<TSharedPtr<FJsonValue>> Wheels;
+		for (const TSharedPtr<FJsonValue>& Value : *ExampleWheels)
+		{
+			const TSharedRef<FJsonObject> Wheel = MakeShared<FJsonObject>();
+			FJsonObject::Duplicate(Value->AsObject(), Wheel);
+			const TPair<const TCHAR*, bool> Flags[] = { { TEXT("steering"), false }, { TEXT("driven"), true }, { TEXT("handbrake"), false } };
+			for (const TPair<const TCHAR*, bool>& Flag : Flags)
+			{
+				if (!Wheel->HasField(Flag.Key))
+				{
+					Wheel->SetBoolField(Flag.Key, Flag.Value);
+				}
+			}
+			for (const TCHAR* Size : { TEXT("radius"), TEXT("width") })
+			{
+				if (!Wheel->HasField(Size))
+				{
+					Wheel->SetField(Size, First->TryGetField(Size));
+				}
+			}
+			Wheels.Add(MakeShared<FJsonValueObject>(Wheel));
+		}
+		Out->SetArrayField(TEXT("wheels"), Wheels);
+		return Out;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleDocumentTrackedExamplesTest,
+	"Mantle.Vehicle.Document.ReadsTheTrackedExamples",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleDocumentTrackedExamplesTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleDocumentTestPrivate;
+	if (!TestTrue(TEXT("the schema examples are beside this project"), FPaths::DirectoryExists(CookedFixtureDirectory())))
+	{
+		return false;
+	}
+	FMantleChassisSpec TankSpec;
+	FMantleChassisSpec SedanSpec;
+	if (!LoadSpec(*this, TEXT("tank"), TankSpec) || !LoadSpec(*this, TEXT("sedan"), SedanSpec))
+	{
+		return false;
+	}
+	const TSharedPtr<FJsonObject> Tank = ParseObject(FMantleChassisSpec::ComposeDocument(TankSpec));
+	const TSharedPtr<FJsonObject> Sedan = ParseObject(FMantleChassisSpec::ComposeDocument(SedanSpec));
+	if (!TestTrue(TEXT("the composed bases are JSON"), Tank.IsValid() && Sedan.IsValid()))
+	{
+		return false;
+	}
+
+	// The valid tank reads, its block as the example gives it, its rollers each on its own bone.
+	{
+		const TSharedPtr<FJsonObject> Example = LoadExampleJson(*this, TEXT("valid-tank"));
+		FMantleVehicleDesc D;
+		FString Error;
+		if (Example.IsValid() && TestTrue(*FString::Printf(TEXT("valid-tank reads (%s)"), *Error), ParseDesc(Serialize(WithExampleTracks(Tank, Example)), D, Error)))
+		{
+			const TSharedPtr<FJsonObject> Block = ObjectAt(Example, TEXT("tracked"));
+			const FCookedCheck C{ *this, TEXT("valid-tank") };
+			TestTrue(TEXT("valid-tank is a tracked vehicle"), D.MovementType == EMantleVehicleMovementKind::Tracked);
+			C.Number(TEXT("tracked/pivotTrackSpeed"), Block, TEXT("pivotTrackSpeed"), D.Tracked.PivotTrackSpeed, 100.0);
+			C.Number(TEXT("tracked/lateralShare"), Block, TEXT("lateralShare"), D.Tracked.LateralShare, 0.8);
+			C.Number(TEXT("tracked/trackWidth"), Block, TEXT("trackWidth"), D.Tracked.TrackWidth, 0.0);
+			C.Number(TEXT("tracked/padPitch"), Block, TEXT("padPitch"), D.Tracked.PadPitch, 15.0);
+			TestEqual(TEXT("valid-tank: every roller"), D.Tracked.Rollers.Num(), ArrayAt(Block, TEXT("rollers")).Num());
+			TestEqual(TEXT("valid-tank: every road wheel"), D.Wheels.Num(), ArrayAt(Example, TEXT("wheels")).Num());
+		}
+	}
+
+	// The invalid ones are refused, each for its own reason: a tracked vehicle with no block, one whose road wheel steers, and a car with a tracked block.
+	struct FInvalid
+	{
+		const TCHAR* Name;
+		const TCHAR* Expect;
+	};
+	const FInvalid Invalid[] = {
+		{ TEXT("invalid-tracked-missing-block"), TEXT("needs a tracked block") },
+		{ TEXT("invalid-tracked-steered-wheel"), TEXT("never steer") },
+		{ TEXT("invalid-tracked-block-on-wheeled"), TEXT("belongs to movementType \"tracked\"") },
+	};
+	for (const FInvalid& Case : Invalid)
+	{
+		const TSharedPtr<FJsonObject> Example = LoadExampleJson(*this, Case.Name);
+		if (!Example.IsValid())
+		{
+			continue;
+		}
+		FString Type;
+		Example->TryGetStringField(TEXT("movementType"), Type);
+		const TSharedPtr<FJsonObject> Base = Type == TEXT("tracked") ? Tank : Sedan;
+		FMantleVehicleDesc D;
+		FString Error;
+		if (TestFalse(*FString::Printf(TEXT("%s is refused"), Case.Name), ParseDesc(Serialize(WithExampleTracks(Base, Example)), D, Error)))
+		{
+			TestTrue(*FString::Printf(TEXT("%s: the refusal says '%s' (it says: %s)"), Case.Name, Case.Expect, *Error), Error.Contains(Case.Expect));
+		}
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleDocumentRollingResistanceTest,
+	"Mantle.Vehicle.Document.RollingResistance",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleDocumentRollingResistanceTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleDocumentTestPrivate;
+	// tires.rollingResistance (#447, #448): absent is a car tyre's 0.012, so every vehicle cooked before it rolls as it did; a tracked preset writes 0.04.
+	FMantleVehicleDesc D;
+	FString Error;
+	if (TestTrue(*FString::Printf(TEXT("the sedan reads (%s)"), *Error), ParseDesc(Mutated(*this, TEXT("sedan"), [](FJsonObject&) {}), D, Error)))
+	{
+		TestEqual(TEXT("a car's document has none, and reads as 0.012"), D.TiresRollingResistance, 0.012);
+	}
+	if (TestTrue(*FString::Printf(TEXT("the tank reads (%s)"), *Error), ParseDesc(Mutated(*this, TEXT("tank"), [](FJsonObject&) {}), D, Error)))
+	{
+		TestEqual(TEXT("the tank's composed document carries its preset's 0.04"), D.TiresRollingResistance, 0.04);
+	}
+	if (TestTrue(*FString::Printf(TEXT("a car may have one too (%s)"), *Error),
+			ParseDesc(Mutated(*this, TEXT("sedan"), [](FJsonObject& Doc) { Child(Doc, TEXT("tires"))->SetNumberField(TEXT("rollingResistance"), 0.015); }), D, Error)))
+	{
+		TestEqual(TEXT("and reads it"), D.TiresRollingResistance, 0.015);
+	}
+	// Each end of its range reads; past either end is refused.
+	for (const double Value : { 0.002, 0.05 })
+	{
+		TestTrue(*FString::Printf(TEXT("%g reads"), Value),
+			ParseDesc(Mutated(*this, TEXT("sedan"), [Value](FJsonObject& Doc) { Child(Doc, TEXT("tires"))->SetNumberField(TEXT("rollingResistance"), Value); }), D, Error));
+	}
+	for (const double Value : { 0.001, 0.06, -0.01 })
+	{
+		const bool bRead = ParseDesc(Mutated(*this, TEXT("sedan"), [Value](FJsonObject& Doc) { Child(Doc, TEXT("tires"))->SetNumberField(TEXT("rollingResistance"), Value); }), D, Error);
+		if (TestFalse(*FString::Printf(TEXT("%g is refused"), Value), bRead))
+		{
+			TestTrue(*FString::Printf(TEXT("%g: the refusal names it (%s)"), Value, *Error), Error.Contains(TEXT("/tires/rollingResistance")) && Error.Contains(TEXT("outside")));
+		}
+	}
+	TestFalse(TEXT("a rolling resistance that is not a number is refused"),
+		ParseDesc(Mutated(*this, TEXT("sedan"), [](FJsonObject& Doc) { Child(Doc, TEXT("tires"))->SetStringField(TEXT("rollingResistance"), TEXT("low")); }), D, Error));
+	// The cars' composed documents are as they were: no preset but the tracked ones and a pedalled one (the bicycle's, #447) gives it.
+	for (const FString& Id : FMantleVehicleChassisBuilder::PresetIds())
+	{
+		FMantleChassisSpec Spec;
+		if (!LoadSpec(*this, Id, Spec))
+		{
+			continue;
+		}
+		const TSharedPtr<FJsonObject> Doc = ParseObject(FMantleChassisSpec::ComposeDocument(Spec));
+		const TSharedPtr<FJsonObject> Tires = Doc.IsValid() ? Child(*Doc, TEXT("tires")) : nullptr;
+		TestEqual(*FString::Printf(TEXT("%s: rollingResistance exactly when it is tracked or pedalled"), *Id), Tires.IsValid() && Tires->HasField(TEXT("rollingResistance")),
+			Spec.Tracked.bSet || Spec.bPedal);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleVehicleDocumentCookedGroundTest,
 	"Mantle.Vehicle.Document.ReadsTheCooksMVH1.Ground",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -1837,9 +2237,10 @@ bool FMantleVehicleDocumentCookedGroundTest::RunTest(const FString& Parameters)
 				C.Vec(TEXT("rider/pelvisOffset"), VectorAt(Rider, TEXT("pelvisOffset")), R.PelvisOffset);
 				C.Vec(TEXT("rider/stopPelvisShift"), VectorAt(Rider, TEXT("stopPelvisShift")), R.StopPelvisShift);
 				C.Number(TEXT("rider/kneeSplayDegrees"), Rider, TEXT("kneeSplayDegrees"), R.KneeSplayDegrees, 8.0);
-				TestTrue(TEXT("rider/rearTireFriction survived"), R.bRearTireFriction);
+				// The rider's own rear grip and rear brake (an older document's; #378's preset writes neither): read when the example has them, unset when not.
+				TestEqual(TEXT("rider/rearTireFriction survived exactly when written"), R.bRearTireFriction, Rider->HasField(TEXT("rearTireFriction")));
 				C.Number(TEXT("rider/rearTireFriction"), Rider, TEXT("rearTireFriction"), R.RearTireFriction, 0.0);
-				TestTrue(TEXT("rider/rearBrakeTorque survived"), R.bRearBrakeTorque);
+				TestEqual(TEXT("rider/rearBrakeTorque survived exactly when written"), R.bRearBrakeTorque, Rider->HasField(TEXT("rearBrakeTorque")));
 				C.Number(TEXT("rider/rearBrakeTorque"), Rider, TEXT("rearBrakeTorque"), R.RearBrakeTorque, 0.0);
 				const TSharedPtr<FJsonObject> Control = ObjectAt(Rider, TEXT("rotationControl"));
 				const FMantleVehicleRotationControlDesc& RC = R.RotationControl;

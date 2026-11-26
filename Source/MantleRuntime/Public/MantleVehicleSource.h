@@ -439,6 +439,21 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (EditCondition = "!bElectric", ClampMin = "0", ClampMax = "2500", DisplayName = "Engine Size (cc)"))
 	int32 EngineDisplacement = 0;
 
+	/** A helicopter's level assist (helicopter rotors' stabilityAssist, #380): the stick asks for a lean, letting go levels the helicopter and a slow
+	 *  drift stops by itself. Off: the stick tilts the rotor and the pilot has to level it. Part of the helicopter; scripts don't change it. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Helicopter", meta = (DisplayName = "Level assist"))
+	bool bHelicopterLevelAssist = true;
+
+	/** A helicopter's height hold (helicopter.heightHold, #380): W and S ask for a climb or a descent and letting go holds the height. Off: W and S move
+	 *  the collective lever, which stays where it is left, and sinking straight down too fast drops it into its own downwash. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Helicopter", meta = (DisplayName = "Height hold"))
+	bool bHelicopterHeightHold = true;
+
+	/** A helicopter's yaw assist (helicopter.yawHold, #380): the pedals turn it at a steady rate and changing power never swings the nose. Off: the pedals
+	 *  push the tail and pulling power swings the nose. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Helicopter", meta = (DisplayName = "Yaw assist"))
+	bool bHelicopterYawHold = true;
+
 	/** Forward gears, first gear first, 1 to 8. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission")
 	TArray<float> GearRatios = { 3.2f, 2.1f, 1.4f, 1.0f };

@@ -220,8 +220,8 @@ struct FMantleVehicleLightBeamDesc
 };
 
 /**
- * Which simulation builds a vehicle (the document's movementType). A truck, six-wheeler and motorcycle are Wheeled; a jet is a Plane.
- * (Not FMantleVehicleMovementType, the gameplay module's registry class.)
+ * Which simulation builds a vehicle (the document's movementType). A truck, six-wheeler and motorcycle are Wheeled; a jet is a Plane; a tank
+ * and a bulldozer are Tracked. (Not FMantleVehicleMovementType, the gameplay module's registry class.)
  */
 UENUM(BlueprintType)
 enum class EMantleVehicleMovementKind : uint8
@@ -234,6 +234,7 @@ enum class EMantleVehicleMovementKind : uint8
 	Boat,
 	/** Towed by a vehicle with a hitch (#446): no engine of its own; every wheel rolls free and brakes, none steers. */
 	Trailer,
+	Tracked,
 };
 
 /** What couples a trailer to the vehicle that tows it (#446): a semi's fifth wheel and kingpin, or a tow ball and its coupler. Both sides must match. */
@@ -297,6 +298,10 @@ struct FMantleVehicleAerofoilDesc
 	double Camber = 5.0;
 	double MaxControlAngle = 12.0;
 	double StallAngle = 20.0;
+	/** The peak lift coefficient (#379, maxLift); 0 when the document has none: the type's. */
+	double MaxLift = 0.0;
+	/** The whole surface's span^2 / area (#379, aspectRatio); 0 when the document has none: the type's. */
+	double AspectRatio = 0.0;
 };
 
 /** One engine's push (FMantleVehicleThruster). Bone, when set, is where it pushes from (a reference, never posed). Direction is as given: only its direction counts. */
@@ -306,6 +311,10 @@ struct FMantleVehicleThrusterDesc
 	FVector Location = FVector::ZeroVector;
 	FVector Direction = FVector::ForwardVector;
 	double MaxThrustNewtons = 0.0;
+	/** Shaft power, kW (#379, power): above 0 a propeller, whose push falls off with speed; 0 a jet. */
+	double PowerKw = 0.0;
+	/** A jet's thrust with the afterburner lit, N (#379, afterburnerThrust); 0: none. */
+	double AfterburnerNewtons = 0.0;
 };
 
 /** A propeller or rotor bone that turns while someone is aboard (FMantleVehicleSpinBone); cosmetic. Axis is in the body's space. */
@@ -325,6 +334,11 @@ struct FMantleVehicleFlightDesc
 	double ThrottleLeverRate = 0.5;
 	double LinearDamping = 0.0;
 	double AngularDamping = 0.0;
+	/** A jet's seconds from idle to full thrust (#379, spoolTime); below 0 when the document has none: 4 for a jet (no thruster with power), 0 for propellers. */
+	double SpoolTime = -1.0;
+	/** The player's assists (#379, assists.stallProtection / assists.coordinatedTurns); absent: on. */
+	bool bStallProtection = true;
+	bool bCoordinatedTurns = true;
 	TArray<FMantleVehicleAerofoilDesc> Aerofoils;
 	TArray<FMantleVehicleThrusterDesc> Thrusters;
 	TArray<FMantleVehicleSpinBoneDesc> SpinBones;
@@ -340,6 +354,8 @@ struct FMantleVehicleRotorDesc
 	FVector Location = FVector::ZeroVector;
 	FVector Axis = FVector::UpVector;
 	double MaxThrustNewtons = 0.0;
+	/** The disc's diameter, cm (#380): sizes the ground cushion and the downwash. 0 (absent): worked out from the mass. */
+	double Diameter = 0.0;
 	double PitchAcceleration = 1.5;
 	double RollAcceleration = 1.5;
 	double YawAcceleration = 1.0;
@@ -349,15 +365,22 @@ struct FMantleVehicleRotorDesc
 	double StabilityMaxAcceleration = 4.0;
 };
 
-/** A helicopter's block (MovementType Helicopter): the numbers ApplyHelicopter sets. */
+/** A helicopter's block (MovementType Helicopter): the numbers DeriveHelicopter (MantleVehicleChassisDocument) sets. */
 struct FMantleVehicleHelicopterDesc
 {
 	double AirSpeedLimit = 0.0;
 	/** The collective that holds the weight: weight over rotor thrust. */
 	double HoverCollective = 0.0;
 	double ThrottleLeverRate = 1.0;
-	double LinearDamping = 0.1;
+	/** #380: the rotor's drag is the chassis's speed-squared drag now, so no body damping by default. */
+	double LinearDamping = 0.0;
 	double AngularDamping = 0.0;
+	/** #380, creator settings: height hold (W/S ask for a climb, letting go holds the height; off: a real collective lever and the vortex ring) and the yaw
+	 *  assist (the pedals ask for a yaw rate, no torque swing). Absent: on. */
+	bool bHeightHold = true;
+	bool bYawHold = true;
+	/** #380: the fin (and any surface the creator adds), the same as a plane's aerofoils. */
+	TArray<FMantleVehicleAerofoilDesc> Aerofoils;
 	TArray<FMantleVehicleRotorDesc> Rotors;
 	TArray<FMantleVehicleSpinBoneDesc> SpinBones;
 	/** The pilot's hands: left on the collective, right on the cyclic. */
@@ -400,15 +423,16 @@ struct FMantleVehicleHoverRudderDesc
 /** What stands in for a tire's grip on a hover (FMantleVehicleHoverDamping). */
 struct FMantleVehicleHoverDampingDesc
 {
-	double LateralPerSecond = 1.5;
-	double MaxLateralAccel = 400.0;
-	double YawPerSecond = 2.0;
-	double MaxYawAccelDegrees = 180.0;
+	/** The slide assist when a document gives none: real light hovercraft turn nose-first and keep sliding the old way (#381; DiscoverHover guide 12, Vanguard manual). */
+	double LateralPerSecond = 0.3;
+	double MaxLateralAccel = 100.0;
+	double YawPerSecond = 1.0;
+	double MaxYawAccelDegrees = 90.0;
 	double SkirtBrakePerSecond = 2.0;
 	double MaxSkirtBrakeAccel = 500.0;
 };
 
-/** A hovercraft's block (MovementType Hover): the numbers ApplyHovercraft sets. */
+/** A hovercraft's block (MovementType Hover): the numbers DeriveHovercraft (MantleVehicleChassisDocument) sets. */
 struct FMantleVehicleHoverDesc
 {
 	TArray<FMantleVehicleHoverPadDesc> Pads;
@@ -495,6 +519,34 @@ struct FMantleVehicleBoatDesc
 	FMantleVehicleBoatRudderDesc Rudder;
 	/** The body's angular damping, in the water and out of it. */
 	double AngularDamping = 0.3;
+};
+
+/**
+ * A sprocket, idler or return roller of a tracked vehicle (tracked.rollers[]): a bone the belt runs round, spun at its side's belt speed over its
+ * Radius (cm). Spin only, no suspension. Its side is the sign of its bone's rest Y, as a road wheel's.
+ */
+struct FMantleVehicleTrackRollerDesc
+{
+	FName Bone;
+	double Radius = 0.0;
+};
+
+/**
+ * A tracked vehicle's block (MovementType Tracked): two tracks, each the row of road wheels (the document's wheels) on its side of the body sharing
+ * one belt. Speeds cm/s, lengths cm. Every default the contract's.
+ */
+struct FMantleVehicleTrackedDesc
+{
+	/** How fast each track runs, the two opposite ways, in a pivot at full steering. */
+	double PivotTrackSpeed = 100.0;
+	/** The track's sideways resistance over its grip (mu_t / mu): what holds it in a turn and what a pivot has to overcome. */
+	double LateralShare = 0.8;
+	/** A track's pad width (with the mass, the ground pressure). Required: a document always gives it. */
+	double TrackWidth = 0.0;
+	/** One pad's length along the belt: the belt material's pattern. */
+	double PadPitch = 15.0;
+	/** The sprockets, idlers and return rollers; empty when the document has none. */
+	TArray<FMantleVehicleTrackRollerDesc> Rollers;
 };
 
 /**
@@ -747,8 +799,9 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	FVector CameraBoomLocation = FVector::ZeroVector;
 
 	/**
-	 * What simulation builds it (movementType). A plane has Flight, a helicopter Helicopter, a hovercraft Hover and a boat Boat, and only that one is meaningful.
-	 * The wheels stay required for every type (the reader needs a steered and a driven one); a type's rules say what they do.
+	 * What simulation builds it (movementType). A plane has Flight, a helicopter Helicopter, a hovercraft Hover, a boat Boat and a tracked vehicle Tracked,
+	 * and only that one is meaningful. The wheels stay required for every type (the reader needs a steered and a driven one); a type's rules say what they
+	 * do. A tracked vehicle's wheels are its road wheels, 3 to 10 a side: none steers, every one is driven and has the handbrake.
 	 */
 	EMantleVehicleMovementKind MovementType = EMantleVehicleMovementKind::Wheeled;
 	FMantleVehicleFlightDesc Flight;
@@ -760,6 +813,7 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	/** A towing vehicle's hitch (the hitch block, #446): wheeled vehicles only. */
 	bool bHitch = false;
 	FMantleVehicleHitchDesc Hitch;
+	FMantleVehicleTrackedDesc Tracked;
 
 	/** The seats' kinds (seat.kind and passengerSeat.kind). */
 	EMantleVehicleSeatKind SeatKind = EMantleVehicleSeatKind::Car;
@@ -922,6 +976,21 @@ struct MANTLERUNTIME_API FMantleVehicleLimits
 	static constexpr int32 MaxBoatPoints = 8;
 	/** placeAssets.vehicle.maxSteeringCurvePoints: the points of steering.speedCurve. */
 	static constexpr int32 MaxSteeringCurvePoints = 8;
+	/**
+	 * A tracked vehicle's wheels (its road wheels): placeAssets.vehicle.maxTrackedWheels in all (MaxWheels stays every other type's), and
+	 * minTrackRoadWheelsPerSide to maxTrackRoadWheelsPerSide on each side; maxTrackRollers caps tracked.rollers.
+	 */
+	static constexpr int32 MaxTrackedWheels = 20;
+	static constexpr int32 MinTrackRoadWheelsPerSide = 3;
+	static constexpr int32 MaxTrackRoadWheelsPerSide = 10;
+	static constexpr int32 MaxTrackRollers = 8;
+	/** How far, cm, a road wheel's bone must be off the centerline (|rest Y|) for its track to be told: nearer, it is on neither. */
+	static constexpr double TrackSideMinOffset = 1.0;
+	/**
+	 * A tracked vehicle turns on the spot only while its contact length over its gauge, times its lateral share, stays under this (the cook's and
+	 * validate.py's steerability rule): past it the tracks' sideways resistance is more than their grip can twist round.
+	 */
+	static constexpr double TrackedMaxTurnRatio = 2.0;
 	/** How short a thrust direction, a spin axis or a rotor axis may be (the cook's movementRules): shorter, it points nowhere. */
 	static constexpr double DirectionMinLength = 0.01;
 
@@ -949,7 +1018,7 @@ struct MANTLERUNTIME_API FMantleVehicleLimits
  * rule names, none it moves the root, a wheel bone or a bone a wheel hangs from, every bone a part rides, every bone the
  * car clips turn (the steering wheel's, the doors', the trunk lid's, the hood's), none of them the root, a wheel bone or a bone a
  * wheel hangs from, every bone a contact point is on, and every bone a movement block or the rider names
- * (ResolveMovementBones). A document with a movement type has its block and no other; a block's optional
+ * (ResolveMovementBones), and a tracked vehicle's wheels laid out as two tracks it can turn on (CheckTrackedLayout). A document with a movement type has its block and no other; a block's optional
  * numbers read as the contract's defaults when left out, and a key the reader does not know is refused. A refusal is false
  * with the reason. No UObjects: any thread.
  */
@@ -970,11 +1039,21 @@ public:
 
 	/**
 	 * Checks the bones the movement blocks and the rider name against the body's (the cook's resolveMovement) and names them as the body
-	 * does: a bone the body lacks is refused; a posed bone (an aerofoil's, a spin bone) is not the root, a wheel's bone or one a wheel hangs from; a
+	 * does: a bone the body lacks is refused; a posed bone (an aerofoil's, a spin bone, a track's roller) is not the root, a wheel's bone or one a wheel hangs from; a
 	 * fork is neither the root nor a wheel's bone; a grip that names no bone is on the root (a handlebar: the fork). Read does this; so does the
 	 * chassis builder for the body it makes.
 	 */
 	static bool ResolveMovementBones(FMantleVehicleDesc& Desc, TConstArrayView<FMantleSkinnedMeshBone> Bones, FString& OutError);
+
+	/**
+	 * A tracked vehicle's layout, which needs where its wheels are (WheelPositions, in Desc.Wheels order: the bones' rest positions in the body's
+	 * component space, cm), so ParseDocument cannot check it: each road wheel is on the left (Y below 0) or the right (Y above 0) track, never within
+	 * TrackSideMinOffset of Y 0 (its side could not be told);
+	 * each side has MinTrackRoadWheelsPerSide to MaxTrackRoadWheelsPerSide; and it can turn on the spot: with B the gauge (the left wheels' mean |Y| plus
+	 * the right's) and l the contact length (the wheels' longest X less their shortest, plus their mean radius), l / B x tracked.lateralShare is under
+	 * TrackedMaxTurnRatio (the cook's and validate.py's rule). True for every other type. Read does this; so does the chassis builder for the body it makes.
+	 */
+	static bool CheckTrackedLayout(const FMantleVehicleDesc& Desc, TConstArrayView<FVector> WheelPositions, FString& OutError);
 
 	/** Reads a whole MVH1 file. */
 	static bool Read(TConstArrayView<uint8> Data, FMantleVehicleAsset& Out, FString& OutError);

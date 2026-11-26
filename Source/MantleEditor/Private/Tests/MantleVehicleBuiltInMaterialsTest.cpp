@@ -1,6 +1,9 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleVehicleBuiltInMaterials.h"
 
+#include "MantleVehicleAsset.h"
+#include "MantleVehicleSource.h"
+
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionConstant.h"
 #include "Misc/AutomationTest.h"
@@ -50,7 +53,11 @@ bool FMantleVehicleBuiltInSuggestTest::RunTest(const FString&)
 	Expect(TEXT("carpet1"), None);
 	Expect(TEXT(""), None);
 
-	TestEqual(TEXT("five built-in materials"), FMantleVehicleBuiltInMaterials::All().Num(), 5);
+	TestEqual(TEXT("six built-in materials"), FMantleVehicleBuiltInMaterials::All().Num(), 6);
+	TestTrue(TEXT("a tracked vehicle's belt is one of them"), FMantleVehicleBuiltInMaterials::IsBuiltIn(TEXT("ast_mat_track")));
+	TestEqual(TEXT("and says what it does"), FMantleVehicleBuiltInMaterials::Label(FMantleVehicleBuiltInMaterials::Track()).ToString(), FString(TEXT("Track belt (scrolls with the track)")));
+	// A section's name alone never suggests a belt: only a tracked vehicle has one (ForSection).
+	Expect(TEXT("Track_L"), None);
 	TestTrue(TEXT("they are recognized by id"), FMantleVehicleBuiltInMaterials::IsBuiltIn(TEXT("ast_mat_glass")));
 	TestFalse(TEXT("an uploaded material is not one"), FMantleVehicleBuiltInMaterials::IsBuiltIn(TEXT("ast_u0123456789abcdef0123456789abcdef")));
 	return true;
@@ -91,6 +98,30 @@ bool FMantleVehicleBuiltInDetectTest::RunTest(const FString&)
 	TestEqual(TEXT("a section named carbon but drawn as a light is a lens"), FMantleVehicleBuiltInMaterials::Detect(NewMaterial(BLEND_Opaque), TEXT("carbonfiber_005"), true), FString(FMantleVehicleBuiltInMaterials::LightLens()));
 	TestEqual(TEXT("a null material is read by its name"), FMantleVehicleBuiltInMaterials::Detect(nullptr, TEXT("Tire"), false), FString(FMantleVehicleBuiltInMaterials::Rubber()));
 	TestEqual(TEXT("and a null material with another name keeps nothing"), FMantleVehicleBuiltInMaterials::Detect(nullptr, TEXT("seat"), false), FString());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleBuiltInTrackTest,
+	"Mantle.Vehicle.BuiltInMaterials.TrackedBeltScrolls",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleBuiltInTrackTest::RunTest(const FString&)
+{
+	// A tracked vehicle's belt sections (#448) draw with Mantle's track material, whose pads scroll with the track; its other sections, and any car's, do not.
+	const FString Track = FMantleVehicleBuiltInMaterials::Track();
+	UMantleVehicleSource* Tank = NewObject<UMantleVehicleSource>(GetTransientPackage());
+	Tank->MovementType = EMantleVehicleMovementKind::Tracked;
+	UMantleVehicleSource* Car = NewObject<UMantleVehicleSource>(GetTransientPackage());
+	TestEqual(TEXT("a tank's track section is the scrolling belt"), FMantleVehicleBuiltInMaterials::ForSection(*Tank, TEXT("Track_L"), nullptr), Track);
+	TestEqual(TEXT("so is its tread"), FMantleVehicleBuiltInMaterials::ForSection(*Tank, TEXT("Treads"), nullptr), Track);
+	TestEqual(TEXT("a sprocket is not the belt"), FMantleVehicleBuiltInMaterials::ForSection(*Tank, TEXT("Sprocket_L"), nullptr), FString());
+	TestEqual(TEXT("nor is a seat belt"), FMantleVehicleBuiltInMaterials::ForSection(*Tank, TEXT("SeatBelt"), nullptr), FString());
+	TestEqual(TEXT("a tank's window is still glass"), FMantleVehicleBuiltInMaterials::ForSection(*Tank, TEXT("Periscope_Glass"), nullptr), FString(FMantleVehicleBuiltInMaterials::Glass()));
+	TestEqual(TEXT("a car has no belt to scroll"), FMantleVehicleBuiltInMaterials::ForSection(*Car, TEXT("Track_L"), nullptr), FString());
+	// A painted section is the vehicle's color, never a built-in.
+	Tank->Paint.Sections.Add(TEXT("Track_L"));
+	TestEqual(TEXT("a painted track keeps its paint"), FMantleVehicleBuiltInMaterials::ForSection(*Tank, TEXT("Track_L"), nullptr), FString());
 	return true;
 }
 
