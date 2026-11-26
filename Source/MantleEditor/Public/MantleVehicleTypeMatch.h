@@ -91,9 +91,10 @@ struct MANTLEEDITOR_API FMantleVehicleTypeMatchCheck
 
 	/**
 	 * Whether wheel hubs at Positions (model space, the ground at FloorZ) are two tracks' road wheels: 4 or more on each side of the row they make, every one
-	 * closer than MaxGapPerDiameter wheel diameters (a hub's height above the floor is its radius) to the next along it.
+	 * closer than MaxGapPerDiameter wheel diameters (a hub's height above the floor is its radius) to the next along it. The rows run along the longer
+	 * side of BodySize (the whole model's size): a short track's road wheels can span less than its gauge.
 	 */
-	static bool WheelsPackedLikeTracks(TConstArrayView<FVector> Positions, double FloorZ);
+	static bool WheelsPackedLikeTracks(TConstArrayView<FVector> Positions, double FloorZ, const FVector& BodySize);
 
 	/** How far apart along its side a track's neighboring road wheels may be, in wheel diameters, for WheelsPackedLikeTracks. */
 	static constexpr double MaxGapPerDiameter = 1.2;
