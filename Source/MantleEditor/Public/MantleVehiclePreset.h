@@ -13,6 +13,14 @@ class UMantleVehicleSource;
  * ships without the repository's schema folder). Plain data, not a USTRUCT: presets are read at build and convert time
  * and nothing reflects, replicates or shows them in a Details panel.
  */
+/** One engine a preset offers inside its type (#378: a motorcycle's engine sizes), as the builder's Engine pick lists it. */
+struct FMantleVehiclePresetEngine
+{
+	FString Id;
+	FString Name;
+	FString Description;
+};
+
 struct FMantleVehiclePreset
 {
 	FString Id;
@@ -51,6 +59,15 @@ struct FMantleVehiclePreset
 
 	/** Narrowed ranges by path; a star segment stands for any one path segment (the wheels radius key is one). */
 	TMap<FString, FVector2D> Ranges;
+
+	/** #378: the engines a creator picks from inside this type (empty for most types), and the one a new vehicle starts with. */
+	TArray<FMantleVehiclePresetEngine> Engines;
+	FString DefaultEngine;
+	/** Set on a preset found with an engine ("motorcycle+600"): that engine's id, its numbers merged over the type's. Empty otherwise. */
+	FString EngineId;
+
+	/** The id the chassis and selector functions take: "motorcycle+600" with an engine, else the plain id. */
+	FString SelectorId() const { return EngineId.IsEmpty() ? Id : Id + TEXT("+") + EngineId; }
 };
 
 struct MANTLEEDITOR_API FMantleVehiclePresets
@@ -65,8 +82,13 @@ struct MANTLEEDITOR_API FMantleVehiclePresets
 	 */
 	static TArray<const FMantleVehiclePreset*> Publishable();
 
-	/** The preset with this id, or null. */
+	/**
+	 * The preset with this id, or null. An id with an engine ("motorcycle+600", #378) is the preset with that engine's numbers merged over its own
+	 * (FMantleChassisSpec::ApplyEngine), its EngineId set; it keeps the type's Id.
+	 */
 	static const FMantleVehiclePreset* Find(const FString& Id);
+	/** The selector id of a vehicle's type and engine (UMantleVehicleSource::Preset and PresetEngine): "motorcycle+600", or the plain id. */
+	static FString SelectorIdOf(FName Preset, FName PresetEngine);
 
 	/**
 	 * What a card says about the preset: the first sentence of its description, so every card is one plain sentence however much the file says

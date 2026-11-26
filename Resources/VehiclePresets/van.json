@@ -3,7 +3,7 @@
   "id": "van",
   "name": "Van",
   "description": "A tall box-bodied van: delivery vans, minibuses, campervans and ambulances. Heavier than a car and slow to pull away, with a high seat and a tall body that leans in corners.",
-  "comment": "A vehicle preset (#728); see sedan.json for the format. Between the sedan and the truck in size: a 330 cm wheelbase, a seat 40 cm ahead of the middle with the driver sitting high, a tall 120 cm body, around 2500 kg, rear drive.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format. Between the sedan and the truck in size: a 330 cm wheelbase, a seat 40 cm ahead of the middle with the driver sitting high, a tall 120 cm body, around 2500 kg, rear drive. chassis.hitch (#446) is a tow ball 10 cm behind the body's rear end and 50 cm up, where a receiver hitch's ball sits, for the utility trailer (utilitytrailer.json).",
   "movementType": "wheeled",
   "publishable": true,
   "type": "car",
@@ -37,7 +37,8 @@
     "seat": {
       "location": [40, -38, 104],
       "steeringWheel": { "location": [86.8, -38, 107], "radius": 20 }
-    }
+    },
+    "hitch": { "type": "ball", "location": [-270, 0, 50] }
   },
   "derive": {
     "stability": 1.15,

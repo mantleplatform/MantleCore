@@ -91,6 +91,12 @@ private:
 
 	/** Picks a type: loads its frame as the archetype. Picking the type already picked changes nothing. */
 	void PickPreset(const FString& PresetId, const FText& Name);
+	/** #378: picks one of the selected type's engines (a motorcycle's size): its numbers, centre of mass and lean replace the last engine's. */
+	void PickEngine(const FString& EngineId);
+	/** The selected type's id without its engine ("motorcycle" for "motorcycle+600"). */
+	FString SelectedTypeId() const;
+	/** The Engine row under the cards, shown when the selected type has engines. */
+	TSharedRef<SWidget> MakeEngineRow();
 
 	// Feel and size.
 	void SetShapeSize(double Value);
@@ -294,6 +300,9 @@ private:
 	TArray<FMantleVehicleModelPiece> PieceValues;
 	/** The four ways a model's nose may face and the turn each one needs. */
 	TArray<TSharedPtr<FString>> YawChoices;
+	/** #378: the selected type's engines by name, and their ids in the same order. */
+	TArray<TSharedPtr<FString>> EngineChoices;
+	TArray<FString> EngineIds;
 	TArray<double> YawValues;
 	/** The picked model is worn as a skin on the frame (else its own wheels are fitted). Worked out when the model or the type is picked. */
 	bool bUseSkin = false;

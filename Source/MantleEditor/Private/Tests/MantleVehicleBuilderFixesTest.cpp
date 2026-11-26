@@ -716,7 +716,7 @@ bool FMantleVehicleBuilderFeelTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleBuilderFixTestPrivate;
 	for (const TCHAR* Id : { TEXT("sedan"), TEXT("sports"), TEXT("limousine"), TEXT("pickup"), TEXT("van"), TEXT("truck"), TEXT("sixwheeler"), TEXT("compact"),
-		 TEXT("muscle"), TEXT("drift"), TEXT("supercar"), TEXT("offroad"), TEXT("bus"), TEXT("atv"), TEXT("electric"), TEXT("motorcycle") })
+		 TEXT("muscle"), TEXT("drift"), TEXT("supercar"), TEXT("offroad"), TEXT("bus"), TEXT("atv"), TEXT("electric"), TEXT("motorcycle"), TEXT("semi") })
 	{
 		FMantleChassisSpec Archetype;
 		FString Error;
