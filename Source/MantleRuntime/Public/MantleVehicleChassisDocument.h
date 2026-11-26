@@ -86,6 +86,8 @@ struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 
 	/** The steering speed curve ComposeGroundHandling writes: (mph, share of the lock), set from the drive probe's steering sweeps (#376). */
 	static TArray<FVector2D> GroundSteeringSpeedCurve();
+	/** The steering speed curve ComposeGroundHandling writes for a two-wheeler (a rider on two wheels, #378), set the same way from the probe's sweeps on the bike. */
+	static TArray<FVector2D> TwoWheelerSteeringSpeedCurve();
 
 	/**
 	 * The movement keys of Spec's chassis alone, as the JSON object text UMantleVehicleSource::MovementBlocks holds: the flight, helicopter or hover block, and

@@ -6,6 +6,7 @@
 #include "HAL/FileManager.h"
 #include "Interfaces/IPluginManager.h"
 #include "MantleChassisSpec.h"
+#include "MantleVehicleChassisBuilder.h"
 #include "MantleVehicleSource.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -122,8 +123,9 @@ namespace MantleVehiclePresetPrivate
 		static const TSet<FString> Known = {
 			TEXT("mass"), TEXT("maxSpeed"), TEXT("centerOfMass"), TEXT("dragCoefficient"), TEXT("frontalArea"),
 			TEXT("engine/maxTorque"), TEXT("engine/maxRPM"), TEXT("engine/idleRPM"), TEXT("engine/torqueCurve"),
-			TEXT("engine/tractionControl"), TEXT("engine/engineBraking"),
+			TEXT("engine/tractionControl"), TEXT("engine/engineBraking"), TEXT("engine/displacement"),
 			TEXT("engine/drive"), TEXT("engine/peakPower"), TEXT("engine/regenBraking"), TEXT("engine/batteryCapacity"),
+			TEXT("engine/induction"), TEXT("engine/maxBoost"), TEXT("engine/spoolRPM"), TEXT("engine/spoolTime"),
 			TEXT("transmission/gearRatios"), TEXT("transmission/reverseRatio"), TEXT("transmission/finalDrive"),
 			TEXT("transmission/changeUpRPM"), TEXT("transmission/changeDownRPM"), TEXT("transmission/shiftTime"),
 			TEXT("transmission/cvt/lowRatio"), TEXT("transmission/cvt/highRatio"), TEXT("transmission/cvt/shiftRPM"),
@@ -133,7 +135,8 @@ namespace MantleVehiclePresetPrivate
 			TEXT("suspension/springPreload"), TEXT("suspension/damping"),
 			TEXT("steering/maxAngle"), TEXT("steering/ackermann"), TEXT("steering/speedCurve"),
 			TEXT("brakes/brakeTorque"), TEXT("brakes/handbrakeTorque"), TEXT("brakes/abs"), TEXT("brakes/frontShare"),
-			TEXT("tires/friction"), TEXT("tires/rearFriction"),
+			TEXT("tires/friction"), TEXT("tires/rearFriction"), TEXT("tires/rollingResistance"),
+			TEXT("pedal/riderPower"), TEXT("pedal/sprintPower"), TEXT("pedal/sprintReserve"), TEXT("pedal/maxCadence"), TEXT("pedal/cadence"),
 			TEXT("camera/armLength"), TEXT("camera/height") };
 		return Known;
 	}
@@ -231,7 +234,7 @@ namespace MantleVehiclePresetPrivate
 			return true;
 		}
 
-		/** A string (#445: the engine's drive). */
+		/** A string (#445: the engine's drive; #444: its induction). */
 		bool String(const FString& Path, FString& Out)
 		{
 			const TSharedPtr<FJsonValue> Value = Find(Path);
@@ -366,14 +369,15 @@ TArray<const FMantleVehiclePreset*> FMantleVehiclePresets::Publishable()
 			Out.Add(&Preset);
 		}
 	}
-	// Road vehicles first, then what flies, then what floats; within a movement type the order stays by id.
+	// Road vehicles first, then what flies, then what floats, then what is towed (#446); within a movement type the order stays by id.
 	const auto Rank = [](const FString& MovementType)
 	{
 		if (MovementType == TEXT("wheeled")) { return 0; }
 		if (MovementType == TEXT("plane")) { return 1; }
 		if (MovementType == TEXT("helicopter")) { return 2; }
 		if (MovementType == TEXT("hover")) { return 3; }
-		return 4;
+		if (MovementType == TEXT("trailer")) { return 4; }
+		return 5;
 	};
 	Out.StableSort([&Rank](const FMantleVehiclePreset& A, const FMantleVehiclePreset& B) { return Rank(A.MovementType) < Rank(B.MovementType); });
 	return Out;
@@ -426,7 +430,34 @@ FString FMantleVehiclePresets::DriveWords(const EMantleVehicleDrive Drive)
 
 const FMantleVehiclePreset* FMantleVehiclePresets::Find(const FString& Id)
 {
-	return All().FindByPredicate([&Id](const FMantleVehiclePreset& Preset) { return Preset.Id == Id; });
+	FString FileId;
+	FString Engine;
+	FMantleChassisSpec::SplitPresetId(Id, FileId, Engine);
+	if (Engine.IsEmpty())
+	{
+		return All().FindByPredicate([&Id](const FMantleVehiclePreset& Preset) { return Preset.Id == Id; });
+	}
+	// #378: the type with one of its engines, read once and kept (game thread only, as All is).
+	static TMap<FString, TUniquePtr<FMantleVehiclePreset>> WithEngines;
+	if (const TUniquePtr<FMantleVehiclePreset>* Found = WithEngines.Find(Id))
+	{
+		return Found->Get();
+	}
+	FString Text;
+	FString Error;
+	TUniquePtr<FMantleVehiclePreset> Read = MakeUnique<FMantleVehiclePreset>();
+	if (!FMantleVehicleChassisBuilder::LoadPresetText(Id, Text, Error) || !Parse(Text, *Read, Error))
+	{
+		UE_LOG(LogMantleVehiclePreset, Warning, TEXT("The vehicle preset %s could not be read: %s"), *Id, *Error);
+		return nullptr;
+	}
+	Read->EngineId = Engine;
+	return WithEngines.Add(Id, MoveTemp(Read)).Get();
+}
+
+FString FMantleVehiclePresets::SelectorIdOf(const FName Preset, const FName PresetEngine)
+{
+	return PresetEngine.IsNone() ? Preset.ToString() : Preset.ToString() + TEXT("+") + PresetEngine.ToString();
 }
 
 bool FMantleVehiclePresets::Parse(const FString& Json, FMantleVehiclePreset& Out, FString& OutError)
@@ -508,6 +539,31 @@ bool FMantleVehiclePresets::Parse(const FString& Json, FMantleVehiclePreset& Out
 	if (Root->TryGetObjectField(TEXT("defaults"), Defaults) && Defaults)
 	{
 		Preset.Defaults = *Defaults;
+	}
+
+	// #378: the engines a type offers (a motorcycle's sizes) and the one it starts with.
+	Root->TryGetStringField(TEXT("defaultEngine"), Preset.DefaultEngine);
+	const TArray<TSharedPtr<FJsonValue>>* Engines = nullptr;
+	if (Root->TryGetArrayField(TEXT("engines"), Engines) && Engines)
+	{
+		for (const TSharedPtr<FJsonValue>& Entry : *Engines)
+		{
+			const TSharedPtr<FJsonObject>* Engine = nullptr;
+			FMantleVehiclePresetEngine Read;
+			if (!Entry.IsValid() || !Entry->TryGetObject(Engine) || !Engine || !(*Engine)->TryGetStringField(TEXT("id"), Read.Id) || Read.Id.IsEmpty()
+				|| !(*Engine)->TryGetStringField(TEXT("name"), Read.Name))
+			{
+				OutError = TEXT("an engine needs an id and a name");
+				return false;
+			}
+			(*Engine)->TryGetStringField(TEXT("description"), Read.Description);
+			Preset.Engines.Add(MoveTemp(Read));
+		}
+		if (!Preset.Engines.ContainsByPredicate([&Preset](const FMantleVehiclePresetEngine& E) { return E.Id == Preset.DefaultEngine; }))
+		{
+			OutError = TEXT("defaultEngine is not one of the engines");
+			return false;
+		}
 	}
 
 	const TSharedPtr<FJsonObject>* Ranges = nullptr;
@@ -655,12 +711,49 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 	Reader.Float(TEXT("brakes/frontShare"), T.BrakeFrontShare);
 	Reader.Bool(TEXT("engine/tractionControl"), T.bTractionControl);
 	Reader.Float(TEXT("engine/engineBraking"), T.EngineBraking);
+	// #378: the engine's size, from a motorcycle's engine pick; absent, the tuning keeps its own (0, not given).
+	Reader.Int(TEXT("engine/displacement"), T.EngineDisplacement);
+	// An electric preset (#445) is a motor: no engine size and no low range (#376 off-road), whatever the vehicle had.
+	if (T.bElectric)
+	{
+		T.EngineDisplacement = 0;
+		T.LowRange = 0.f;
+	}
+	// #444: the preset's engine is the engine, so its induction is applied whole: absent, none and the boost settings' defaults (a turbo car's boost
+	// would otherwise stay on a preset without one).
+	{
+		const FMantleVehicleSourceTuning Plain;
+		T.Induction = Plain.Induction;
+		T.MaxBoost = Plain.MaxBoost;
+		T.SpoolRPM = Plain.SpoolRPM;
+		T.SpoolTime = Plain.SpoolTime;
+		FString Induction;
+		if (Reader.String(TEXT("engine/induction"), Induction))
+		{
+			if (Induction == TEXT("turbo")) T.Induction = EMantleVehicleSourceInduction::Turbo;
+			else if (Induction == TEXT("supercharger")) T.Induction = EMantleVehicleSourceInduction::Supercharger;
+			else if (Induction != TEXT("none")) Reader.Bad(TEXT("engine/induction"));
+		}
+		Reader.Float(TEXT("engine/maxBoost"), T.MaxBoost);
+		Reader.Int(TEXT("engine/spoolRPM"), T.SpoolRPM);
+		Reader.Float(TEXT("engine/spoolTime"), T.SpoolTime);
+	}
 
 	Reader.Float(TEXT("tires/friction"), T.TireFriction);
 	if (Reader.Float(TEXT("tires/rearFriction"), T.TireRearFriction))
 	{
 		T.bTireRearFriction = true;
 	}
+	// #447, #448: how much every wheel loses to rolling; absent, the tuning keeps its own (a car tire's 0.012).
+	Reader.Float(TEXT("tires/rollingResistance"), T.TireRollingResistance);
+	// #447: a pedalled preset (the Bicycle): any pedal number makes the vehicle pedalled; an absent one keeps the tuning's own.
+	bool bAnyPedal = false;
+	bAnyPedal |= Reader.Float(TEXT("pedal/riderPower"), T.PedalRiderPower);
+	bAnyPedal |= Reader.Float(TEXT("pedal/sprintPower"), T.PedalSprintPower);
+	bAnyPedal |= Reader.Float(TEXT("pedal/sprintReserve"), T.PedalSprintReserve);
+	bAnyPedal |= Reader.Float(TEXT("pedal/maxCadence"), T.PedalMaxCadence);
+	bAnyPedal |= Reader.Float(TEXT("pedal/cadence"), T.PedalCadence);
+	T.bPedal = bAnyPedal;
 
 	Reader.Float(TEXT("camera/armLength"), T.CameraArmLength);
 	Reader.Float(TEXT("camera/height"), T.CameraHeight);

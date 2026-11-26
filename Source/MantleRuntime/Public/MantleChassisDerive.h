@@ -52,6 +52,10 @@ struct MANTLERUNTIME_API FMantleChassisHandling
 	double HoverThrustNewtons = 0.0;
 	double PadSpringRate = 0.0;
 	double HoverFinAreaM2 = 0.0;
+	/** A boat's or jet ski's (chassis.boat) drive push at rest, N, and its rudder's area, m^2: made from directly, as a hovercraft's fan. 0 for everything
+	 *  that is not a boat. */
+	double BoatThrustNewtons = 0.0;
+	double BoatRudderAreaM2 = 0.0;
 	/**
 	 * What a limit held back when FMantleChassisDerive made this, one line each: the document path, the number the rule gave and what it was held to
 	 * ("brakes/handbrakeTorque 39321.6 held to 20000"). The rules do not stop at a limit quietly: a number that is not the rule's answer is here.

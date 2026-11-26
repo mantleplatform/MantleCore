@@ -50,6 +50,12 @@ struct FMantleVehicleChassisRider
 	double RearTireFriction = 0.0;
 	double RearBrakeTorque = 0.0;
 	FMantleVehicleChassisRotationControl RotationControl;
+	/** #447: a bicycle's crank (chassis.rider.crank): its centre on the root bone and the crank's length; bCrank false, the feet stand on the pegs. */
+	bool bCrank = false;
+	FVector CrankCenter = FVector::ZeroVector;
+	double CrankLength = 0.0;
+	/** #447: the seat's RiderSprintPelvisShift (standing on the pedals to sprint). */
+	FVector SprintPelvisShift = FVector::ZeroVector;
 };
 
 /**

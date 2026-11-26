@@ -231,12 +231,22 @@ bool FMantleVehicleChassisBuilder::LoadPresetText(const FString& PresetId, FStri
 	{
 		return MantleChassisBuilderPrivate::Refuse(OutError, FString::Printf(TEXT("'%s' is not a vehicle preset id"), *PresetId));
 	}
-	const FString Path = FPaths::Combine(PresetDirectory(), PresetId + TEXT(".json"));
-	if (!FFileHelper::LoadFileToString(OutText, *Path))
+	// "motorcycle+600": the motorcycle preset with its 600 engine merged over it (#378).
+	FString FileId;
+	FString Engine;
+	FMantleChassisSpec::SplitPresetId(PresetId, FileId, Engine);
+	const FString Path = FPaths::Combine(PresetDirectory(), FileId + TEXT(".json"));
+	FString FileText;
+	if (!FFileHelper::LoadFileToString(FileText, *Path))
 	{
 		return MantleChassisBuilderPrivate::Refuse(OutError, FString::Printf(TEXT("the vehicle preset file %s could not be read"), *Path));
 	}
-	return true;
+	if (Engine.IsEmpty())
+	{
+		OutText = MoveTemp(FileText);
+		return true;
+	}
+	return FMantleChassisSpec::ApplyEngine(FileText, Engine, OutText, OutError);
 }
 
 bool FMantleVehicleChassisBuilder::ReadReference(const FString& PresetJsonText, FMantleVehicleChassisReference& OutReference, FString& OutError)
@@ -411,11 +421,32 @@ bool FMantleVehicleChassisBuilder::MakeAsset(const FMantleChassisSpec& Spec, FMa
 	FMantleSkinnedMeshLOD& LOD = Body.LODs.AddDefaulted_GetRef();
 	LOD.NumInfluences = 4;
 	FShapeBuilder Shapes(LOD);
-	const FMantleChassisBlock BodyBlock = Spec.BodyBlock();
-	Shapes.AddBox(FVector3f(BodyBlock.Min), FVector3f(BodyBlock.Max), 0);
+	if (Spec.HasTractorFrame())
+	{
+		// A fifth-wheel tractor (#446): its cab, and the low frame behind it a trailer's floor clears, with the fifth wheel's plate on the frame.
+		for (const FMantleChassisBlock& Block : { Spec.CabBlock(), Spec.FrameBlock() })
+		{
+			Shapes.AddBox(FVector3f(Block.Min), FVector3f(Block.Max), 0);
+		}
+		const FVector Plate = Spec.Hitch.Location;
+		const double Half = 0.35 * Spec.Width;
+		Shapes.AddBox(FVector3f(FVector(Plate.X - Half, -Half, Spec.FrameBlock().Max.Z)), FVector3f(FVector(Plate.X + Half, Half, Plate.Z)), 0);
+	}
+	else
+	{
+		const FMantleChassisBlock BodyBlock = Spec.BodyBlock();
+		Shapes.AddBox(FVector3f(BodyBlock.Min), FVector3f(BodyBlock.Max), 0);
+	}
+	// A trailer's landing gear (#446), drawn where it stands.
+	if (Spec.bTrailer && Spec.Trailer.bLandingGear)
+	{
+		const FVector Center = Spec.Trailer.LandingGearCenter;
+		const FVector Extent = Spec.Trailer.LandingGearExtent;
+		Shapes.AddBox(FVector3f(Center - Extent), FVector3f(Center + Extent), 0);
+	}
 	// A helicopter's wheels are its skids' hidden contact points, so none is drawn: the skids below stand for them. A hovercraft's are where its pads lift,
-	// under its skirt, and are not drawn either.
-	const bool bDrawWheels = !Spec.Helicopter.bSet && !Spec.Hovercraft.bSet;
+	// under its skirt, and are not drawn either; nor are a boat's, which only its document's reader needs.
+	const bool bDrawWheels = !Spec.Helicopter.bSet && !Spec.Hovercraft.bSet && !Spec.Boat.bSet;
 	for (int32 Index = 0; bDrawWheels && Index < Spec.WheelCount(); ++Index)
 	{
 		Shapes.AddWheel(FVector3f(Spec.WheelCenter(Index)), static_cast<float>(Spec.WheelRadius), static_cast<float>(Spec.WheelWidth), WheelBones[Index]);
@@ -427,6 +458,12 @@ bool FMantleVehicleChassisBuilder::MakeAsset(const FMantleChassisSpec& Spec, FMa
 		{
 			Shapes.AddBox(FVector3f(Block.Min), FVector3f(Block.Max), 0);
 		}
+	}
+	// A boat's: its drive's pod (an outboard's leg, a jet's nozzle) on the root.
+	if (Spec.Boat.bSet)
+	{
+		const FMantleChassisBlock Drive = Spec.BoatDriveBlock();
+		Shapes.AddBox(FVector3f(Drive.Min), FVector3f(Drive.Max), 0);
 	}
 	// A helicopter's: the mast, the tail boom, the fin and the skids on the root, a cross of blades on each rotor's bone.
 	if (Spec.Helicopter.bSet)
