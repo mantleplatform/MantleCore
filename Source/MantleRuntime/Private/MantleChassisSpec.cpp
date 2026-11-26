@@ -177,9 +177,14 @@ namespace MantleChassisSpecPrivate
 		}
 		Json->TryGetNumberField(TEXT("camber"), Read.Camber);
 		Json->TryGetNumberField(TEXT("stallAngle"), Read.StallAngle);
-		if (!FMath::IsFinite(Read.Camber) || !FMath::IsFinite(Read.StallAngle) || Read.StallAngle < 1.0)
+		Json->TryGetNumberField(TEXT("maxLift"), Read.MaxLift);
+		if (!FMath::IsFinite(Read.Camber) || !FMath::IsFinite(Read.StallAngle) || Read.StallAngle < 5.0 || Read.StallAngle > 30.0)
 		{
-			return Refuse(OutError, FString::Printf(TEXT("the preset's %s camber is not a number, or its stallAngle is below 1"), *Label));
+			return Refuse(OutError, FString::Printf(TEXT("the preset's %s camber is not a number, or its stallAngle is not 5 to 30"), *Label));
+		}
+		if (!FMath::IsFinite(Read.MaxLift) || Read.MaxLift < 0.0)
+		{
+			return Refuse(OutError, FString::Printf(TEXT("the preset's %s maxLift is not a number, or is below 0 (0: the type's)"), *Label));
 		}
 		Out = Read;
 		return true;
@@ -207,6 +212,21 @@ namespace MantleChassisSpecPrivate
 			|| !GetNumber(Engines, TEXT("x"), TEXT("chassis.aircraft.engines.x"), false, Read.EngineX, OutError))
 		{
 			return false;
+		}
+		// #379: a propeller engine's power and a jet's afterburner, both optional.
+		Engines->TryGetNumberField(TEXT("power"), Read.EnginePowerKw);
+		Engines->TryGetNumberField(TEXT("afterburnerThrust"), Read.AfterburnerNewtons);
+		Json->TryGetNumberField(TEXT("spoolTime"), Read.SpoolTime);
+		if (!FMath::IsFinite(Read.EnginePowerKw) || Read.EnginePowerKw < 0.0 || !FMath::IsFinite(Read.AfterburnerNewtons) || Read.AfterburnerNewtons < 0.0
+			|| !FMath::IsFinite(Read.SpoolTime))
+		{
+			return Refuse(OutError, TEXT("the preset's chassis.aircraft engines.power, engines.afterburnerThrust or spoolTime is not a number above 0"));
+		}
+		const TSharedPtr<FJsonObject>* Assists = nullptr;
+		if (Json->TryGetObjectField(TEXT("assists"), Assists) && Assists && Assists->IsValid())
+		{
+			(*Assists)->TryGetBoolField(TEXT("stallProtection"), Read.bStallProtection);
+			(*Assists)->TryGetBoolField(TEXT("coordinatedTurns"), Read.bCoordinatedTurns);
 		}
 		// A propeller block, when there is one, is read whole; a key that is there but is not an object is a mistake, not a jet.
 		Read.bPropeller = Json->HasField(TEXT("propeller"));

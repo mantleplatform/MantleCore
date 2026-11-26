@@ -284,6 +284,10 @@ struct FMantleVehicleAerofoilDesc
 	double Camber = 5.0;
 	double MaxControlAngle = 12.0;
 	double StallAngle = 20.0;
+	/** The peak lift coefficient (#379, maxLift); 0 when the document has none: the type's. */
+	double MaxLift = 0.0;
+	/** The whole surface's span^2 / area (#379, aspectRatio); 0 when the document has none: the type's. */
+	double AspectRatio = 0.0;
 };
 
 /** One engine's push (FMantleVehicleThruster). Bone, when set, is where it pushes from (a reference, never posed). Direction is as given: only its direction counts. */
@@ -293,6 +297,10 @@ struct FMantleVehicleThrusterDesc
 	FVector Location = FVector::ZeroVector;
 	FVector Direction = FVector::ForwardVector;
 	double MaxThrustNewtons = 0.0;
+	/** Shaft power, kW (#379, power): above 0 a propeller, whose push falls off with speed; 0 a jet. */
+	double PowerKw = 0.0;
+	/** A jet's thrust with the afterburner lit, N (#379, afterburnerThrust); 0: none. */
+	double AfterburnerNewtons = 0.0;
 };
 
 /** A propeller or rotor bone that turns while someone is aboard (FMantleVehicleSpinBone); cosmetic. Axis is in the body's space. */
@@ -312,6 +320,11 @@ struct FMantleVehicleFlightDesc
 	double ThrottleLeverRate = 0.5;
 	double LinearDamping = 0.0;
 	double AngularDamping = 0.0;
+	/** A jet's seconds from idle to full thrust (#379, spoolTime); below 0 when the document has none: 4 for a jet (no thruster with power), 0 for propellers. */
+	double SpoolTime = -1.0;
+	/** The player's assists (#379, assists.stallProtection / assists.coordinatedTurns); absent: on. */
+	bool bStallProtection = true;
+	bool bCoordinatedTurns = true;
 	TArray<FMantleVehicleAerofoilDesc> Aerofoils;
 	TArray<FMantleVehicleThrusterDesc> Thrusters;
 	TArray<FMantleVehicleSpinBoneDesc> SpinBones;

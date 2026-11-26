@@ -96,6 +96,14 @@ namespace MantleVehicleChassisDocumentPrivate
 			Entry->SetField(TEXT("camber"), Number(A.Camber));
 			Entry->SetField(TEXT("maxControlAngle"), Number(A.MaxControlAngle));
 			Entry->SetField(TEXT("stallAngle"), Number(A.StallAngle));
+			if (A.MaxLift > 0.0)
+			{
+				Entry->SetField(TEXT("maxLift"), Number(A.MaxLift));
+			}
+			if (A.AspectRatio > 0.0)
+			{
+				Entry->SetField(TEXT("aspectRatio"), Number(A.AspectRatio));
+			}
 			Aerofoils.Add(ObjectValue(Entry));
 		}
 		return Aerofoils;
@@ -110,6 +118,18 @@ namespace MantleVehicleChassisDocumentPrivate
 		Out->SetField(TEXT("throttleLeverRate"), Number(F.ThrottleLeverRate));
 		Out->SetField(TEXT("linearDamping"), Number(F.LinearDamping));
 		Out->SetField(TEXT("angularDamping"), Number(F.AngularDamping));
+		// #379's keys are written only when they say something: absent is the type's peak lift and aspect ratio, a jet's 4 s spool, assists on.
+		if (F.SpoolTime >= 0.0)
+		{
+			Out->SetField(TEXT("spoolTime"), Number(F.SpoolTime));
+		}
+		if (!F.bStallProtection || !F.bCoordinatedTurns)
+		{
+			const TSharedRef<FJsonObject> Assists = MakeShared<FJsonObject>();
+			Assists->SetBoolField(TEXT("stallProtection"), F.bStallProtection);
+			Assists->SetBoolField(TEXT("coordinatedTurns"), F.bCoordinatedTurns);
+			Out->SetObjectField(TEXT("assists"), Assists);
+		}
 		Out->SetArrayField(TEXT("aerofoils"), AerofoilsJson(F.Aerofoils));
 		TArray<TSharedPtr<FJsonValue>> Thrusters;
 		for (const FMantleVehicleThrusterDesc& T : F.Thrusters)
@@ -119,6 +139,14 @@ namespace MantleVehicleChassisDocumentPrivate
 			Entry->SetField(TEXT("location"), Triple(T.Location));
 			Entry->SetField(TEXT("direction"), Triple(T.Direction));
 			Entry->SetField(TEXT("maxThrust"), Number(T.MaxThrustNewtons));
+			if (T.PowerKw > 0.0)
+			{
+				Entry->SetField(TEXT("power"), Number(T.PowerKw));
+			}
+			if (T.AfterburnerNewtons > 0.0)
+			{
+				Entry->SetField(TEXT("afterburnerThrust"), Number(T.AfterburnerNewtons));
+			}
 			Thrusters.Add(ObjectValue(Entry));
 		}
 		Out->SetArrayField(TEXT("thrusters"), Thrusters);
@@ -349,6 +377,16 @@ namespace MantleVehicleChassisDocumentPrivate
 		// The surfaces are the plane's drag: the rigid body's damping would take mass x velocity x damping off it on top.
 		F.LinearDamping = 0.0;
 		F.AngularDamping = 0.0;
+		// #379: a jet's spool and the player's assists, as the preset gives them.
+		F.SpoolTime = Plane.SpoolTime;
+		F.bStallProtection = Plane.bStallProtection;
+		F.bCoordinatedTurns = Plane.bCoordinatedTurns;
+		// Each surface's peak lift (the preset's, or the type's) and aspect ratio (its own span over chord: a stretched wing's grows).
+		const auto Shape = [](const FMantleChassisSurface& Surface, FMantleVehicleAerofoilDesc& Out)
+		{
+			Out.MaxLift = Surface.MaxLift;
+			Out.AspectRatio = Surface.AspectRatio();
+		};
 
 		// The wing's two halves (the right one mirrored, so its aileron goes the other way), the elevator and the rudder; each on its bone. A half-wing is half
 		// the wing's area; the tailplane's camber is the plane's trim.
@@ -363,6 +401,7 @@ namespace MantleVehicleChassisDocumentPrivate
 			Wing.Camber = Plane.Wing.Camber;
 			Wing.MaxControlAngle = Plane.Wing.MaxControlAngle;
 			Wing.StallAngle = Plane.Wing.StallAngle;
+			Shape(Plane.Wing, Wing);
 		}
 		FMantleVehicleAerofoilDesc& Elevator = F.Aerofoils.AddDefaulted_GetRef();
 		Elevator.Bone = FMantleVehicleChassisBuilder::ElevatorBoneName();
@@ -372,6 +411,7 @@ namespace MantleVehicleChassisDocumentPrivate
 		Elevator.Camber = Plane.Tailplane.Camber;
 		Elevator.MaxControlAngle = Plane.Tailplane.MaxControlAngle;
 		Elevator.StallAngle = Plane.Tailplane.StallAngle;
+		Shape(Plane.Tailplane, Elevator);
 		FMantleVehicleAerofoilDesc& Rudder = F.Aerofoils.AddDefaulted_GetRef();
 		Rudder.Bone = FMantleVehicleChassisBuilder::RudderBoneName();
 		Rudder.Location = Spec.RudderLocation();
@@ -380,6 +420,7 @@ namespace MantleVehicleChassisDocumentPrivate
 		Rudder.Camber = Plane.Fin.Camber;
 		Rudder.MaxControlAngle = Plane.Fin.MaxControlAngle;
 		Rudder.StallAngle = Plane.Fin.StallAngle;
+		Shape(Plane.Fin, Rudder);
 
 		// An engine pushes forward from its propeller's hub, and the propeller spins about X (the right one of two the other way). A jet (an airframe with no
 		// propeller) pushes from its nozzle behind the tail, and nothing of it spins.
@@ -391,6 +432,10 @@ namespace MantleVehicleChassisDocumentPrivate
 			Push.Location = Spec.EngineLocation(Engine);
 			Push.Direction = FVector::ForwardVector;
 			Push.MaxThrustNewtons = Handling.EngineThrustNewtons;
+			// A resized plane's thrust follows its mass (its handling); its power and afterburner follow its thrust.
+			const double ThrustRatio = Plane.EngineThrustNewtons > 0.0 ? Handling.EngineThrustNewtons / Plane.EngineThrustNewtons : 1.0;
+			Push.PowerKw = Plane.bPropeller ? Plane.EnginePowerKw * ThrustRatio : 0.0;
+			Push.AfterburnerNewtons = Plane.bPropeller ? 0.0 : Plane.AfterburnerNewtons * ThrustRatio;
 			if (Plane.bPropeller)
 			{
 				F.SpinBones.Add(MakeSpin(EngineBone, FVector::ForwardVector, Engine == 1 ? -Plane.PropellerRpm : Plane.PropellerRpm));
@@ -629,11 +674,32 @@ namespace MantleVehicleChassisDocumentPrivate
 				Hold(TEXT("flight/aerofoils/*/camber"), A.Camber);
 				Hold(TEXT("flight/aerofoils/*/maxControlAngle"), A.MaxControlAngle);
 				Hold(TEXT("flight/aerofoils/*/stallAngle"), A.StallAngle);
+				// 0 is "the type's" (not written), so only a given value is held.
+				if (A.MaxLift > 0.0)
+				{
+					Hold(TEXT("flight/aerofoils/*/maxLift"), A.MaxLift);
+				}
+				if (A.AspectRatio > 0.0)
+				{
+					Hold(TEXT("flight/aerofoils/*/aspectRatio"), A.AspectRatio);
+				}
+			}
+			if (F.SpoolTime >= 0.0)
+			{
+				Hold(TEXT("flight/spoolTime"), F.SpoolTime);
 			}
 			for (FMantleVehicleThrusterDesc& T : F.Thrusters)
 			{
 				HoldVector(TEXT("flight/thrusters/*/location/*"), T.Location);
 				Hold(TEXT("flight/thrusters/*/maxThrust"), T.MaxThrustNewtons);
+				if (T.PowerKw > 0.0)
+				{
+					Hold(TEXT("flight/thrusters/*/power"), T.PowerKw);
+				}
+				if (T.AfterburnerNewtons > 0.0)
+				{
+					Hold(TEXT("flight/thrusters/*/afterburnerThrust"), T.AfterburnerNewtons);
+				}
 			}
 			for (FMantleVehicleSpinBoneDesc& Spin : F.SpinBones)
 			{

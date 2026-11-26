@@ -30,8 +30,8 @@ struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 	/** A hovercraft's rigid-body angular damping, per second, on the ground and in the air alike (default 0.5): hover.angularDamping. */
 	static constexpr double HovercraftAngularDamping = 0.5;
 	/**
-	 * How much of the elevator's travel the player's keys and stick reach (flight.pitchAuthority): half of its 20 degrees, a visible flap and a real climb that is
-	 * still hard to stall from one held key.
+	 * How much of the elevator's travel the player's keys and stick reach (flight.pitchAuthority): half of it, so a held key (keys are on or off) pitches
+	 * gently. The stall protection assist (#379) is what keeps a player out of a stall.
 	 */
 	static constexpr double PlanePitchAuthority = 0.5;
 	/** How far to the side a bike's rider steps off, cm: a body-width, not a car's door (seat.exitSideDistance). */

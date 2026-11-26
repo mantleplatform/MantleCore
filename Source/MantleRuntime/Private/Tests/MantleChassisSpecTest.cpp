@@ -172,16 +172,16 @@ namespace MantleChassisSpecTestPrivate
 	},
 	{
 		TEXT("jet"),
-		TEXT(R"MCS({"mass":9000,"maxSpeed":12000,"dragCoefficient":0.25,"frontalArea":2.16,"engine":{"maxTorque":300,"maxRPM":3000,"idleRPM":600,"torqueCurve":[[0,0.6],[1500,1],[3000,0.8]]},"transmission":{"gearRatios":[1.0],"reverseRatio":1.0,"finalDrive":1.0,"changeUpRPM":2500,"changeDownRPM":1000},"suspension":{"maxRaise":10,"maxDrop":15,"springRate":2050,"springPreload":580,"damping":0.85},"steering":{"maxAngle":25,"ackermann":false},"brakes":{"brakeTorque":5000,"handbrakeTorque":5000},"tires":{"friction":1.47},"camera":{"armLength":2150,"height":150},"schemaVersion":1,"wheels":[{"bone":"wheel_f","steering":true,"driven":false,"handbrake":false,"radius":40,"width":26},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":false,"radius":40,"width":26},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":false,"radius":40,"width":26}],"collision":[{"center":[-200.0,0.0,200.0],"extent":[750.0,60.0,90.0]},{"center":[-290.0,0.0,200.0],"extent":[150.0,490.0,18.75]},{"center":[-870.0,0.0,215.0],"extent":[70.0,250.0,8.75]},{"center":[-850.0,0.0,440.0],"extent":[100.0,12.5,150.0]}],"centerOfMass":[-200,0,205],"seat":{"location":[250,0,273]}})MCS"),
+		TEXT(R"MCS({"mass":10355,"maxSpeed":12000,"dragCoefficient":0.6,"frontalArea":3.1,"engine":{"maxTorque":300,"maxRPM":3000,"idleRPM":600,"torqueCurve":[[0,0.6],[1500,1],[3000,0.8]]},"transmission":{"gearRatios":[1.0],"reverseRatio":1.0,"finalDrive":1.0,"changeUpRPM":2500,"changeDownRPM":1000},"suspension":{"maxRaise":10,"maxDrop":15,"springRate":2360,"springPreload":670,"damping":0.85},"steering":{"maxAngle":25,"ackermann":false},"brakes":{"brakeTorque":5000,"handbrakeTorque":5000},"tires":{"friction":1.47},"camera":{"armLength":2150,"height":150},"schemaVersion":1,"wheels":[{"bone":"wheel_f","steering":true,"driven":false,"handbrake":false,"radius":40,"width":26},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":false,"radius":40,"width":26},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":false,"radius":40,"width":26}],"collision":[{"center":[-200.0,0.0,200.0],"extent":[750.0,60.0,90.0]},{"center":[-288.75,0.0,200.0],"extent":[147.5,472.5,18.4375]},{"center":[-870.0,0.0,215.0],"extent":[70.0,250.0,8.75]},{"center":[-850.0,0.0,440.0],"extent":[100.0,12.5,150.0]}],"centerOfMass":[-200,0,205],"seat":{"location":[250,0,273]}})MCS"),
 		414, 240,
-		{ -1000.0, -490.0, 0.0 }, { 550.0, 490.0, 590.0 },
+		{ -1000.0, -472.5, 0.0 }, { 550.0, 472.5, 590.0 },
 		{
 			{ TEXT("root"), -1, { 0.0, 0.0, 0.0 } },
 			{ TEXT("wheel_f"), 0, { 260.0, 0.0, 40.0 } },
 			{ TEXT("wheel_rl"), 0, { -260.0, -140.0, 40.0 } },
 			{ TEXT("wheel_rr"), 0, { -260.0, 140.0, 40.0 } },
-			{ TEXT("aileron_l"), 0, { -215.0, -245.0, 200.0 } },
-			{ TEXT("aileron_r"), 0, { -215.0, 245.0, 200.0 } },
+			{ TEXT("aileron_l"), 0, { -215.0, -236.25, 200.0 } },
+			{ TEXT("aileron_r"), 0, { -215.0, 236.25, 200.0 } },
 			{ TEXT("elevator"), 0, { -835.0, 0.0, 215.0 } },
 			{ TEXT("rudder"), 0, { -800.0, 0.0, 440.0 } },
 			{ TEXT("nozzle"), 0, { -1000.0, 0.0, 200.0 } }
@@ -229,24 +229,24 @@ namespace MantleChassisSpecTestPrivate
 	},
 	{
 		TEXT("plane"),
-		TEXT(R"MCS({"mass":7000,"maxSpeed":12000,"dragCoefficient":0.3,"frontalArea":1.76,"engine":{"maxTorque":300,"maxRPM":3000,"idleRPM":600,"torqueCurve":[[0,0.6],[1500,1],[3000,0.8]]},"transmission":{"gearRatios":[1.0],"reverseRatio":1.0,"finalDrive":1.0,"changeUpRPM":2500,"changeDownRPM":1000},"suspension":{"maxRaise":10,"maxDrop":15,"springRate":1600,"springPreload":450,"damping":0.85},"steering":{"maxAngle":25,"ackermann":false},"brakes":{"brakeTorque":4000,"handbrakeTorque":4000},"tires":{"friction":1.47},"camera":{"armLength":1800,"height":150},"schemaVersion":1,"wheels":[{"bone":"wheel_f","steering":true,"driven":false,"handbrake":false,"radius":40,"width":28},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":false,"radius":40,"width":28},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":false,"radius":40,"width":28}],"collision":[{"center":[-335.0,0.0,200.0],"extent":[575.0,55.0,80.0]},{"center":[-190.5,0.0,252.0],"extent":[69.0,725.0,8.625]},{"center":[-853.75,0.0,195.0],"extent":[37.5,200.0,4.6875]},{"center":[-835.0,0.0,380.0],"extent":[75.0,9.375,100.0]}],"centerOfMass":[-144,0,210],"seat":{"location":[-75,0,263]}})MCS"),
+		TEXT(R"MCS({"mass":1082,"maxSpeed":9200,"dragCoefficient":0.13,"frontalArea":1.25,"engine":{"maxTorque":300,"maxRPM":3000,"idleRPM":600,"torqueCurve":[[0,0.6],[1500,1],[3000,0.8]]},"transmission":{"gearRatios":[1.0],"reverseRatio":1.0,"finalDrive":1.0,"changeUpRPM":2500,"changeDownRPM":1000},"suspension":{"maxRaise":10,"maxDrop":15,"springRate":250,"springPreload":70,"damping":0.85},"steering":{"maxAngle":25,"ackermann":false},"brakes":{"brakeTorque":300,"handbrakeTorque":300},"tires":{"friction":1.47},"camera":{"armLength":1300,"height":150},"schemaVersion":1,"wheels":[{"bone":"wheel_f","steering":true,"driven":false,"handbrake":false,"radius":25,"width":16},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":false,"radius":25,"width":16},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":false,"radius":25,"width":16}],"collision":[{"center":[-241.0,0.0,155.0],"extent":[415.0,55.0,75.0]},{"center":[-152.75,0.0,225.0],"extent":[73.5,550.0,9.1875]},{"center":[-607.0,0.0,150.0],"extent":[44.0,170.0,5.5]},{"center":[-588.25,0.0,305.0],"extent":[56.5,7.0625,75.0]}],"centerOfMass":[-104,0,170],"seat":{"location":[-40,0,190]}})MCS"),
 		390, 228,
-		{ -910.0, -725.0, 0.0 }, { 253.0, 725.0, 480.0 },
+		{ -656.0, -550.0, 0.0 }, { 183.0, 550.0, 380.0 },
 		{
 			{ TEXT("root"), -1, { 0.0, 0.0, 0.0 } },
-			{ TEXT("wheel_f"), 0, { 190.0, 0.0, 40.0 } },
-			{ TEXT("wheel_rl"), 0, { -190.0, -160.0, 40.0 } },
-			{ TEXT("wheel_rr"), 0, { -190.0, 160.0, 40.0 } },
-			{ TEXT("aileron_l"), 0, { -156.0, -362.5, 252.0 } },
-			{ TEXT("aileron_r"), 0, { -156.0, 362.5, 252.0 } },
-			{ TEXT("elevator"), 0, { -835.0, 0.0, 195.0 } },
-			{ TEXT("rudder"), 0, { -797.5, 0.0, 380.0 } },
-			{ TEXT("propeller"), 0, { 250.0, 0.0, 200.0 } }
+			{ TEXT("wheel_f"), 0, { 137.0, 0.0, 25.0 } },
+			{ TEXT("wheel_rl"), 0, { -137.0, -125.0, 25.0 } },
+			{ TEXT("wheel_rr"), 0, { -137.0, 125.0, 25.0 } },
+			{ TEXT("aileron_l"), 0, { -116.0, -275.0, 225.0 } },
+			{ TEXT("aileron_r"), 0, { -116.0, 275.0, 225.0 } },
+			{ TEXT("elevator"), 0, { -585.0, 0.0, 150.0 } },
+			{ TEXT("rudder"), 0, { -560.0, 0.0, 305.0 } },
+			{ TEXT("propeller"), 0, { 180.0, 0.0, 155.0 } }
 		},
 		{
-			{ 190.0, 0.0, 40.0 },
-			{ -190.0, -160.0, 40.0 },
-			{ -190.0, 160.0, 40.0 }
+			{ 137.0, 0.0, 25.0 },
+			{ -137.0, -125.0, 25.0 },
+			{ -137.0, 125.0, 25.0 }
 		}
 	},
 	{
@@ -365,6 +365,28 @@ namespace MantleChassisSpecTestPrivate
 			{ 165.0, 82.5, 36.0 },
 			{ -165.0, -82.5, 36.0 },
 			{ -165.0, 82.5, 36.0 }
+		}
+	},
+	{
+		TEXT("warbird"),
+		TEXT(R"MCS({"mass":4285,"maxSpeed":12000,"dragCoefficient":0.1,"frontalArea":0.8,"engine":{"maxTorque":300,"maxRPM":3000,"idleRPM":600,"torqueCurve":[[0,0.6],[1500,1],[3000,0.8]]},"transmission":{"gearRatios":[1.0],"reverseRatio":1.0,"finalDrive":1.0,"changeUpRPM":2500,"changeDownRPM":1000},"suspension":{"maxRaise":10,"maxDrop":15,"springRate":1000,"springPreload":280,"damping":0.85},"steering":{"maxAngle":25,"ackermann":false},"brakes":{"brakeTorque":4000,"handbrakeTorque":4000},"tires":{"friction":1.47},"camera":{"armLength":1800,"height":150},"schemaVersion":1,"wheels":[{"bone":"wheel_f","steering":true,"driven":false,"handbrake":false,"radius":40,"width":28},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":false,"radius":40,"width":28},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":false,"radius":40,"width":28}],"collision":[{"center":[-335.0,0.0,200.0],"extent":[575.0,55.0,80.0]},{"center":[-204.25,0.0,252.0],"extent":[96.5,564.0,12.0625]},{"center":[-853.75,0.0,195.0],"extent":[37.5,200.0,4.6875]},{"center":[-835.0,0.0,380.0],"extent":[75.0,9.375,100.0]}],"centerOfMass":[-144,0,210],"seat":{"location":[-75,0,263]}})MCS"),
+		390, 228,
+		{ -910.0, -564.0, 0.0 }, { 253.0, 564.0, 480.0 },
+		{
+			{ TEXT("root"), -1, { 0.0, 0.0, 0.0 } },
+			{ TEXT("wheel_f"), 0, { 190.0, 0.0, 40.0 } },
+			{ TEXT("wheel_rl"), 0, { -190.0, -160.0, 40.0 } },
+			{ TEXT("wheel_rr"), 0, { -190.0, 160.0, 40.0 } },
+			{ TEXT("aileron_l"), 0, { -156.0, -282.0, 252.0 } },
+			{ TEXT("aileron_r"), 0, { -156.0, 282.0, 252.0 } },
+			{ TEXT("elevator"), 0, { -835.0, 0.0, 195.0 } },
+			{ TEXT("rudder"), 0, { -797.5, 0.0, 380.0 } },
+			{ TEXT("propeller"), 0, { 250.0, 0.0, 200.0 } }
+		},
+		{
+			{ 190.0, 0.0, 40.0 },
+			{ -190.0, -160.0, 40.0 },
+			{ -190.0, 160.0, 40.0 }
 		}
 	},
 

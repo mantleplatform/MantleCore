@@ -203,10 +203,15 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("flight/aerofoils/*/area"), 0.01, 500.0 },
 		{ TEXT("flight/aerofoils/*/camber"), -30.0, 30.0 },
 		{ TEXT("flight/aerofoils/*/maxControlAngle"), 0.0, 60.0 },
-		{ TEXT("flight/aerofoils/*/stallAngle"), 1.0, 90.0 },
+		{ TEXT("flight/aerofoils/*/stallAngle"), 5.0, 30.0 },
+		{ TEXT("flight/aerofoils/*/maxLift"), 0.3, 3.0 },
+		{ TEXT("flight/aerofoils/*/aspectRatio"), 0.5, 30.0 },
 		{ TEXT("flight/thrusters/*/location/*"), -1000.0, 1000.0 },
 		{ TEXT("flight/thrusters/*/direction/*"), -1.0, 1.0 },
 		{ TEXT("flight/thrusters/*/maxThrust"), 0.0, 2000000.0 },
+		{ TEXT("flight/thrusters/*/power"), 1.0, 20000.0 },
+		{ TEXT("flight/thrusters/*/afterburnerThrust"), 0.0, 2000000.0 },
+		{ TEXT("flight/spoolTime"), 0.0, 20.0 },
 		{ TEXT("flight/spinBones/*/axis/*"), -1.0, 1.0 },
 		{ TEXT("flight/spinBones/*/rpm"), -10000.0, 10000.0 },
 		{ TEXT("flight/pilotGrips/left/location/*"), -1000.0, 1000.0 },
@@ -236,6 +241,8 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("helicopter/aerofoils/*/camber"), -30.0, 30.0 },
 		{ TEXT("helicopter/aerofoils/*/maxControlAngle"), 0.0, 60.0 },
 		{ TEXT("helicopter/aerofoils/*/stallAngle"), 1.0, 90.0 },
+		{ TEXT("helicopter/aerofoils/*/maxLift"), 0.3, 3.0 },
+		{ TEXT("helicopter/aerofoils/*/aspectRatio"), 0.5, 30.0 },
 		// A hovercraft's block.
 		{ TEXT("hover/pads/*/location/*"), -1000.0, 1000.0 },
 		{ TEXT("hover/pads/*/maxRaise"), 0.0, 100.0 },
@@ -1679,7 +1686,8 @@ namespace MantleVehicleAssetPrivate
 			FMantleVehicleAerofoilDesc A;
 			int32 Kind = 0;
 			if (!P.Keys(Item, ItemPointer,
-					{ TEXT("bone"), TEXT("location"), TEXT("type"), TEXT("mirror"), TEXT("area"), TEXT("camber"), TEXT("maxControlAngle"), TEXT("stallAngle") },
+					{ TEXT("bone"), TEXT("location"), TEXT("type"), TEXT("mirror"), TEXT("area"), TEXT("camber"), TEXT("maxControlAngle"), TEXT("stallAngle"),
+				  TEXT("maxLift"), TEXT("aspectRatio") },
 					{ TEXT("location"), TEXT("type"), TEXT("area") })
 				|| !ReadVehicleOptionalBone(P, Item, ItemPointer, A.Bone)
 				|| !P.Vector(Item->TryGetField(TEXT("location")), ItemPointer + TEXT("/location"), *(BlockName + TEXT("/aerofoils/*/location/*")), A.Location)
@@ -1688,7 +1696,9 @@ namespace MantleVehicleAssetPrivate
 				|| !P.Number(Item, ItemPointer, TEXT("area"), *(BlockName + TEXT("/aerofoils/*/area")), A.AreaM2)
 				|| !P.OptNumber(Item, ItemPointer, TEXT("camber"), *(BlockName + TEXT("/aerofoils/*/camber")), A.Camber)
 				|| !P.OptNumber(Item, ItemPointer, TEXT("maxControlAngle"), *(BlockName + TEXT("/aerofoils/*/maxControlAngle")), A.MaxControlAngle)
-				|| !P.OptNumber(Item, ItemPointer, TEXT("stallAngle"), *(BlockName + TEXT("/aerofoils/*/stallAngle")), A.StallAngle))
+				|| !P.OptNumber(Item, ItemPointer, TEXT("stallAngle"), *(BlockName + TEXT("/aerofoils/*/stallAngle")), A.StallAngle)
+				|| !P.OptNumber(Item, ItemPointer, TEXT("maxLift"), *(BlockName + TEXT("/aerofoils/*/maxLift")), A.MaxLift)
+				|| !P.OptNumber(Item, ItemPointer, TEXT("aspectRatio"), *(BlockName + TEXT("/aerofoils/*/aspectRatio")), A.AspectRatio))
 			{
 				return false;
 			}
@@ -1707,16 +1717,30 @@ namespace MantleVehicleAssetPrivate
 		if (!P.Object(Root, TEXT(""), TEXT("flight"), Block)
 			|| !P.Keys(Block, Pointer,
 				{ TEXT("airSpeedLimit"), TEXT("cruiseThrottle"), TEXT("pitchAuthority"), TEXT("throttleLeverRate"), TEXT("linearDamping"), TEXT("angularDamping"),
-				  TEXT("aerofoils"), TEXT("thrusters"), TEXT("spinBones"), TEXT("pilotGrips") },
+				  TEXT("spoolTime"), TEXT("assists"), TEXT("aerofoils"), TEXT("thrusters"), TEXT("spinBones"), TEXT("pilotGrips") },
 				{ TEXT("airSpeedLimit"), TEXT("aerofoils"), TEXT("thrusters") })
 			|| !P.Number(Block, Pointer, TEXT("airSpeedLimit"), TEXT("flight/airSpeedLimit"), F.AirSpeedLimit)
 			|| !P.OptNumber(Block, Pointer, TEXT("cruiseThrottle"), TEXT("flight/cruiseThrottle"), F.CruiseThrottle)
 			|| !P.OptNumber(Block, Pointer, TEXT("pitchAuthority"), TEXT("flight/pitchAuthority"), F.PitchAuthority)
 			|| !P.OptNumber(Block, Pointer, TEXT("throttleLeverRate"), TEXT("flight/throttleLeverRate"), F.ThrottleLeverRate)
 			|| !P.OptNumber(Block, Pointer, TEXT("linearDamping"), TEXT("flight/linearDamping"), F.LinearDamping)
-			|| !P.OptNumber(Block, Pointer, TEXT("angularDamping"), TEXT("flight/angularDamping"), F.AngularDamping))
+			|| !P.OptNumber(Block, Pointer, TEXT("angularDamping"), TEXT("flight/angularDamping"), F.AngularDamping)
+			|| !P.OptNumber(Block, Pointer, TEXT("spoolTime"), TEXT("flight/spoolTime"), F.SpoolTime))
 		{
 			return;
+		}
+		// The player's assists (#379): each optional, absent on.
+		if (Block->HasField(TEXT("assists")))
+		{
+			TSharedPtr<FJsonObject> Assists;
+			const FString AssistsPointer = Pointer + TEXT("/assists");
+			if (!P.Object(Block, Pointer, TEXT("assists"), Assists)
+				|| !P.Keys(Assists, AssistsPointer, { TEXT("stallProtection"), TEXT("coordinatedTurns") }, {})
+				|| (Assists->HasField(TEXT("stallProtection")) && !P.Bool(Assists, AssistsPointer, TEXT("stallProtection"), F.bStallProtection))
+				|| (Assists->HasField(TEXT("coordinatedTurns")) && !P.Bool(Assists, AssistsPointer, TEXT("coordinatedTurns"), F.bCoordinatedTurns)))
+			{
+				return;
+			}
 		}
 
 		if (!ReadVehicleAerofoils(P, Block, Pointer, TEXT("flight"), 1, F.Aerofoils))
@@ -1740,11 +1764,14 @@ namespace MantleVehicleAssetPrivate
 				return;
 			}
 			FMantleVehicleThrusterDesc T;
-			if (!P.Keys(Item, ItemPointer, { TEXT("bone"), TEXT("location"), TEXT("direction"), TEXT("maxThrust") }, { TEXT("location"), TEXT("maxThrust") })
+			if (!P.Keys(Item, ItemPointer, { TEXT("bone"), TEXT("location"), TEXT("direction"), TEXT("maxThrust"), TEXT("power"), TEXT("afterburnerThrust") },
+					{ TEXT("location"), TEXT("maxThrust") })
 				|| !ReadVehicleOptionalBone(P, Item, ItemPointer, T.Bone)
 				|| !P.Vector(Item->TryGetField(TEXT("location")), ItemPointer + TEXT("/location"), TEXT("flight/thrusters/*/location/*"), T.Location)
 				|| !ReadVehicleDirection(P, Item, ItemPointer, TEXT("direction"), TEXT("flight/thrusters/*/direction"), T.Direction)
-				|| !P.Number(Item, ItemPointer, TEXT("maxThrust"), TEXT("flight/thrusters/*/maxThrust"), T.MaxThrustNewtons))
+				|| !P.Number(Item, ItemPointer, TEXT("maxThrust"), TEXT("flight/thrusters/*/maxThrust"), T.MaxThrustNewtons)
+				|| !P.OptNumber(Item, ItemPointer, TEXT("power"), TEXT("flight/thrusters/*/power"), T.PowerKw)
+				|| !P.OptNumber(Item, ItemPointer, TEXT("afterburnerThrust"), TEXT("flight/thrusters/*/afterburnerThrust"), T.AfterburnerNewtons))
 			{
 				return;
 			}
