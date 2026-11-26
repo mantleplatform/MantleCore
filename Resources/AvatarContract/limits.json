@@ -1401,7 +1401,7 @@
         "helicopter/aerofoils/*/area": [0.01, 500],
         "helicopter/aerofoils/*/camber": [-30, 30],
         "helicopter/aerofoils/*/maxControlAngle": [0, 60],
-        "helicopter/aerofoils/*/stallAngle": [1, 90],
+        "helicopter/aerofoils/*/stallAngle": [5, 30],
         "helicopter/aerofoils/*/maxLift": [0.3, 3],
         "helicopter/aerofoils/*/aspectRatio": [0.5, 30],
         "hover/pads/*/location/*": [-1000, 1000],

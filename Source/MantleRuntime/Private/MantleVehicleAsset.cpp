@@ -242,7 +242,7 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("helicopter/aerofoils/*/area"), 0.01, 500.0 },
 		{ TEXT("helicopter/aerofoils/*/camber"), -30.0, 30.0 },
 		{ TEXT("helicopter/aerofoils/*/maxControlAngle"), 0.0, 60.0 },
-		{ TEXT("helicopter/aerofoils/*/stallAngle"), 1.0, 90.0 },
+		{ TEXT("helicopter/aerofoils/*/stallAngle"), 5.0, 30.0 },
 		{ TEXT("helicopter/aerofoils/*/maxLift"), 0.3, 3.0 },
 		{ TEXT("helicopter/aerofoils/*/aspectRatio"), 0.5, 30.0 },
 		// A hovercraft's block.
