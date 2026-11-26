@@ -396,7 +396,7 @@ namespace MantleVehicleDocumentTestPrivate
 			Eq(TEXT("air speed limit"), He.AirSpeedLimit, Heli.AirSpeedLimitCmPerSec);
 			Eq(TEXT("the collective that holds the weight"), He.HoverCollective, Heli.HoverCollective);
 			Eq(TEXT("the collective's rate"), He.ThrottleLeverRate, 1.0);
-			Eq(TEXT("the rotor's drag"), He.LinearDamping, 0.1);
+			Eq(TEXT("no body damping (#380: the speed-squared drag is its drag)"), He.LinearDamping, FMantleVehicleChassisDocument::HelicopterLinearDamping);
 			Eq(TEXT("no angular damping"), He.AngularDamping, 0.0);
 			if (Test.TestEqual(*(Label + TEXT(": one main rotor")), He.Rotors.Num(), 1))
 			{
