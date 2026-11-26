@@ -16,8 +16,9 @@ namespace MantleChassisPlaneTestPrivate
 	{
 		FString Text;
 		FString Error;
-		const bool bOk = FMantleVehicleChassisBuilder::LoadPresetText(TEXT("plane"), Text, Error) && FMantleChassisSpec::Parse(Text, OutSpec, Error);
-		Test.TestTrue(*FString::Printf(TEXT("the plane preset reads (%s)"), *Error), bOk);
+		// The fighter airframe the flight port drew, now the warbird (#379; the plane preset is a light plane).
+		const bool bOk = FMantleVehicleChassisBuilder::LoadPresetText(TEXT("warbird"), Text, Error) && FMantleChassisSpec::Parse(Text, OutSpec, Error);
+		Test.TestTrue(*FString::Printf(TEXT("the warbird preset reads (%s)"), *Error), bOk);
 		return bOk;
 	}
 
@@ -77,10 +78,10 @@ bool FMantleChassisPlaneSpecTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("a plane with an airframe and a pilot's seat, no steering wheel and no passenger"),
 		Plane.Type == EMantleChassisType::Plane && Plane.Aircraft.bSet && Plane.DriverSeat == TEXT("pilot") && !Plane.bSteeringWheel && !Plane.bPassenger);
 	TestEqual(TEXT("the preset's cruise throttle, the share of thrust level flight at cruise speed needs (schema/validate.py holds it to the arithmetic)"),
-		Plane.Aircraft.CruiseThrottle, 0.37);
-	TestEqual(TEXT("and the speed it is trimmed for, 70 m/s"), Plane.Aircraft.CruiseSpeedCmPerSec, 7000.0);
+		Plane.Aircraft.CruiseThrottle, 0.5077);
+	TestEqual(TEXT("and the speed it is trimmed for, 120 m/s"), Plane.Aircraft.CruiseSpeedCmPerSec, 12000.0);
 	// A resized plane's trim is solved again (its weight, wings and thrust no longer follow the preset's): a share of the thrust that is not the preset's own.
-	TestTrue(TEXT("a resized plane's cruise throttle is its own, not the preset's"), FMath::Abs(FMantleChassisSpec::Scaled(Plane, 1.15).Aircraft.CruiseThrottle - 0.37) > 1.0e-3);
+	TestTrue(TEXT("a resized plane's cruise throttle is its own, not the preset's"), FMath::Abs(FMantleChassisSpec::Scaled(Plane, 1.15).Aircraft.CruiseThrottle - 0.5077) > 1.0e-3);
 	TestEqual(TEXT("the type's name"), FString(FMantleChassisSpec::TypeName(Plane.Type)), FString(TEXT("plane")));
 	EMantleChassisType Parsed = EMantleChassisType::Car;
 	TestTrue(TEXT("and it parses back"), FMantleChassisSpec::ParseType(TEXT("plane"), Parsed) && Parsed == EMantleChassisType::Plane);
@@ -176,8 +177,8 @@ bool FMantleChassisPlaneAirframeTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("and a twin's"), FMantleVehicleChassisBuilder::PropellerBoneName(1, 2), FName(TEXT("propeller_r")));
 
 	// Where each hinges: at the aerofoil it turns, which is where the lift acts.
-	TestTrue(TEXT("the left aileron hinges at the middle of the left half-wing's quarter-chord line"), Same(Asset.Body.ReferencePose[4].GetLocation(), FVector(-156.0, -362.5, 252.0)));
-	TestTrue(TEXT("and the right across from it"), Same(Asset.Body.ReferencePose[5].GetLocation(), FVector(-156.0, 362.5, 252.0)));
+	TestTrue(TEXT("the left aileron hinges at the middle of the left half-wing's quarter-chord line"), Same(Asset.Body.ReferencePose[4].GetLocation(), FVector(-156.0, -282.0, 252.0)));
+	TestTrue(TEXT("and the right across from it"), Same(Asset.Body.ReferencePose[5].GetLocation(), FVector(-156.0, 282.0, 252.0)));
 	TestTrue(TEXT("the elevator hinges at the elevator's aerofoil"), Same(Asset.Body.ReferencePose[6].GetLocation(), Plane.ElevatorLocation()));
 	TestTrue(TEXT("the rudder at the rudder's"), Same(Asset.Body.ReferencePose[7].GetLocation(), Plane.RudderLocation()));
 	TestTrue(TEXT("the propeller at its hub"), Same(Asset.Body.ReferencePose[8].GetLocation(), Plane.PropellerHub(0)));
@@ -185,7 +186,7 @@ bool FMantleChassisPlaneAirframeTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the rudder is the middle of the fin, over the fuselage"), Same(Plane.RudderLocation(), FVector(-797.5, 0.0, 380.0)));
 	TestTrue(TEXT("the hub is ahead of the nose, at the fuselage's middle height"), Same(Plane.PropellerHub(0), FVector(250.0, 0.0, 200.0)));
 	TestTrue(TEXT("the wing's two aerofoils are 70 percent of the half-span out, level with the wing"),
-		Same(Plane.WingAerofoilLocation(false), FVector(-156.0, -507.5, 252.0)) && Same(Plane.WingAerofoilLocation(true), FVector(-156.0, 507.5, 252.0)));
+		Same(Plane.WingAerofoilLocation(false), FVector(-156.0, -394.8, 252.0)) && Same(Plane.WingAerofoilLocation(true), FVector(-156.0, 394.8, 252.0)));
 	const FMantleChassisBlock LeftHalf = Plane.HalfWingBlock(false);
 	const FMantleChassisBlock RightHalf = Plane.HalfWingBlock(true);
 	TestTrue(TEXT("each aerofoil is inside its half-wing's block"),
@@ -270,7 +271,7 @@ bool FMantleChassisPlaneAirframeTest::RunTest(const FString& Parameters)
 			Max = FVector(FMath::Max(Max.X, Point.X), FMath::Max(Max.Y, Point.Y), FMath::Max(Max.Z, Point.Z));
 		}
 		TestTrue(TEXT("it reaches the wing tips, the tail, the fin's top and the propeller's hub"),
-			FMath::IsNearlyEqual(Min.Y, -725.0, 1.0e-3) && FMath::IsNearlyEqual(Max.Y, 725.0, 1.0e-3) && FMath::IsNearlyEqual(Min.X, -910.0, 1.0e-3)
+			FMath::IsNearlyEqual(Min.Y, -564.0, 1.0e-3) && FMath::IsNearlyEqual(Max.Y, 564.0, 1.0e-3) && FMath::IsNearlyEqual(Min.X, -910.0, 1.0e-3)
 			&& FMath::IsNearlyEqual(Max.Z, 480.0, 1.0e-3) && FMath::IsNearlyEqual(Max.X, 253.0, 1.0e-3));
 	}
 	return true;
@@ -301,7 +302,7 @@ bool FMantleChassisPlaneTwinTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("propeller_l and propeller_r, and no propeller"),
 		BoneIndex(Asset, TEXT("propeller_l")) != INDEX_NONE && BoneIndex(Asset, TEXT("propeller_r")) != INDEX_NONE && BoneIndex(Asset, TEXT("propeller")) == INDEX_NONE);
 	TestTrue(TEXT("the hubs are a third of the half-span out, the left on -Y, level with the fuselage's middle"),
-		Same(Plane.PropellerHub(0), FVector(250.0, -1450.0 / 6.0, 200.0)) && Same(Plane.PropellerHub(1), FVector(250.0, 1450.0 / 6.0, 200.0)));
+		Same(Plane.PropellerHub(0), FVector(250.0, -1128.0 / 6.0, 200.0)) && Same(Plane.PropellerHub(1), FVector(250.0, 1128.0 / 6.0, 200.0)));
 	const int32 Left = BoneIndex(Asset, TEXT("propeller_l"));
 	const int32 Right = BoneIndex(Asset, TEXT("propeller_r"));
 	if (Left != INDEX_NONE && Right != INDEX_NONE)
@@ -327,7 +328,7 @@ bool FMantleChassisPlaneRefusalsTest::RunTest(const FString& Parameters)
 	FString Plane;
 	FString Sedan;
 	FString Error;
-	if (!TestTrue(TEXT("the presets read"), FMantleVehicleChassisBuilder::LoadPresetText(TEXT("plane"), Plane, Error) && FMantleVehicleChassisBuilder::LoadPresetText(TEXT("sedan"), Sedan, Error)))
+	if (!TestTrue(TEXT("the presets read"), FMantleVehicleChassisBuilder::LoadPresetText(TEXT("warbird"), Plane, Error) && FMantleVehicleChassisBuilder::LoadPresetText(TEXT("sedan"), Sedan, Error)))
 	{
 		return false;
 	}
@@ -345,7 +346,7 @@ bool FMantleChassisPlaneRefusalsTest::RunTest(const FString& Parameters)
 	Refused(TEXT("a plane in a car's seat"), Plane.Replace(TEXT("\"driver\": \"pilot\""), TEXT("\"driver\": \"car\"")), TEXT("steeringWheel"));
 	Refused(TEXT("a plane with three engines"), Plane.Replace(TEXT("\"count\": 1"), TEXT("\"count\": 3")), TEXT("engines.count"));
 	Refused(TEXT("a plane with no fin"), Plane.Replace(TEXT("\"fin\":"), TEXT("\"stabiliser\":")), TEXT("fin"));
-	Refused(TEXT("a plane whose surfaces do not stall"), Plane.Replace(TEXT("\"stallAngle\": 20"), TEXT("\"stallAngle\": 0")), TEXT("stallAngle"));
+	Refused(TEXT("a plane whose surfaces do not stall"), Plane.Replace(TEXT("\"stallAngle\": 16"), TEXT("\"stallAngle\": 0")), TEXT("stallAngle"));
 	Refused(TEXT("a plane with no pilot's controls"), Plane.Replace(TEXT("\"controls\":"), TEXT("\"hands\":")), TEXT("controls"));
 	return true;
 }
@@ -367,8 +368,9 @@ bool FMantleChassisJetSpecTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("a plane with an airframe and a pilot's seat, no steering wheel and no passenger"),
 		Jet.Type == EMantleChassisType::Plane && Jet.Aircraft.bSet && Jet.DriverSeat == TEXT("pilot") && !Jet.bSteeringWheel && !Jet.bPassenger);
 	TestTrue(TEXT("no propeller: its engine is a jet, with no blades to draw or spin"), !Jet.Aircraft.bPropeller && Jet.Aircraft.PropellerRadius == 0.0 && Jet.Aircraft.PropellerRpm == 0.0);
-	TestTrue(TEXT("one engine of 100 kN"), Jet.Aircraft.EngineCount == 1 && Jet.Aircraft.EngineThrustNewtons == 100000.0);
-	TestEqual(TEXT("its cruise throttle, the share of thrust level flight at 120 m/s needs (schema/validate.py holds it to the arithmetic)"), Jet.Aircraft.CruiseThrottle, 0.255);
+	TestTrue(TEXT("one engine of 76.3 kN dry, 131 kN with the afterburner"), Jet.Aircraft.EngineCount == 1 && Jet.Aircraft.EngineThrustNewtons == 76300.0
+		&& Jet.Aircraft.AfterburnerNewtons == 131000.0 && Jet.Aircraft.SpoolTime == 3.5);
+	TestEqual(TEXT("its cruise throttle, the share of thrust level flight at 120 m/s needs (schema/validate.py holds it to the arithmetic)"), Jet.Aircraft.CruiseThrottle, 0.3042);
 	TestEqual(TEXT("its air-speed limit, 250 m/s"), Jet.Aircraft.AirSpeedLimitCmPerSec, 25000.0);
 	TestEqual(TEXT("tricycle gear: three wheels"), Jet.WheelCount(), 3);
 
@@ -391,7 +393,7 @@ bool FMantleChassisJetSpecTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("its nozzle is 1.3 times as far back, still behind its tail"),
 		FMath::IsNearlyEqual(Bigger.NozzleLocation(0).X, -1300.0, 1.0e-6) && Bigger.NozzleLocation(0).X < Bigger.BodyBlock().Min.X);
 	TestEqual(TEXT("and the speed it is trimmed for, 120 m/s"), Bigger.Aircraft.CruiseSpeedCmPerSec, 12000.0);
-	TestTrue(TEXT("its cruise throttle is solved again for its own size"), FMath::Abs(Bigger.Aircraft.CruiseThrottle - 0.255) > 1.0e-3);
+	TestTrue(TEXT("its cruise throttle is solved again for its own size"), FMath::Abs(Bigger.Aircraft.CruiseThrottle - 0.3042) > 1.0e-3);
 
 	// The plane is as it was: its engine turns a propeller at the nose, and pushes from the hub.
 	FMantleChassisSpec Plane;
@@ -441,7 +443,7 @@ bool FMantleChassisJetAirframeTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("and a twin's left one"), FMantleVehicleChassisBuilder::NozzleBoneName(0, 2), FName(TEXT("nozzle_l")));
 	TestEqual(TEXT("the jet's engine bone is the nozzle"), FMantleVehicleChassisBuilder::EngineBoneName(Jet.Aircraft, 0), FName(TEXT("nozzle")));
 	TestTrue(TEXT("the ailerons hinge at the middle of each half-wing's quarter-chord line"),
-		Same(Asset.Body.ReferencePose[4].GetLocation(), FVector(-215.0, -245.0, 200.0)) && Same(Asset.Body.ReferencePose[5].GetLocation(), FVector(-215.0, 245.0, 200.0)));
+		Same(Asset.Body.ReferencePose[4].GetLocation(), FVector(-215.0, -236.25, 200.0)) && Same(Asset.Body.ReferencePose[5].GetLocation(), FVector(-215.0, 236.25, 200.0)));
 	TestTrue(TEXT("the elevator and the rudder at their aerofoils"),
 		Same(Asset.Body.ReferencePose[6].GetLocation(), FVector(-835.0, 0.0, 215.0)) && Same(Asset.Body.ReferencePose[7].GetLocation(), FVector(-800.0, 0.0, 440.0)));
 	TestTrue(TEXT("the nozzle bone at the nozzle's exit, behind the fuselage"),

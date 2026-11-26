@@ -53,6 +53,8 @@
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "ReferenceSkeleton.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
 #include "Sound/SoundBase.h"
 #include "UObject/Package.h"
 
@@ -91,6 +93,26 @@ namespace MantleVehicleConverterPrivate
 			Out[Joint] = Parent >= 0 && Parent < Joint ? Mesh.Joints[Joint].Local * Out[Parent] : Mesh.Joints[Joint].Local;
 		}
 		return Out;
+	}
+
+	/**
+	 * A tracked vehicle's tracks as its Movement Blocks hold them (#448): the tracked block's numbers, each absent one the document's default. False when the
+	 * blocks do not read or have no tracked block with the tracks' width (which a document must give).
+	 */
+	bool VehicleTrackedBlock(const UMantleVehicleSource& Source, FMantleVehicleTrackedDesc& Out)
+	{
+		Out = FMantleVehicleTrackedDesc();
+		TSharedPtr<FJsonObject> Blocks;
+		const TSharedPtr<FJsonObject>* Tracked = nullptr;
+		if (Source.MovementBlocks.IsEmpty() || !FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Source.MovementBlocks), Blocks) || !Blocks.IsValid()
+			|| !Blocks->TryGetObjectField(TEXT("tracked"), Tracked) || !Tracked || !Tracked->IsValid())
+		{
+			return false;
+		}
+		(*Tracked)->TryGetNumberField(TEXT("pivotTrackSpeed"), Out.PivotTrackSpeed);
+		(*Tracked)->TryGetNumberField(TEXT("lateralShare"), Out.LateralShare);
+		(*Tracked)->TryGetNumberField(TEXT("padPitch"), Out.PadPitch);
+		return (*Tracked)->TryGetNumberField(TEXT("trackWidth"), Out.TrackWidth);
 	}
 
 	/** 0.3 as "0.3": rounded to 4 decimals, trailing zeros dropped, so the same vehicle always writes the same bytes. */
@@ -1434,12 +1456,16 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 
 	FString WheelsHow;
 	const TArray<FMantleVehicleWheelBone> Wheels = FindWheelBones(Skeleton, Around.WheelSetups, &WheelsHow);
-	if (Wheels.Num() < FMantleVehicleLimits::MinWheels || Wheels.Num() > FMantleVehicleLimits::MaxWheels)
+	// A tracked vehicle's wheels are its road wheels (#448): 3 to 10 on each side, none of them steered, so it has more than a car and no front to steer with.
+	const bool bTracked = Source.MovementType == EMantleVehicleMovementKind::Tracked;
+	const int32 MinWheelCount = bTracked ? 2 * FMantleVehicleLimits::MinTrackRoadWheelsPerSide : FMantleVehicleLimits::MinWheels;
+	const int32 MaxWheelCount = bTracked ? FMantleVehicleLimits::MaxTrackedWheels : FMantleVehicleLimits::MaxWheels;
+	if (Wheels.Num() < MinWheelCount || Wheels.Num() > MaxWheelCount)
 	{
 		Result.Problems.Add(FString::Printf(TEXT("%s has %d wheels (%s), but a vehicle has %d to %d. Name each wheel so its name contains \"wheel\" and its corner, such as Wheel_FL, Wheel_FR, Wheel_BL and Wheel_BR (_ML/_MR for a middle axle), FLWheel or wheel_front_l and wheel_rear_r, and re-import it."),
-			*Name, Wheels.Num(), *VehicleBoneList(Wheels), FMantleVehicleLimits::MinWheels, FMantleVehicleLimits::MaxWheels));
+			*Name, Wheels.Num(), *VehicleBoneList(Wheels), MinWheelCount, MaxWheelCount));
 	}
-	else if (!Wheels.ContainsByPredicate([](const FMantleVehicleWheelBone& Wheel) { return Wheel.Axle == 0; }))
+	else if (!bTracked && !Wheels.ContainsByPredicate([](const FMantleVehicleWheelBone& Wheel) { return Wheel.Axle == 0; }))
 	{
 		Result.Problems.Add(FString::Printf(TEXT("%s has no front wheels to steer with (the wheels found: %s). Name the front wheels so their names end in _FL and _FR, and re-import it."),
 			*Name, *VehicleBoneList(Wheels)));
@@ -1558,6 +1584,13 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 			Entry.bSteering = Wheel.Axle == 0;
 			Entry.bDriven = Wheel.Axle > 0 || !bHasBack;
 			Entry.bHandbrake = LastAxle > 0 && Wheel.Axle == LastAxle;
+		}
+		if (bTracked)
+		{
+			// A road wheel: never steered, driven by its belt and locked with its track by the handbrake, whatever was set before.
+			Entry.bSteering = false;
+			Entry.bDriven = true;
+			Entry.bHandbrake = true;
 		}
 		Entry.Bone = Wheel.Bone;
 		NewWheels.Add(Entry);
@@ -4007,16 +4040,24 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 	{
 		Tires->SetField(TEXT("rearFriction"), VehicleNumber(T.TireRearFriction));
 	}
+	// Rolling resistance (#447, #448): only when it is not what its absence means (a car tire's), so a car's document is what it was before the key.
+	if (!FMath::IsNearlyEqual(static_cast<double>(T.TireRollingResistance), FMantleVehicleDesc().TiresRollingResistance, 1.0e-6))
+	{
+		Tires->SetField(TEXT("rollingResistance"), VehicleNumber(T.TireRollingResistance));
+	}
 	Doc->SetObjectField(TEXT("tires"), Tires);
 
+	// A tracked vehicle's wheels are its road wheels (#448): none steers (it turns by its tracks' speeds), the belt drives every one and the handbrake locks
+	// the whole track, whatever the wheel detection or the creator set on a wheel.
+	const bool bRoadWheels = Source.MovementType == EMantleVehicleMovementKind::Tracked;
 	TArray<TSharedPtr<FJsonValue>> Wheels;
 	for (const FMantleVehicleSourceWheel& Wheel : Source.Wheels)
 	{
 		TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
 		Entry->SetStringField(TEXT("bone"), Wheel.Bone.ToString());
-		Entry->SetBoolField(TEXT("steering"), Wheel.bSteering);
-		Entry->SetBoolField(TEXT("driven"), Wheel.bDriven);
-		Entry->SetBoolField(TEXT("handbrake"), Wheel.bHandbrake);
+		Entry->SetBoolField(TEXT("steering"), bRoadWheels ? false : Wheel.bSteering);
+		Entry->SetBoolField(TEXT("driven"), bRoadWheels ? true : Wheel.bDriven);
+		Entry->SetBoolField(TEXT("handbrake"), bRoadWheels ? true : Wheel.bHandbrake);
 		if (Wheel.Radius > 0.f)
 		{
 			Entry->SetField(TEXT("radius"), VehicleNumber(Wheel.Radius));
@@ -4684,6 +4725,7 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 	VehicleCheckRange(Subject, TEXT("Handbrake Torque"), TEXT("brakes/handbrakeTorque"), T.HandbrakeTorque, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Brake Front Share"), TEXT("brakes/frontShare"), T.BrakeFrontShare, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Tire Friction"), TEXT("tires/friction"), T.TireFriction, OutIssues);
+	VehicleCheckRange(Subject, TEXT("Tire Rolling Resistance"), TEXT("tires/rollingResistance"), T.TireRollingResistance, OutIssues);
 	if (T.bSeatLocation)
 	{
 		for (int32 Axis = 0; Axis < 3; ++Axis)
@@ -4912,9 +4954,33 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 		}
 	}
 
-	// The wheels.
+	// The wheels. A tracked vehicle's are its road wheels (#448): 3 to 10 on each track, none steered (the document writes them as road wheels whatever
+	// the asset's rows say), so it has more than a car may and no steered wheel.
 	const int32 NumWheels = Source->Wheels.Num();
-	if (NumWheels < FMantleVehicleLimits::MinWheels || NumWheels > FMantleVehicleLimits::MaxWheels)
+	const bool bTracked = Source->MovementType == EMantleVehicleMovementKind::Tracked;
+	if (bTracked)
+	{
+		if (NumWheels < 2 * FMantleVehicleLimits::MinTrackRoadWheelsPerSide || NumWheels > FMantleVehicleLimits::MaxTrackedWheels)
+		{
+			AddError(FString::Printf(TEXT("has %d road wheels; a tracked vehicle has %d to %d, %d to %d on each track."), NumWheels, 2 * FMantleVehicleLimits::MinTrackRoadWheelsPerSide,
+				FMantleVehicleLimits::MaxTrackedWheels, FMantleVehicleLimits::MinTrackRoadWheelsPerSide, FMantleVehicleLimits::MaxTrackRoadWheelsPerSide),
+				TEXT("Give each track its own row of road wheels, each wheel on a bone of its own, or edit Wheels."));
+		}
+		FMantleVehicleTrackedDesc Tracks;
+		if (VehicleTrackedBlock(*Source, Tracks))
+		{
+			VehicleCheckRange(Subject, TEXT("Pivot Track Speed"), TEXT("tracked/pivotTrackSpeed"), Tracks.PivotTrackSpeed, OutIssues);
+			VehicleCheckRange(Subject, TEXT("Lateral Share"), TEXT("tracked/lateralShare"), Tracks.LateralShare, OutIssues);
+			VehicleCheckRange(Subject, TEXT("Track Width"), TEXT("tracked/trackWidth"), Tracks.TrackWidth, OutIssues);
+			VehicleCheckRange(Subject, TEXT("Pad Pitch"), TEXT("tracked/padPitch"), Tracks.PadPitch, OutIssues);
+		}
+		else
+		{
+			AddError(TEXT("is a tracked vehicle, but its Movement Blocks have no tracks (a tracked block with the tracks' width)."),
+				TEXT("Build the vehicle again from a tank or bulldozer in the Build a vehicle window."));
+		}
+	}
+	else if (NumWheels < FMantleVehicleLimits::MinWheels || NumWheels > FMantleVehicleLimits::MaxWheels)
 	{
 		AddError(FString::Printf(TEXT("has %d wheels; a vehicle has %d to %d."), NumWheels, FMantleVehicleLimits::MinWheels, FMantleVehicleLimits::MaxWheels),
 			TEXT("Run Convert Vehicle on its body to find the wheel bones, or edit Wheels."));
@@ -4948,11 +5014,11 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 			VehicleCheckRange(Subject, FString::Printf(TEXT("%s's Width"), *Wheel.Bone.ToString()), TEXT("wheels/*/width"), Wheel.Width, OutIssues);
 		}
 	}
-	if (NumWheels > 0 && Driven == 0)
+	if (NumWheels > 0 && Driven == 0 && !bTracked)
 	{
 		AddError(TEXT("has no driven wheel."), TEXT("Tick Driven on at least one wheel."));
 	}
-	if (NumWheels > 0 && Steered == 0)
+	if (NumWheels > 0 && Steered == 0 && !bTracked)
 	{
 		AddError(TEXT("has no steering wheel."), TEXT("Tick Steering on at least one wheel (usually the front ones)."));
 	}
@@ -5234,6 +5300,77 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 		if (bMeasured && Wheel.Width <= 0.f)
 		{
 			VehicleCheckRange(Subject, FString::Printf(TEXT("%s's measured width"), *Wheel.Bone.ToString()), TEXT("wheels/*/width"), Width, OutIssues);
+		}
+	}
+
+	// A tracked vehicle's two tracks (#448), as the cook and the game hold them (FMantleVehicleAssetReader::CheckTrackedLayout) against the body's bones: each
+	// road wheel is on the track of its side (the sign of its bone's rest Y), each track has 3 to 10, and it can turn on the spot.
+	if (bTracked)
+	{
+		const TArray<FTransform> TrackPose = VehicleJointPose(Body);
+		FMantleVehicleTrackedDesc Tracks;
+		VehicleTrackedBlock(*Source, Tracks);
+		int32 Count[2] = { 0, 0 };
+		double SumAbsY[2] = { 0.0, 0.0 };
+		double MinX = TNumericLimits<double>::Max();
+		double MaxX = -TNumericLimits<double>::Max();
+		double SumRadius = 0.0;
+		int32 Placed = 0;
+		bool bOnCenterline = false;
+		for (const FMantleVehicleSourceWheel& Wheel : Source->Wheels)
+		{
+			const int32 Joint = FMantleVehicleConverter::JointIndex(Body, Wheel.Bone);
+			if (!TrackPose.IsValidIndex(Joint))
+			{
+				// Said above: the body does not have the wheel's bone.
+				continue;
+			}
+			const FVector Position = TrackPose[Joint].GetLocation();
+			if (FMath::Abs(Position.Y) < FMantleVehicleLimits::TrackSideMinOffset)
+			{
+				bOnCenterline = true;
+				AddError(FString::Printf(TEXT("has road wheel %s on its middle line (%s cm from it), so it is on neither track."), *Wheel.Bone.ToString(), *VehicleNumberText(Position.Y)),
+					FString::Printf(TEXT("Move the wheel's bone at least %s cm to the left or the right, onto its track."), *VehicleNumberText(FMantleVehicleLimits::TrackSideMinOffset)));
+				continue;
+			}
+			double Radius = Wheel.Radius;
+			double Width = 0.0;
+			if (!(Radius > 0.0) && !MeasureWheel(Body, Wheel.Bone, Radius, Width))
+			{
+				Radius = 0.0;
+			}
+			const int32 Side = Position.Y < 0.0 ? 0 : 1;
+			++Count[Side];
+			SumAbsY[Side] += FMath::Abs(Position.Y);
+			MinX = FMath::Min(MinX, Position.X);
+			MaxX = FMath::Max(MaxX, Position.X);
+			SumRadius += Radius;
+			++Placed;
+		}
+		bool bSidesFit = !bOnCenterline;
+		for (int32 Side = 0; Side < 2; ++Side)
+		{
+			if (Count[Side] < FMantleVehicleLimits::MinTrackRoadWheelsPerSide || Count[Side] > FMantleVehicleLimits::MaxTrackRoadWheelsPerSide)
+			{
+				bSidesFit = false;
+				AddError(FString::Printf(TEXT("has %d road wheels on its %s track; each track has %d to %d."), Count[Side], Side == 0 ? TEXT("left") : TEXT("right"),
+					FMantleVehicleLimits::MinTrackRoadWheelsPerSide, FMantleVehicleLimits::MaxTrackRoadWheelsPerSide),
+					TEXT("Give each track its own row of 3 to 10 road wheels: a wheel is on the left track when its bone is left of the middle line (-Y), else on the right."));
+			}
+		}
+		// Turning on the spot: past contact length / gauge x lateral share = 2 the tracks' sideways grip holds it straight (the cook's rule).
+		if (bSidesFit && Placed > 0)
+		{
+			const double Gauge = SumAbsY[0] / Count[0] + SumAbsY[1] / Count[1];
+			const double ContactLength = (MaxX - MinX) + SumRadius / Placed;
+			const double TurnRatio = Gauge > 0.0 ? ContactLength / Gauge * Tracks.LateralShare : TNumericLimits<double>::Max();
+			if (TurnRatio >= FMantleVehicleLimits::TrackedMaxTurnRatio)
+			{
+				AddError(FString::Printf(TEXT("can't turn on the spot: its tracks are too long for how far apart they are (%s cm of track on the ground over %s cm between the tracks, times Lateral Share %s, is %s; it must be under %s)."),
+					*VehicleNumberText(FMath::RoundToDouble(ContactLength)), *VehicleNumberText(FMath::RoundToDouble(Gauge)), *VehicleNumberText(Tracks.LateralShare),
+					*VehicleNumberText(FMath::RoundToDouble(TurnRatio * 100.0) / 100.0), *VehicleNumberText(FMantleVehicleLimits::TrackedMaxTurnRatio)),
+					TEXT("Move the tracks further apart, bring the first and last road wheels closer together, or lower the Lateral Share."));
+			}
 		}
 	}
 

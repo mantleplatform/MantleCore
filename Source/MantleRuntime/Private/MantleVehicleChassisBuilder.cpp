@@ -197,6 +197,21 @@ FName FMantleVehicleChassisBuilder::TailRotorBoneName()
 	return FName(TEXT("tail_rotor"));
 }
 
+FName FMantleVehicleChassisBuilder::TrackSectionName()
+{
+	return FName(TEXT("Track"));
+}
+
+const TCHAR* FMantleVehicleChassisBuilder::TrackMaterialId()
+{
+	return TEXT("ast_mat_track");
+}
+
+FName FMantleVehicleChassisBuilder::HandlebarBoneName()
+{
+	return FName(TEXT("handlebar"));
+}
+
 FString FMantleVehicleChassisBuilder::PresetDirectory()
 {
 #if MANTLE_RUNTIME_IN_GAME
@@ -399,12 +414,25 @@ bool FMantleVehicleChassisBuilder::MakeAsset(const FMantleChassisSpec& Spec, FMa
 		Body.Bones.Add({ TailRotorBoneName(), 0 });
 		Body.ReferencePose.Add(FTransform(Spec.TailRotorHub()));
 	}
+	// A jet ski's handlebar: a bone under the root at the steering wheel's hub, which the steering turns about the column, with the rider's grips on it.
+	int32 HandlebarBone = INDEX_NONE;
+	if (Spec.Type == EMantleChassisType::JetSki)
+	{
+		HandlebarBone = Body.Bones.Num();
+		Body.Bones.Add({ HandlebarBoneName(), 0 });
+		Body.ReferencePose.Add(FTransform(Spec.Hub));
+	}
 	Asset.RootBoneTransform = FTransform::Identity;
 
 	// The bones the movement blocks name are the body's, the posed ones free of the wheels (the check Read makes of a published body).
 	if (!FMantleVehicleAssetReader::ResolveMovementBones(Asset.Desc, Body.Bones, Why))
 	{
 		return Refuse(OutError, FString::Printf(TEXT("the chassis's vehicle document does not fit its body: %s"), *Why));
+	}
+	// A tracked chassis's road wheels make two tracks it can turn on (the check Read makes of a published body's wheel bones).
+	if (!FMantleVehicleAssetReader::CheckTrackedLayout(Asset.Desc, Asset.WheelPositions, Why))
+	{
+		return Refuse(OutError, FString::Printf(TEXT("the chassis's road wheels do not make two tracks: %s"), *Why));
 	}
 
 	// The gray shapes: the body box on the root, a cylinder on each wheel bone.
@@ -454,6 +482,16 @@ bool FMantleVehicleChassisBuilder::MakeAsset(const FMantleChassisSpec& Spec, FMa
 	{
 		const FMantleChassisBlock Drive = Spec.BoatDriveBlock();
 		Shapes.AddBox(FVector3f(Drive.Min), FVector3f(Drive.Max), 0);
+	}
+	// A jet ski's handlebar on its bone: the bar from grip to grip and the column down from the hub, so both turn with the steering.
+	if (HandlebarBone != INDEX_NONE)
+	{
+		const FVector Left = Spec.Rider.LeftGrip;
+		const FVector Right = Spec.Rider.RightGrip;
+		const FVector BarMin(FMath::Min(Left.X, Right.X) - 1.5, FMath::Min(Left.Y, Right.Y), FMath::Min(Left.Z, Right.Z) - 1.5);
+		const FVector BarMax(FMath::Max(Left.X, Right.X) + 1.5, FMath::Max(Left.Y, Right.Y), FMath::Max(Left.Z, Right.Z) + 1.5);
+		Shapes.AddBox(FVector3f(BarMin), FVector3f(BarMax), HandlebarBone);
+		Shapes.AddBox(FVector3f(Spec.Hub + FVector(-3.0, -3.0, -20.0)), FVector3f(Spec.Hub + FVector(3.0, 3.0, 0.0)), HandlebarBone);
 	}
 	// A helicopter's: the mast, the tail boom, the fin and the skids on the root, a cross of blades on each rotor's bone.
 	if (Spec.Helicopter.bSet)
@@ -523,11 +561,43 @@ bool FMantleVehicleChassisBuilder::MakeAsset(const FMantleChassisSpec& Spec, FMa
 			}
 		}
 	}
+	// A tracked vehicle's: the turret on the hull's top and the blade in front, on the root. Its road wheels are drawn above as any wheels.
+	if (Spec.Tracked.bSet)
+	{
+		if (Spec.Tracked.bTurret)
+		{
+			const FMantleChassisBlock Turret = Spec.TurretBlock();
+			Shapes.AddBox(FVector3f(Turret.Min), FVector3f(Turret.Max), 0);
+		}
+		if (Spec.Tracked.bBlade)
+		{
+			const FMantleChassisBlock Blade = Spec.BladeBlock();
+			Shapes.AddBox(FVector3f(Blade.Min), FVector3f(Blade.Max), 0);
+		}
+	}
 	FMantleSkinnedMeshSection& Section = LOD.Sections.AddDefaulted_GetRef();
 	Section.MaterialIndex = 0;
 	Section.FirstIndex = 0;
 	Section.IndexCount = LOD.Indices.Num();
 	Section.MaterialName = FName(SectionName);
+	// The two tracks last, in a section of their own drawn with Mantle's track material, whose pattern the vehicle scrolls with each belt's speed: one box
+	// along each side's road wheels, on the root (the gray chassis's belt does not flex; a creator's model skins its belt to the road wheels).
+	if (Spec.Tracked.bSet)
+	{
+		const int32 TrackFirstIndex = LOD.Indices.Num();
+		for (const bool bRight : { false, true })
+		{
+			const FMantleChassisBlock Track = Spec.TrackBlock(bRight);
+			Shapes.AddBox(FVector3f(Track.Min), FVector3f(Track.Max), 0);
+		}
+		FMantleSkinnedMeshSection& TrackSection = LOD.Sections.AddDefaulted_GetRef();
+		TrackSection.MaterialIndex = 1;
+		TrackSection.FirstIndex = TrackFirstIndex;
+		TrackSection.IndexCount = LOD.Indices.Num() - TrackFirstIndex;
+		TrackSection.MaterialName = TrackSectionName();
+		// A built-in material, as a creator names one (ast_mat_rubber and the like): it ships in the client, so nothing downloads for it.
+		Asset.Desc.Materials.Add(TrackSectionName().ToString(), TrackMaterialId());
+	}
 	if (!Body.Validate(Why))
 	{
 		return Refuse(OutError, FString::Printf(TEXT("the chassis's body is not valid: %s"), *Why));

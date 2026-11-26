@@ -238,9 +238,8 @@ bool FMantleChassisDeriveExactAtArchetypeTest::RunTest(const FString& Parameters
 			TestEqual(*FString::Printf(TEXT("%s: the derived document is the preset's"), *Id), FirstDifference(DerivedInDocument, InDocument), FString());
 		}
 	}
-	// One bit per type (EMantleChassisType's order): car, truck, motorcycle, plane, helicopter, hovercraft, boat, jet ski (no preset yet) and
-	// trailer (#446).
-	TestEqual(TEXT("the presets are cars, trucks, a motorcycle, planes, a helicopter, a hovercraft, a boat and trailers"), TypesSeen, 383);
+	// One bit per type (EMantleChassisType's order): car, truck, motorcycle, plane, helicopter, hovercraft, tracked, boat, jet ski and trailer (#446).
+	TestEqual(TEXT("the presets are cars, trucks, a motorcycle, planes, helicopters, a hovercraft, tracked vehicles, a boat, a jet ski and trailers"), TypesSeen, 1023);
 	return true;
 }
 
@@ -460,8 +459,8 @@ bool FMantleChassisDeriveIsDeterministicTest::RunTest(const FString& Parameters)
 	// however often, in whatever order, and from however many separate reads of the preset.
 	const FString Selectors[] = { TEXT("sedan@0.7"), TEXT("sedan@1.6"), TEXT("sports@0.5"), TEXT("pickup@1.3"), TEXT("truck@0.7"), TEXT("sixwheeler@1.3"), TEXT("van@0.5"),
 		TEXT("limousine@1.6"), TEXT("motorcycle@0.7"), TEXT("motorcycle@1.3"), TEXT("plane@0.7"), TEXT("plane@1.3"), TEXT("plane@2.5"), TEXT("muscle@0.7"), TEXT("drift@1.3"),
-		TEXT("compact@0.7"), TEXT("supercar@1.3"), TEXT("offroad@1.3"), TEXT("bus@0.8"), TEXT("atv@1.3"), TEXT("semi@0.7"), TEXT("semitrailer@1.2"),
-		TEXT("utilitytrailer@1.3") };
+		TEXT("compact@0.7"), TEXT("supercar@1.3"), TEXT("offroad@1.3"), TEXT("bus@0.8"), TEXT("atv@1.3"),
+		TEXT("tank@0.7"), TEXT("tank@1.3"), TEXT("bulldozer@0.5"), TEXT("bulldozer@1.3"), TEXT("semi@0.7"), TEXT("semitrailer@1.2"), TEXT("utilitytrailer@1.3") };
 	for (const FString& Selector : Selectors)
 	{
 		FMantleChassisSpec A;

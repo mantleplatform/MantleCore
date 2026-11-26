@@ -63,7 +63,8 @@ struct FMantleDimensionRange
 /**
  * How a vehicle type is shaped and described in the window (#821 M5). A ground vehicle (a car, a truck, a motorcycle) is shaped by its eight
  * sizes. The others are shaped by one Size, which grows the whole vehicle together through FMantleChassisSpec::Scaled, because a wing, a rotor or a
- * fan is sized for the weight it lifts and moving one of its parts on its own would leave the vehicle out of trim.
+ * fan is sized for the weight it lifts and moving one of its parts on its own would leave the vehicle out of trim, and a tracked vehicle's tracks
+ * turn it on the spot only while they are short enough for how far apart they are, so moving its wheelbase or its track alone could leave it unable to.
  */
 enum class EMantleVehicleFamily : uint8
 {
@@ -75,6 +76,8 @@ enum class EMantleVehicleFamily : uint8
 	Helicopter,
 	/** A hovercraft: Size and a top-speed feel; weight, hover height and top speed. */
 	Hovercraft,
+	/** A tank or a bulldozer (#448): Size and the four feels; weight, top speed, how long a full turn on the spot takes and how hard it presses on the ground. */
+	Tracked,
 };
 
 /** The four feel sliders of FMantleChassisFeel (#793): how much grippier, stronger, stiffer or faster than the type's own a vehicle is, each up to 30 percent either way. */
@@ -111,6 +114,10 @@ struct FMantleVehicleSummary
 	double HoverThrottle = 0.0;
 	/** How high a hovercraft floats, cm. */
 	double HoverHeightCm = 0.0;
+	/** How long a tracked vehicle takes to turn a full circle on the spot, seconds: its tracks running opposite ways at their pivot speed. 0 when it cannot. */
+	double PivotSeconds = 0.0;
+	/** How hard a tracked vehicle presses on the ground, kg per square centimeter of its two tracks' contact. */
+	double GroundPressureKgCm2 = 0.0;
 };
 
 /**
@@ -157,7 +164,7 @@ struct MANTLEEDITOR_API FMantleVehicleShape
 	/** True for the types shaped by one Size (everything but the ground vehicles). */
 	static bool UsesSize(const FMantleChassisSpec& Spec) { return FamilyOf(Spec) != EMantleVehicleFamily::Ground; }
 
-	/** True for a type whose wheels are never drawn (a helicopter's skids and a hovercraft's pads): it has no wheel size to shape. */
+	/** True for a type whose wheels are never drawn (a helicopter's skids and a hovercraft's pads): it has no wheel size to shape. A tracked vehicle's road wheels are drawn. */
 	static bool WheelsHidden(const FMantleChassisSpec& Spec);
 
 	/**
@@ -172,6 +179,21 @@ struct MANTLEEDITOR_API FMantleVehicleShape
 	 * drag and the rigid body's damping (schema/validate.py _hovercraft_top_speed). 0 for anything that is not a hovercraft.
 	 */
 	static double HoverTopSpeedKmh(const FMantleChassisSpec& Spec);
+
+	/**
+	 * How long a tracked vehicle takes to turn a full circle on the spot, seconds: 360 degrees over its turn rate, which is its tracks running opposite ways at
+	 * Tracked.PivotTrackSpeed about a gauge of the layout's track (2 x pivot speed / track, radians a second). 0 for anything that is not tracked.
+	 */
+	static double PivotSeconds(const FMantleChassisSpec& Spec);
+
+	/**
+	 * How hard a tracked vehicle presses on the ground, kg per square centimeter: its mass over its two tracks' contact, each Tracked.TrackWidth wide and as long as
+	 * the wheelbase plus a wheel radius (the first road wheel to the last, and the belt round half of each end wheel). 0 for anything that is not tracked.
+	 */
+	static double GroundPressureKgCm2(const FMantleChassisSpec& Spec);
+
+	/** One kg per square centimeter in kilopascals (kg x standard gravity over 1e-4 square meters, in thousands). */
+	static constexpr double KilopascalsPerKgCm2 = 98.0665;
 
 	/** The sizes of Spec. */
 	static FMantleVehicleDimensions DimensionsOf(const FMantleChassisSpec& Spec);
@@ -212,13 +234,15 @@ struct MANTLEEDITOR_API FMantleVehicleShape
 	/**
 	 * What Spec is like, from its handling (derived when shaped, hand-tuned when not). A ground vehicle: weight, turning circle and top speed. A plane:
 	 * weight, wing loading, take-off speed, and a top speed that is its air-speed limit. A helicopter: weight and hover throttle. A hovercraft: weight,
-	 * hover height and top speed.
+	 * hover height and top speed. A tracked vehicle: weight, top speed (its speed limit), the time for a full turn on the spot and its ground pressure.
 	 */
 	static FMantleVehicleSummary Summarize(const FMantleChassisSpec& Spec);
 
 	/**
 	 * The summary in a creator's words, the numbers of its Family. Ground: "Weighs about 1.6 metric tons. Turns in a circle about 8 m across. Top speed about
 	 * 160 km/h." Plane: "Weighs about 7 metric tons. Carries about 350 kg on each square meter of wing. Takes off at about 200 km/h. Top speed about 720 km/h."
+	 * Tracked: "Weighs about 55.2 metric tons. Top speed about 70 km/h. Turns a full circle on the spot in about 10 seconds. Presses on the ground with about
+	 * 0.83 kg on each square centimeter (81 kPa)."
 	 */
 	static FText Describe(const FMantleVehicleSummary& Summary);
 
@@ -248,7 +272,7 @@ struct MANTLEEDITOR_API FMantleVehicleShape
 	static FText PassengerHelp();
 
 	/**
-	 * What a flier needs to be test-driven, in one plain sentence for the Drive step: a plane or a jet needs a long flat open stretch (about 350 m, about 150 m) or a runway,
+	 * What a flier needs to be test-driven, in one plain sentence for the Drive step: a plane or a jet needs a long flat open stretch (about 375 m; a warbird 460 m) or a runway,
 	 * a helicopter needs open space above it. Empty for a vehicle that drives or floats.
 	 */
 	static FText DriveAdvice(const FMantleChassisSpec& Spec);
@@ -273,7 +297,7 @@ class MANTLEEDITOR_API FMantleVehicleShapeSession
 public:
 	/**
 	 * Starts from Archetype (a preset at its own size): its own sizes, nothing held. MinSize and MaxSize are the range of the uniform Size a plane,
-	 * helicopter or hovercraft is shaped by, the preset's own fit range (`fit.minScale` and `fit.maxScale`); 0 for either uses FMantleChassisSpec's.
+	 * helicopter, hovercraft or tracked vehicle is shaped by, the preset's own fit range (`fit.minScale` and `fit.maxScale`); 0 for either uses FMantleChassisSpec's.
 	 */
 	void Start(const FMantleChassisSpec& InArchetype, double InMinSize = 0.0, double InMaxSize = 0.0);
 
@@ -301,8 +325,9 @@ public:
 	bool SetSize(double Wanted);
 
 	/**
-	 * The feel sliders, each -1 to 1 and 0 for the type's own (FMantleChassisFeel): a ground vehicle (a car, a truck, a six-wheeler, a motorcycle) has all four, a
-	 * hovercraft only its top speed, and a plane, jet or helicopter none (their handling is tuned to fly). Setting one holds it to -1..1 and derives the handling again.
+	 * The feel sliders, each -1 to 1 and 0 for the type's own (FMantleChassisFeel): a ground vehicle (a car, a truck, a six-wheeler, a motorcycle) and a tracked
+	 * vehicle (its road wheels are wheels to the derivation) have all four, a hovercraft only its top speed, and a plane, jet or helicopter none (their handling
+	 * is tuned to fly). Setting one holds it to -1..1 and derives the handling again.
 	 */
 	bool HasFeel(EMantleVehicleFeel Which) const;
 	double GetFeel(EMantleVehicleFeel Which) const;

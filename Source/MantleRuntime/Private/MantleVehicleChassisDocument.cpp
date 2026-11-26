@@ -81,17 +81,11 @@ namespace MantleVehicleChassisDocumentPrivate
 		return Out;
 	}
 
-	TSharedRef<FJsonObject> FlightJson(const FMantleVehicleFlightDesc& F)
+	/** A flight or helicopter block's aerofoils (a plane's surfaces, a helicopter's fin, #380). */
+	TArray<TSharedPtr<FJsonValue>> AerofoilsJson(const TArray<FMantleVehicleAerofoilDesc>& In)
 	{
-		const TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
-		Out->SetField(TEXT("airSpeedLimit"), Number(F.AirSpeedLimit));
-		Out->SetField(TEXT("cruiseThrottle"), Number(F.CruiseThrottle));
-		Out->SetField(TEXT("pitchAuthority"), Number(F.PitchAuthority));
-		Out->SetField(TEXT("throttleLeverRate"), Number(F.ThrottleLeverRate));
-		Out->SetField(TEXT("linearDamping"), Number(F.LinearDamping));
-		Out->SetField(TEXT("angularDamping"), Number(F.AngularDamping));
 		TArray<TSharedPtr<FJsonValue>> Aerofoils;
-		for (const FMantleVehicleAerofoilDesc& A : F.Aerofoils)
+		for (const FMantleVehicleAerofoilDesc& A : In)
 		{
 			const TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
 			SetBone(*Entry, A.Bone);
@@ -102,9 +96,41 @@ namespace MantleVehicleChassisDocumentPrivate
 			Entry->SetField(TEXT("camber"), Number(A.Camber));
 			Entry->SetField(TEXT("maxControlAngle"), Number(A.MaxControlAngle));
 			Entry->SetField(TEXT("stallAngle"), Number(A.StallAngle));
+			if (A.MaxLift > 0.0)
+			{
+				Entry->SetField(TEXT("maxLift"), Number(A.MaxLift));
+			}
+			if (A.AspectRatio > 0.0)
+			{
+				Entry->SetField(TEXT("aspectRatio"), Number(A.AspectRatio));
+			}
 			Aerofoils.Add(ObjectValue(Entry));
 		}
-		Out->SetArrayField(TEXT("aerofoils"), Aerofoils);
+		return Aerofoils;
+	}
+
+	TSharedRef<FJsonObject> FlightJson(const FMantleVehicleFlightDesc& F)
+	{
+		const TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
+		Out->SetField(TEXT("airSpeedLimit"), Number(F.AirSpeedLimit));
+		Out->SetField(TEXT("cruiseThrottle"), Number(F.CruiseThrottle));
+		Out->SetField(TEXT("pitchAuthority"), Number(F.PitchAuthority));
+		Out->SetField(TEXT("throttleLeverRate"), Number(F.ThrottleLeverRate));
+		Out->SetField(TEXT("linearDamping"), Number(F.LinearDamping));
+		Out->SetField(TEXT("angularDamping"), Number(F.AngularDamping));
+		// #379's keys are written only when they say something: absent is the type's peak lift and aspect ratio, a jet's 4 s spool, assists on.
+		if (F.SpoolTime >= 0.0)
+		{
+			Out->SetField(TEXT("spoolTime"), Number(F.SpoolTime));
+		}
+		if (!F.bStallProtection || !F.bCoordinatedTurns)
+		{
+			const TSharedRef<FJsonObject> Assists = MakeShared<FJsonObject>();
+			Assists->SetBoolField(TEXT("stallProtection"), F.bStallProtection);
+			Assists->SetBoolField(TEXT("coordinatedTurns"), F.bCoordinatedTurns);
+			Out->SetObjectField(TEXT("assists"), Assists);
+		}
+		Out->SetArrayField(TEXT("aerofoils"), AerofoilsJson(F.Aerofoils));
 		TArray<TSharedPtr<FJsonValue>> Thrusters;
 		for (const FMantleVehicleThrusterDesc& T : F.Thrusters)
 		{
@@ -113,6 +139,14 @@ namespace MantleVehicleChassisDocumentPrivate
 			Entry->SetField(TEXT("location"), Triple(T.Location));
 			Entry->SetField(TEXT("direction"), Triple(T.Direction));
 			Entry->SetField(TEXT("maxThrust"), Number(T.MaxThrustNewtons));
+			if (T.PowerKw > 0.0)
+			{
+				Entry->SetField(TEXT("power"), Number(T.PowerKw));
+			}
+			if (T.AfterburnerNewtons > 0.0)
+			{
+				Entry->SetField(TEXT("afterburnerThrust"), Number(T.AfterburnerNewtons));
+			}
 			Thrusters.Add(ObjectValue(Entry));
 		}
 		Out->SetArrayField(TEXT("thrusters"), Thrusters);
@@ -135,6 +169,12 @@ namespace MantleVehicleChassisDocumentPrivate
 		Out->SetField(TEXT("throttleLeverRate"), Number(H.ThrottleLeverRate));
 		Out->SetField(TEXT("linearDamping"), Number(H.LinearDamping));
 		Out->SetField(TEXT("angularDamping"), Number(H.AngularDamping));
+		Out->SetBoolField(TEXT("heightHold"), H.bHeightHold);
+		Out->SetBoolField(TEXT("yawHold"), H.bYawHold);
+		if (H.Aerofoils.Num() > 0)
+		{
+			Out->SetArrayField(TEXT("aerofoils"), AerofoilsJson(H.Aerofoils));
+		}
 		TArray<TSharedPtr<FJsonValue>> Rotors;
 		for (const FMantleVehicleRotorDesc& R : H.Rotors)
 		{
@@ -143,6 +183,10 @@ namespace MantleVehicleChassisDocumentPrivate
 			Entry->SetField(TEXT("location"), Triple(R.Location));
 			Entry->SetField(TEXT("axis"), Triple(R.Axis));
 			Entry->SetField(TEXT("maxThrust"), Number(R.MaxThrustNewtons));
+			if (R.Diameter > 0.0)
+			{
+				Entry->SetField(TEXT("diameter"), Number(R.Diameter));
+			}
 			Entry->SetField(TEXT("pitchAcceleration"), Number(R.PitchAcceleration));
 			Entry->SetField(TEXT("rollAcceleration"), Number(R.RollAcceleration));
 			Entry->SetField(TEXT("yawAcceleration"), Number(R.YawAcceleration));
@@ -239,6 +283,29 @@ namespace MantleVehicleChassisDocumentPrivate
 		Damping->SetField(TEXT("maxSkirtBrakeAccel"), Number(H.Damping.MaxSkirtBrakeAccel));
 		Out->SetObjectField(TEXT("damping"), Damping);
 		Out->SetField(TEXT("angularDamping"), Number(H.AngularDamping));
+		return Out;
+	}
+
+	/** A tracked vehicle's block, every number written; the rollers only when it has some (a chassis has none: its road wheels are all it draws). */
+	TSharedRef<FJsonObject> TrackedJson(const FMantleVehicleTrackedDesc& T)
+	{
+		const TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
+		Out->SetField(TEXT("pivotTrackSpeed"), Number(T.PivotTrackSpeed));
+		Out->SetField(TEXT("lateralShare"), Number(T.LateralShare));
+		Out->SetField(TEXT("trackWidth"), Number(T.TrackWidth));
+		Out->SetField(TEXT("padPitch"), Number(T.PadPitch));
+		if (T.Rollers.Num() > 0)
+		{
+			TArray<TSharedPtr<FJsonValue>> Rollers;
+			for (const FMantleVehicleTrackRollerDesc& Roller : T.Rollers)
+			{
+				const TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+				Entry->SetStringField(TEXT("bone"), Roller.Bone.ToString());
+				Entry->SetField(TEXT("radius"), Number(Roller.Radius));
+				Rollers.Add(ObjectValue(Entry));
+			}
+			Out->SetArrayField(TEXT("rollers"), Rollers);
+		}
 		return Out;
 	}
 
@@ -410,6 +477,16 @@ namespace MantleVehicleChassisDocumentPrivate
 		// The surfaces are the plane's drag: the rigid body's damping would take mass x velocity x damping off it on top.
 		F.LinearDamping = 0.0;
 		F.AngularDamping = 0.0;
+		// #379: a jet's spool and the player's assists, as the preset gives them.
+		F.SpoolTime = Plane.SpoolTime;
+		F.bStallProtection = Plane.bStallProtection;
+		F.bCoordinatedTurns = Plane.bCoordinatedTurns;
+		// Each surface's peak lift (the preset's, or the type's) and aspect ratio (its own span over chord: a stretched wing's grows).
+		const auto Shape = [](const FMantleChassisSurface& Surface, FMantleVehicleAerofoilDesc& Out)
+		{
+			Out.MaxLift = Surface.MaxLift;
+			Out.AspectRatio = Surface.AspectRatio();
+		};
 
 		// The wing's two halves (the right one mirrored, so its aileron goes the other way), the elevator and the rudder; each on its bone. A half-wing is half
 		// the wing's area; the tailplane's camber is the plane's trim.
@@ -424,6 +501,7 @@ namespace MantleVehicleChassisDocumentPrivate
 			Wing.Camber = Plane.Wing.Camber;
 			Wing.MaxControlAngle = Plane.Wing.MaxControlAngle;
 			Wing.StallAngle = Plane.Wing.StallAngle;
+			Shape(Plane.Wing, Wing);
 		}
 		FMantleVehicleAerofoilDesc& Elevator = F.Aerofoils.AddDefaulted_GetRef();
 		Elevator.Bone = FMantleVehicleChassisBuilder::ElevatorBoneName();
@@ -433,6 +511,7 @@ namespace MantleVehicleChassisDocumentPrivate
 		Elevator.Camber = Plane.Tailplane.Camber;
 		Elevator.MaxControlAngle = Plane.Tailplane.MaxControlAngle;
 		Elevator.StallAngle = Plane.Tailplane.StallAngle;
+		Shape(Plane.Tailplane, Elevator);
 		FMantleVehicleAerofoilDesc& Rudder = F.Aerofoils.AddDefaulted_GetRef();
 		Rudder.Bone = FMantleVehicleChassisBuilder::RudderBoneName();
 		Rudder.Location = Spec.RudderLocation();
@@ -441,6 +520,7 @@ namespace MantleVehicleChassisDocumentPrivate
 		Rudder.Camber = Plane.Fin.Camber;
 		Rudder.MaxControlAngle = Plane.Fin.MaxControlAngle;
 		Rudder.StallAngle = Plane.Fin.StallAngle;
+		Shape(Plane.Fin, Rudder);
 
 		// An engine pushes forward from its propeller's hub, and the propeller spins about X (the right one of two the other way). A jet (an airframe with no
 		// propeller) pushes from its nozzle behind the tail, and nothing of it spins.
@@ -452,6 +532,10 @@ namespace MantleVehicleChassisDocumentPrivate
 			Push.Location = Spec.EngineLocation(Engine);
 			Push.Direction = FVector::ForwardVector;
 			Push.MaxThrustNewtons = Handling.EngineThrustNewtons;
+			// A resized plane's thrust follows its mass (its handling); its power and afterburner follow its thrust.
+			const double ThrustRatio = Plane.EngineThrustNewtons > 0.0 ? Handling.EngineThrustNewtons / Plane.EngineThrustNewtons : 1.0;
+			Push.PowerKw = Plane.bPropeller ? Plane.EnginePowerKw * ThrustRatio : 0.0;
+			Push.AfterburnerNewtons = Plane.bPropeller ? 0.0 : Plane.AfterburnerNewtons * ThrustRatio;
 			if (Plane.bPropeller)
 			{
 				F.SpinBones.Add(MakeSpin(EngineBone, FVector::ForwardVector, Engine == 1 ? -Plane.PropellerRpm : Plane.PropellerRpm));
@@ -470,7 +554,7 @@ namespace MantleVehicleChassisDocumentPrivate
 		D.SeatExitSideDistance = 0.5 * Spec.Width + 145.0 * Spec.Scale;
 	}
 
-	/** A helicopter's rotors (ApplyHelicopter): the main rotor at its hub, the spinning rotors, the pilot's hands. */
+	/** A helicopter's rotors (DeriveHelicopter): the main rotor at its hub with its disc's size, the fin, the spinning rotors, the pilot's hands. */
 	void DeriveHelicopter(const FMantleChassisSpec& Spec, const FMantleChassisHandling& Handling, FMantleVehicleDesc& D)
 	{
 		const FMantleChassisHelicopter& Heli = Spec.Helicopter;
@@ -482,8 +566,21 @@ namespace MantleVehicleChassisDocumentPrivate
 		H.HoverCollective = Heli.HoverCollective;
 		H.ThrottleLeverRate = FMantleVehicleChassisDocument::HelicopterCollectiveRate;
 		H.LinearDamping = FMantleVehicleChassisDocument::HelicopterLinearDamping;
-		// No angular damping: the rotor's stability assist damps its turning.
+		// No angular damping: the rotor's assists, or its own damping with them off, damp its turning (#380).
 		H.AngularDamping = 0.0;
+		// The fin on the boom's end (#380): a fixed vertical surface that weathervanes the nose into the airflow at speed and does nothing in a hover. A
+		// rudder-type surface (its lift is sideways) whose control surface never moves; symmetric, so no camber.
+		if (Heli.FinHeight > 0.0 && Heli.FinChord > 0.0)
+		{
+			const FMantleChassisBlock Fin = Spec.TailFinBlock();
+			FMantleVehicleAerofoilDesc& FinFoil = H.Aerofoils.AddDefaulted_GetRef();
+			FinFoil.Location = 0.5 * (Fin.Min + Fin.Max);
+			FinFoil.Type = EMantleVehicleAerofoilKind::Rudder;
+			FinFoil.AreaM2 = Heli.FinHeight * Heli.FinChord / 10000.0;
+			FinFoil.Camber = 0.0;
+			FinFoil.MaxControlAngle = 0.0;
+			FinFoil.StallAngle = 20.0;
+		}
 
 		// The main rotor, at its hub over the center of mass; the rotor's other numbers are its defaults, which act through the body's inertia, so at any size.
 		FMantleVehicleRotorDesc& Rotor = H.Rotors.AddDefaulted_GetRef();
@@ -491,6 +588,7 @@ namespace MantleVehicleChassisDocumentPrivate
 		Rotor.Location = Spec.MainRotorHub();
 		Rotor.Axis = FVector::UpVector;
 		Rotor.MaxThrustNewtons = Handling.RotorThrustNewtons;
+		Rotor.Diameter = Heli.RotorDiameter;
 
 		// The main rotor spins about Z and the tail rotor about Y, both while someone is aboard.
 		H.SpinBones.Add(MakeSpin(FMantleVehicleChassisBuilder::MainRotorBoneName(), FVector::UpVector, Heli.RotorRpm));
@@ -508,7 +606,7 @@ namespace MantleVehicleChassisDocumentPrivate
 		D.SeatExitSideDistance = FMath::Max(0.5 * Spec.Width, 0.5 * Spec.Track) + 145.0 * Spec.Scale;
 	}
 
-	/** A hovercraft's pads, fan, fin and damping (ApplyHovercraft): a pad where each of the layout's wheels is, on the hull's underside. */
+	/** A hovercraft's pads, fan, fin and damping (DeriveHovercraft): a pad where each of the layout's wheels is, on the hull's underside. */
 	void DeriveHovercraft(const FMantleChassisSpec& Spec, const FMantleChassisHandling& Handling, FMantleVehicleDesc& D)
 	{
 		const FMantleChassisHovercraft& Craft = Spec.Hovercraft;
@@ -550,6 +648,21 @@ namespace MantleVehicleChassisDocumentPrivate
 		H.Damping.MaxYawAccelDegrees = Craft.MaxYawAccelDegrees;
 		H.Damping.SkirtBrakePerSecond = Craft.SkirtBrakePerSecond;
 		H.Damping.MaxSkirtBrakeAccel = Craft.MaxSkirtBrakeAccel;
+	}
+
+	/**
+	 * A tracked vehicle's tracks: the preset's (a resized chassis's scaled) width, pad length, pivot speed and lateral share. Its road wheels are the
+	 * document's wheels, the layout's; it has no rollers, since the chassis draws only its road wheels.
+	 */
+	void DeriveTracked(const FMantleChassisSpec& Spec, FMantleVehicleDesc& D)
+	{
+		const FMantleChassisTracked& Tracks = Spec.Tracked;
+		D.MovementType = EMantleVehicleMovementKind::Tracked;
+		FMantleVehicleTrackedDesc& T = D.Tracked;
+		T.PivotTrackSpeed = Tracks.PivotTrackSpeed;
+		T.LateralShare = Tracks.LateralShare;
+		T.TrackWidth = Tracks.TrackWidth;
+		T.PadPitch = Tracks.PadPitch;
 	}
 
 	/** A boat's or jet ski's hull, drive and rudder (#15): the hull is the body box, its keel the box's bottom along its middle. */
@@ -713,11 +826,32 @@ namespace MantleVehicleChassisDocumentPrivate
 				Hold(TEXT("flight/aerofoils/*/camber"), A.Camber);
 				Hold(TEXT("flight/aerofoils/*/maxControlAngle"), A.MaxControlAngle);
 				Hold(TEXT("flight/aerofoils/*/stallAngle"), A.StallAngle);
+				// 0 is "the type's" (not written), so only a given value is held.
+				if (A.MaxLift > 0.0)
+				{
+					Hold(TEXT("flight/aerofoils/*/maxLift"), A.MaxLift);
+				}
+				if (A.AspectRatio > 0.0)
+				{
+					Hold(TEXT("flight/aerofoils/*/aspectRatio"), A.AspectRatio);
+				}
+			}
+			if (F.SpoolTime >= 0.0)
+			{
+				Hold(TEXT("flight/spoolTime"), F.SpoolTime);
 			}
 			for (FMantleVehicleThrusterDesc& T : F.Thrusters)
 			{
 				HoldVector(TEXT("flight/thrusters/*/location/*"), T.Location);
 				Hold(TEXT("flight/thrusters/*/maxThrust"), T.MaxThrustNewtons);
+				if (T.PowerKw > 0.0)
+				{
+					Hold(TEXT("flight/thrusters/*/power"), T.PowerKw);
+				}
+				if (T.AfterburnerNewtons > 0.0)
+				{
+					Hold(TEXT("flight/thrusters/*/afterburnerThrust"), T.AfterburnerNewtons);
+				}
 			}
 			for (FMantleVehicleSpinBoneDesc& Spin : F.SpinBones)
 			{
@@ -736,10 +870,22 @@ namespace MantleVehicleChassisDocumentPrivate
 			Hold(TEXT("helicopter/throttleLeverRate"), H.ThrottleLeverRate);
 			Hold(TEXT("helicopter/linearDamping"), H.LinearDamping);
 			Hold(TEXT("helicopter/angularDamping"), H.AngularDamping);
+			for (FMantleVehicleAerofoilDesc& A : H.Aerofoils)
+			{
+				HoldVector(TEXT("helicopter/aerofoils/*/location/*"), A.Location);
+				Hold(TEXT("helicopter/aerofoils/*/area"), A.AreaM2);
+				Hold(TEXT("helicopter/aerofoils/*/camber"), A.Camber);
+				Hold(TEXT("helicopter/aerofoils/*/maxControlAngle"), A.MaxControlAngle);
+				Hold(TEXT("helicopter/aerofoils/*/stallAngle"), A.StallAngle);
+			}
 			for (FMantleVehicleRotorDesc& R : H.Rotors)
 			{
 				HoldVector(TEXT("helicopter/rotors/*/location/*"), R.Location);
 				Hold(TEXT("helicopter/rotors/*/maxThrust"), R.MaxThrustNewtons);
+				if (R.Diameter > 0.0)
+				{
+					Hold(TEXT("helicopter/rotors/*/diameter"), R.Diameter);
+				}
 				Hold(TEXT("helicopter/rotors/*/pitchAcceleration"), R.PitchAcceleration);
 				Hold(TEXT("helicopter/rotors/*/rollAcceleration"), R.RollAcceleration);
 				Hold(TEXT("helicopter/rotors/*/yawAcceleration"), R.YawAcceleration);
@@ -789,6 +935,18 @@ namespace MantleVehicleChassisDocumentPrivate
 			Hold(TEXT("hover/damping/skirtBrakePerSecond"), H.Damping.SkirtBrakePerSecond);
 			Hold(TEXT("hover/damping/maxSkirtBrakeAccel"), H.Damping.MaxSkirtBrakeAccel);
 			Hold(TEXT("hover/angularDamping"), H.AngularDamping);
+		}
+		if (D.MovementType == EMantleVehicleMovementKind::Tracked)
+		{
+			FMantleVehicleTrackedDesc& T = D.Tracked;
+			Hold(TEXT("tracked/pivotTrackSpeed"), T.PivotTrackSpeed);
+			Hold(TEXT("tracked/lateralShare"), T.LateralShare);
+			Hold(TEXT("tracked/trackWidth"), T.TrackWidth);
+			Hold(TEXT("tracked/padPitch"), T.PadPitch);
+			for (FMantleVehicleTrackRollerDesc& Roller : T.Rollers)
+			{
+				Hold(TEXT("tracked/rollers/*/radius"), Roller.Radius);
+			}
 		}
 		if (D.MovementType == EMantleVehicleMovementKind::Boat)
 		{
@@ -876,6 +1034,10 @@ namespace MantleVehicleChassisDocumentPrivate
 		{ TEXT("hover/thruster"), TEXT("The hover fan") },
 		{ TEXT("hover/rudder"), TEXT("The hovercraft's rudder") },
 		{ TEXT("hover"), TEXT("A hovercraft setting") },
+		{ TEXT("tracked/pivotTrackSpeed"), TEXT("How fast the tracks run in a turn on the spot") },
+		{ TEXT("tracked/trackWidth"), TEXT("The tracks' width") },
+		{ TEXT("tracked/padPitch"), TEXT("A track pad's length") },
+		{ TEXT("tracked"), TEXT("A tracked-vehicle setting") },
 		{ TEXT("boat/hull"), TEXT("The boat's hull") },
 		{ TEXT("boat/propulsion"), TEXT("The boat's drive") },
 		{ TEXT("boat/rudder"), TEXT("The boat's rudder") },
@@ -929,6 +1091,8 @@ const TCHAR* FMantleVehicleChassisDocument::MovementName(const EMantleVehicleMov
 		return TEXT("helicopter");
 	case EMantleVehicleMovementKind::Hover:
 		return TEXT("hover");
+	case EMantleVehicleMovementKind::Tracked:
+		return TEXT("tracked");
 	case EMantleVehicleMovementKind::Boat:
 		return TEXT("boat");
 	case EMantleVehicleMovementKind::Trailer:
@@ -975,12 +1139,13 @@ void FMantleVehicleChassisDocument::Derive(const FMantleChassisSpec& Spec, FMant
 	InOutDesc.Flight = FMantleVehicleFlightDesc();
 	InOutDesc.Helicopter = FMantleVehicleHelicopterDesc();
 	InOutDesc.Hover = FMantleVehicleHoverDesc();
+	InOutDesc.Tracked = FMantleVehicleTrackedDesc();
 	InOutDesc.Boat = FMantleVehicleBoatDesc();
 	InOutDesc.Trailer = FMantleVehicleTrailerDesc();
 	InOutDesc.bHitch = false;
 	InOutDesc.Hitch = FMantleVehicleHitchDesc();
 	InOutDesc.SeatKind = SeatKindOf(Spec.DriverSeat);
-	InOutDesc.PassengerSeatKind = EMantleVehicleSeatKind::Car;
+	InOutDesc.PassengerSeatKind = SeatKindOf(Spec.PassengerSeat);
 	InOutDesc.bSeatExitSideDistance = false;
 	InOutDesc.SeatExitSideDistance = 0.0;
 	InOutDesc.bRider = false;
@@ -1001,6 +1166,10 @@ void FMantleVehicleChassisDocument::Derive(const FMantleChassisSpec& Spec, FMant
 	if (Spec.Hovercraft.bSet)
 	{
 		DeriveHovercraft(Spec, Handling, InOutDesc);
+	}
+	if (Spec.Tracked.bSet)
+	{
+		DeriveTracked(Spec, InOutDesc);
 	}
 	if (Spec.Boat.bSet)
 	{
@@ -1039,6 +1208,9 @@ void FMantleVehicleChassisDocument::Write(const FMantleVehicleDesc& Desc, FJsonO
 	case EMantleVehicleMovementKind::Hover:
 		Document.SetObjectField(TEXT("hover"), HoverJson(Desc.Hover));
 		break;
+	case EMantleVehicleMovementKind::Tracked:
+		Document.SetObjectField(TEXT("tracked"), TrackedJson(Desc.Tracked));
+		break;
 	case EMantleVehicleMovementKind::Boat:
 		Document.SetObjectField(TEXT("boat"), BoatJson(Desc.Boat));
 		break;
@@ -1075,7 +1247,8 @@ void FMantleVehicleChassisDocument::ComposeGroundHandling(const FMantleChassisSp
 {
 	using namespace MantleVehicleChassisDocumentPrivate;
 
-	if (Spec.Aircraft.bSet || Spec.Helicopter.bSet || Spec.Hovercraft.bSet || Spec.Boat.bSet || Spec.WheelCount() <= 2)
+	// A tracked vehicle steers no wheel and grips alike on every road wheel (its tracks turn it), so neither the curve nor a front and rear grip is its.
+	if (Spec.Aircraft.bSet || Spec.Helicopter.bSet || Spec.Hovercraft.bSet || Spec.Tracked.bSet || Spec.Boat.bSet || Spec.WheelCount() <= 2)
 	{
 		return;
 	}
@@ -1151,7 +1324,7 @@ FString FMantleVehicleChassisDocument::MovementBlocksJson(const FMantleChassisSp
 	const TSharedRef<FJsonObject> Scratch = MakeShared<FJsonObject>();
 	Compose(Spec, *Scratch);
 	const TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
-	for (const TCHAR* Block : { TEXT("flight"), TEXT("helicopter"), TEXT("hover"), TEXT("boat"), TEXT("trailer"), TEXT("hitch") })
+	for (const TCHAR* Block : { TEXT("flight"), TEXT("helicopter"), TEXT("hover"), TEXT("tracked"), TEXT("boat"), TEXT("trailer"), TEXT("hitch") })
 	{
 		const TSharedPtr<FJsonObject>* Found = nullptr;
 		if (Scratch->TryGetObjectField(Block, Found) && Found && Found->IsValid())
@@ -1261,9 +1434,27 @@ bool FMantleVehicleChassisDocument::MergeSource(const UMantleVehicleSource& Sour
 		{
 			return Refuse(FString::Printf(TEXT("the vehicle's movement blocks hold %s, which is not an object"), *Key));
 		}
+		if (Key.Equals(TEXT("helicopter"), ESearchCase::CaseSensitive))
+		{
+			// The creator's assists (#380), part of the helicopter like a car's ABS: the level assist on every rotor, height hold and the yaw assist on the block.
+			Value->SetBoolField(TEXT("heightHold"), Source.Tuning.bHelicopterHeightHold);
+			Value->SetBoolField(TEXT("yawHold"), Source.Tuning.bHelicopterYawHold);
+			const TArray<TSharedPtr<FJsonValue>>* Rotors = nullptr;
+			if (Value->TryGetArrayField(TEXT("rotors"), Rotors) && Rotors)
+			{
+				for (const TSharedPtr<FJsonValue>& Rotor : *Rotors)
+				{
+					if (Rotor.IsValid() && Rotor->Type == EJson::Object)
+					{
+						Rotor->AsObject()->SetBoolField(TEXT("stabilityAssist"), Source.Tuning.bHelicopterLevelAssist);
+					}
+				}
+			}
+		}
 		if (Key.Equals(TEXT("flight"), ESearchCase::CaseSensitive) || Key.Equals(TEXT("helicopter"), ESearchCase::CaseSensitive)
-			|| Key.Equals(TEXT("hover"), ESearchCase::CaseSensitive) || Key.Equals(TEXT("boat"), ESearchCase::CaseSensitive)
-			|| Key.Equals(TEXT("trailer"), ESearchCase::CaseSensitive) || Key.Equals(TEXT("hitch"), ESearchCase::CaseSensitive))
+			|| Key.Equals(TEXT("hover"), ESearchCase::CaseSensitive) || Key.Equals(TEXT("tracked"), ESearchCase::CaseSensitive)
+			|| Key.Equals(TEXT("boat"), ESearchCase::CaseSensitive) || Key.Equals(TEXT("trailer"), ESearchCase::CaseSensitive)
+			|| Key.Equals(TEXT("hitch"), ESearchCase::CaseSensitive))
 		{
 			Document.SetObjectField(Key, Value);
 			continue;
@@ -1280,7 +1471,7 @@ bool FMantleVehicleChassisDocument::MergeSource(const UMantleVehicleSource& Sour
 		}
 		else
 		{
-			return Refuse(FString::Printf(TEXT("the vehicle's movement blocks hold %s; a source sets flight, helicopter, hover, boat, trailer, hitch, seat or camera there (the type and the kinds are its own fields)"), *Key));
+			return Refuse(FString::Printf(TEXT("the vehicle's movement blocks hold %s; a source sets flight, helicopter, hover, tracked, boat, trailer, hitch, seat or camera there (the type and the kinds are its own fields)"), *Key));
 		}
 		const TSharedPtr<FJsonObject>* Target = nullptr;
 		if (!Document.TryGetObjectField(Key, Target) || !Target || !Target->IsValid())

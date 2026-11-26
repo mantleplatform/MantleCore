@@ -40,7 +40,8 @@ namespace MantleVehicleAssetPrivate
 
 	/** limits.json placeAssets.vehicle.ranges, key for key. */
 	const FVehicleRange GVehicleRanges[] = {
-		{ TEXT("mass"), 50.0, 20000.0 },
+		// #448: room for a main battle tank (the tank preset is 55 t), which the old 20 t could not say.
+		{ TEXT("mass"), 50.0, 80000.0 },
 		{ TEXT("maxSpeed"), 100.0, 12000.0 },
 		{ TEXT("centerOfMass/*"), -1000.0, 1000.0 },
 		{ TEXT("dragCoefficient"), 0.0, 2.0 },
@@ -70,6 +71,7 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("brakes/frontShare"), 0.0, 1.0 },
 		{ TEXT("tires/friction"), 0.1, 5.0 },
 		{ TEXT("tires/rearFriction"), 0.1, 10.0 },
+		{ TEXT("tires/rollingResistance"), 0.002, 0.05 },
 		{ TEXT("wheels/*/radius"), 5.0, 150.0 },
 		{ TEXT("wheels/*/width"), 2.0, 100.0 },
 		{ TEXT("wheels/*/rimRadius"), 2.0, 150.0 },
@@ -203,10 +205,15 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("flight/aerofoils/*/area"), 0.01, 500.0 },
 		{ TEXT("flight/aerofoils/*/camber"), -30.0, 30.0 },
 		{ TEXT("flight/aerofoils/*/maxControlAngle"), 0.0, 60.0 },
-		{ TEXT("flight/aerofoils/*/stallAngle"), 1.0, 90.0 },
+		{ TEXT("flight/aerofoils/*/stallAngle"), 5.0, 30.0 },
+		{ TEXT("flight/aerofoils/*/maxLift"), 0.3, 3.0 },
+		{ TEXT("flight/aerofoils/*/aspectRatio"), 0.5, 30.0 },
 		{ TEXT("flight/thrusters/*/location/*"), -1000.0, 1000.0 },
 		{ TEXT("flight/thrusters/*/direction/*"), -1.0, 1.0 },
 		{ TEXT("flight/thrusters/*/maxThrust"), 0.0, 2000000.0 },
+		{ TEXT("flight/thrusters/*/power"), 1.0, 20000.0 },
+		{ TEXT("flight/thrusters/*/afterburnerThrust"), 0.0, 2000000.0 },
+		{ TEXT("flight/spoolTime"), 0.0, 20.0 },
 		{ TEXT("flight/spinBones/*/axis/*"), -1.0, 1.0 },
 		{ TEXT("flight/spinBones/*/rpm"), -10000.0, 10000.0 },
 		{ TEXT("flight/pilotGrips/left/location/*"), -1000.0, 1000.0 },
@@ -220,6 +227,7 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("helicopter/rotors/*/location/*"), -1000.0, 1000.0 },
 		{ TEXT("helicopter/rotors/*/axis/*"), -1.0, 1.0 },
 		{ TEXT("helicopter/rotors/*/maxThrust"), 0.0, 2000000.0 },
+		{ TEXT("helicopter/rotors/*/diameter"), 50.0, 4000.0 },
 		{ TEXT("helicopter/rotors/*/pitchAcceleration"), 0.0, 20.0 },
 		{ TEXT("helicopter/rotors/*/rollAcceleration"), 0.0, 20.0 },
 		{ TEXT("helicopter/rotors/*/yawAcceleration"), 0.0, 20.0 },
@@ -230,6 +238,13 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("helicopter/spinBones/*/rpm"), -10000.0, 10000.0 },
 		{ TEXT("helicopter/pilotGrips/left/location/*"), -1000.0, 1000.0 },
 		{ TEXT("helicopter/pilotGrips/right/location/*"), -1000.0, 1000.0 },
+		{ TEXT("helicopter/aerofoils/*/location/*"), -1000.0, 1000.0 },
+		{ TEXT("helicopter/aerofoils/*/area"), 0.01, 500.0 },
+		{ TEXT("helicopter/aerofoils/*/camber"), -30.0, 30.0 },
+		{ TEXT("helicopter/aerofoils/*/maxControlAngle"), 0.0, 60.0 },
+		{ TEXT("helicopter/aerofoils/*/stallAngle"), 1.0, 90.0 },
+		{ TEXT("helicopter/aerofoils/*/maxLift"), 0.3, 3.0 },
+		{ TEXT("helicopter/aerofoils/*/aspectRatio"), 0.5, 30.0 },
 		// A hovercraft's block.
 		{ TEXT("hover/pads/*/location/*"), -1000.0, 1000.0 },
 		{ TEXT("hover/pads/*/maxRaise"), 0.0, 100.0 },
@@ -255,6 +270,12 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("hover/damping/skirtBrakePerSecond"), 0.0, 50.0 },
 		{ TEXT("hover/damping/maxSkirtBrakeAccel"), 0.0, 5000.0 },
 		{ TEXT("hover/angularDamping"), 0.0, 5.0 },
+		// A tracked vehicle's block.
+		{ TEXT("tracked/pivotTrackSpeed"), 5.0, 500.0 },
+		{ TEXT("tracked/lateralShare"), 0.3, 1.5 },
+		{ TEXT("tracked/trackWidth"), 5.0, 200.0 },
+		{ TEXT("tracked/padPitch"), 2.0, 50.0 },
+		{ TEXT("tracked/rollers/*/radius"), 2.0, 150.0 },
 		// A boat's block (#15).
 		{ TEXT("boat/hull/location/*"), -1000.0, 1000.0 },
 		{ TEXT("boat/hull/length"), 100.0, 3000.0 },
@@ -589,20 +610,38 @@ namespace MantleVehicleAssetPrivate
 		}
 		int32 Driven = 0;
 		int32 Steered = 0;
+		const bool bTracked = D.MovementType == EMantleVehicleMovementKind::Tracked;
 		for (int32 Index = 0; Index < D.Wheels.Num(); ++Index)
 		{
-			Driven += D.Wheels[Index].bDriven ? 1 : 0;
-			Steered += D.Wheels[Index].bSteering ? 1 : 0;
+			const FMantleVehicleWheelDesc& Wheel = D.Wheels[Index];
+			Driven += Wheel.bDriven ? 1 : 0;
+			Steered += Wheel.bSteering ? 1 : 0;
 			for (int32 Other = 0; Other < Index; ++Other)
 			{
 				// FName compares without regard to case, as the body's bone names do.
-				if (D.Wheels[Other].Bone == D.Wheels[Index].Bone)
+				if (D.Wheels[Other].Bone == Wheel.Bone)
 				{
 					return P.Fail(FString::Printf(TEXT("/wheels/%d/bone"), Index), TEXT("is another wheel's bone"));
 				}
 			}
+			// A tracked vehicle's wheels are its road wheels: it turns by running its two tracks at different speeds, the belt pushes wherever it
+			// touches the ground, and the handbrake locks the whole track. So none steers, and every one is driven and has the handbrake.
+			if (bTracked && Wheel.bSteering)
+			{
+				return P.Fail(FString::Printf(TEXT("/wheels/%d/steering"), Index),
+					TEXT("is true, but a tracked vehicle's road wheels never steer: it turns by running its tracks at different speeds"));
+			}
+			if (bTracked && !Wheel.bDriven)
+			{
+				return P.Fail(FString::Printf(TEXT("/wheels/%d/driven"), Index), TEXT("is false, but every road wheel of a tracked vehicle is driven: the belt drives them all"));
+			}
+			if (bTracked && !Wheel.bHandbrake)
+			{
+				return P.Fail(FString::Printf(TEXT("/wheels/%d/handbrake"), Index), TEXT("is false, but the handbrake locks a tracked vehicle's whole track, every road wheel of it"));
+			}
 		}
-		if (Driven == 0 || Steered == 0)
+		// A tracked vehicle steers no wheel (above); every other type needs one wheel that steers and one that is driven.
+		if (!bTracked && (Driven == 0 || Steered == 0))
 		{
 			return P.Fail(TEXT("/wheels"), TEXT("needs at least one driven and one steering wheel"));
 		}
@@ -1678,31 +1717,18 @@ namespace MantleVehicleAssetPrivate
 		return P.Fail(Pointer + TEXT("/") + Key, FString::Printf(TEXT("must be one of %s"), *Choices));
 	}
 
-	/** A plane's flight block: exactly its keys, aerofoils, thrusters and spin bones within their caps and ranges, the optional numbers the contract's defaults. */
-	void ReadVehicleFlight(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
+	/** A flight or helicopter block's aerofoils (BlockName "flight" or "helicopter"), MinItems to MaxAerofoils of them; an absent array is none when MinItems is 0. */
+	bool ReadVehicleAerofoils(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Block, const FString& Pointer, const FString& BlockName, const int32 MinItems,
+		TArray<FMantleVehicleAerofoilDesc>& Out)
 	{
-		const FString Pointer = TEXT("/flight");
-		TSharedPtr<FJsonObject> Block;
-		FMantleVehicleFlightDesc F;
-		if (!P.Object(Root, TEXT(""), TEXT("flight"), Block)
-			|| !P.Keys(Block, Pointer,
-				{ TEXT("airSpeedLimit"), TEXT("cruiseThrottle"), TEXT("pitchAuthority"), TEXT("throttleLeverRate"), TEXT("linearDamping"), TEXT("angularDamping"),
-				  TEXT("aerofoils"), TEXT("thrusters"), TEXT("spinBones"), TEXT("pilotGrips") },
-				{ TEXT("airSpeedLimit"), TEXT("aerofoils"), TEXT("thrusters") })
-			|| !P.Number(Block, Pointer, TEXT("airSpeedLimit"), TEXT("flight/airSpeedLimit"), F.AirSpeedLimit)
-			|| !P.OptNumber(Block, Pointer, TEXT("cruiseThrottle"), TEXT("flight/cruiseThrottle"), F.CruiseThrottle)
-			|| !P.OptNumber(Block, Pointer, TEXT("pitchAuthority"), TEXT("flight/pitchAuthority"), F.PitchAuthority)
-			|| !P.OptNumber(Block, Pointer, TEXT("throttleLeverRate"), TEXT("flight/throttleLeverRate"), F.ThrottleLeverRate)
-			|| !P.OptNumber(Block, Pointer, TEXT("linearDamping"), TEXT("flight/linearDamping"), F.LinearDamping)
-			|| !P.OptNumber(Block, Pointer, TEXT("angularDamping"), TEXT("flight/angularDamping"), F.AngularDamping))
+		if (MinItems == 0 && !Block->HasField(TEXT("aerofoils")))
 		{
-			return;
+			return true;
 		}
-
 		const TArray<TSharedPtr<FJsonValue>>* Aerofoils = nullptr;
-		if (!P.Array(Block->TryGetField(TEXT("aerofoils")), Pointer + TEXT("/aerofoils"), 1, FMantleVehicleLimits::MaxAerofoils, Aerofoils))
+		if (!P.Array(Block->TryGetField(TEXT("aerofoils")), Pointer + TEXT("/aerofoils"), MinItems, FMantleVehicleLimits::MaxAerofoils, Aerofoils))
 		{
-			return;
+			return false;
 		}
 		static const TCHAR* const Kinds[] = { TEXT("fixed"), TEXT("wing"), TEXT("elevator"), TEXT("rudder") };
 		for (int32 Index = 0; Index < Aerofoils->Num(); ++Index)
@@ -1713,26 +1739,71 @@ namespace MantleVehicleAssetPrivate
 			if (!Item.IsValid())
 			{
 				P.Fail(ItemPointer, TEXT("must be an object"));
-				return;
+				return false;
 			}
 			FMantleVehicleAerofoilDesc A;
 			int32 Kind = 0;
 			if (!P.Keys(Item, ItemPointer,
-					{ TEXT("bone"), TEXT("location"), TEXT("type"), TEXT("mirror"), TEXT("area"), TEXT("camber"), TEXT("maxControlAngle"), TEXT("stallAngle") },
+					{ TEXT("bone"), TEXT("location"), TEXT("type"), TEXT("mirror"), TEXT("area"), TEXT("camber"), TEXT("maxControlAngle"), TEXT("stallAngle"),
+				  TEXT("maxLift"), TEXT("aspectRatio") },
 					{ TEXT("location"), TEXT("type"), TEXT("area") })
 				|| !ReadVehicleOptionalBone(P, Item, ItemPointer, A.Bone)
-				|| !P.Vector(Item->TryGetField(TEXT("location")), ItemPointer + TEXT("/location"), TEXT("flight/aerofoils/*/location/*"), A.Location)
+				|| !P.Vector(Item->TryGetField(TEXT("location")), ItemPointer + TEXT("/location"), *(BlockName + TEXT("/aerofoils/*/location/*")), A.Location)
 				|| !ReadVehicleEnumName(P, Item, ItemPointer, TEXT("type"), Kinds, Kind)
 				|| (Item->HasField(TEXT("mirror")) && !P.Bool(Item, ItemPointer, TEXT("mirror"), A.bMirror))
-				|| !P.Number(Item, ItemPointer, TEXT("area"), TEXT("flight/aerofoils/*/area"), A.AreaM2)
-				|| !P.OptNumber(Item, ItemPointer, TEXT("camber"), TEXT("flight/aerofoils/*/camber"), A.Camber)
-				|| !P.OptNumber(Item, ItemPointer, TEXT("maxControlAngle"), TEXT("flight/aerofoils/*/maxControlAngle"), A.MaxControlAngle)
-				|| !P.OptNumber(Item, ItemPointer, TEXT("stallAngle"), TEXT("flight/aerofoils/*/stallAngle"), A.StallAngle))
+				|| !P.Number(Item, ItemPointer, TEXT("area"), *(BlockName + TEXT("/aerofoils/*/area")), A.AreaM2)
+				|| !P.OptNumber(Item, ItemPointer, TEXT("camber"), *(BlockName + TEXT("/aerofoils/*/camber")), A.Camber)
+				|| !P.OptNumber(Item, ItemPointer, TEXT("maxControlAngle"), *(BlockName + TEXT("/aerofoils/*/maxControlAngle")), A.MaxControlAngle)
+				|| !P.OptNumber(Item, ItemPointer, TEXT("stallAngle"), *(BlockName + TEXT("/aerofoils/*/stallAngle")), A.StallAngle)
+				|| !P.OptNumber(Item, ItemPointer, TEXT("maxLift"), *(BlockName + TEXT("/aerofoils/*/maxLift")), A.MaxLift)
+				|| !P.OptNumber(Item, ItemPointer, TEXT("aspectRatio"), *(BlockName + TEXT("/aerofoils/*/aspectRatio")), A.AspectRatio))
+			{
+				return false;
+			}
+			A.Type = static_cast<EMantleVehicleAerofoilKind>(Kind);
+			Out.Add(A);
+		}
+		return true;
+	}
+
+	/** A plane's flight block: exactly its keys, aerofoils, thrusters and spin bones within their caps and ranges, the optional numbers the contract's defaults. */
+	void ReadVehicleFlight(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
+	{
+		const FString Pointer = TEXT("/flight");
+		TSharedPtr<FJsonObject> Block;
+		FMantleVehicleFlightDesc F;
+		if (!P.Object(Root, TEXT(""), TEXT("flight"), Block)
+			|| !P.Keys(Block, Pointer,
+				{ TEXT("airSpeedLimit"), TEXT("cruiseThrottle"), TEXT("pitchAuthority"), TEXT("throttleLeverRate"), TEXT("linearDamping"), TEXT("angularDamping"),
+				  TEXT("spoolTime"), TEXT("assists"), TEXT("aerofoils"), TEXT("thrusters"), TEXT("spinBones"), TEXT("pilotGrips") },
+				{ TEXT("airSpeedLimit"), TEXT("aerofoils"), TEXT("thrusters") })
+			|| !P.Number(Block, Pointer, TEXT("airSpeedLimit"), TEXT("flight/airSpeedLimit"), F.AirSpeedLimit)
+			|| !P.OptNumber(Block, Pointer, TEXT("cruiseThrottle"), TEXT("flight/cruiseThrottle"), F.CruiseThrottle)
+			|| !P.OptNumber(Block, Pointer, TEXT("pitchAuthority"), TEXT("flight/pitchAuthority"), F.PitchAuthority)
+			|| !P.OptNumber(Block, Pointer, TEXT("throttleLeverRate"), TEXT("flight/throttleLeverRate"), F.ThrottleLeverRate)
+			|| !P.OptNumber(Block, Pointer, TEXT("linearDamping"), TEXT("flight/linearDamping"), F.LinearDamping)
+			|| !P.OptNumber(Block, Pointer, TEXT("angularDamping"), TEXT("flight/angularDamping"), F.AngularDamping)
+			|| !P.OptNumber(Block, Pointer, TEXT("spoolTime"), TEXT("flight/spoolTime"), F.SpoolTime))
+		{
+			return;
+		}
+		// The player's assists (#379): each optional, absent on.
+		if (Block->HasField(TEXT("assists")))
+		{
+			TSharedPtr<FJsonObject> Assists;
+			const FString AssistsPointer = Pointer + TEXT("/assists");
+			if (!P.Object(Block, Pointer, TEXT("assists"), Assists)
+				|| !P.Keys(Assists, AssistsPointer, { TEXT("stallProtection"), TEXT("coordinatedTurns") }, {})
+				|| (Assists->HasField(TEXT("stallProtection")) && !P.Bool(Assists, AssistsPointer, TEXT("stallProtection"), F.bStallProtection))
+				|| (Assists->HasField(TEXT("coordinatedTurns")) && !P.Bool(Assists, AssistsPointer, TEXT("coordinatedTurns"), F.bCoordinatedTurns)))
 			{
 				return;
 			}
-			A.Type = static_cast<EMantleVehicleAerofoilKind>(Kind);
-			F.Aerofoils.Add(A);
+		}
+
+		if (!ReadVehicleAerofoils(P, Block, Pointer, TEXT("flight"), 1, F.Aerofoils))
+		{
+			return;
 		}
 
 		const TArray<TSharedPtr<FJsonValue>>* Thrusters = nullptr;
@@ -1751,11 +1822,14 @@ namespace MantleVehicleAssetPrivate
 				return;
 			}
 			FMantleVehicleThrusterDesc T;
-			if (!P.Keys(Item, ItemPointer, { TEXT("bone"), TEXT("location"), TEXT("direction"), TEXT("maxThrust") }, { TEXT("location"), TEXT("maxThrust") })
+			if (!P.Keys(Item, ItemPointer, { TEXT("bone"), TEXT("location"), TEXT("direction"), TEXT("maxThrust"), TEXT("power"), TEXT("afterburnerThrust") },
+					{ TEXT("location"), TEXT("maxThrust") })
 				|| !ReadVehicleOptionalBone(P, Item, ItemPointer, T.Bone)
 				|| !P.Vector(Item->TryGetField(TEXT("location")), ItemPointer + TEXT("/location"), TEXT("flight/thrusters/*/location/*"), T.Location)
 				|| !ReadVehicleDirection(P, Item, ItemPointer, TEXT("direction"), TEXT("flight/thrusters/*/direction"), T.Direction)
-				|| !P.Number(Item, ItemPointer, TEXT("maxThrust"), TEXT("flight/thrusters/*/maxThrust"), T.MaxThrustNewtons))
+				|| !P.Number(Item, ItemPointer, TEXT("maxThrust"), TEXT("flight/thrusters/*/maxThrust"), T.MaxThrustNewtons)
+				|| !P.OptNumber(Item, ItemPointer, TEXT("power"), TEXT("flight/thrusters/*/power"), T.PowerKw)
+				|| !P.OptNumber(Item, ItemPointer, TEXT("afterburnerThrust"), TEXT("flight/thrusters/*/afterburnerThrust"), T.AfterburnerNewtons))
 			{
 				return;
 			}
@@ -1786,13 +1860,16 @@ namespace MantleVehicleAssetPrivate
 		if (!P.Object(Root, TEXT(""), TEXT("helicopter"), Block)
 			|| !P.Keys(Block, Pointer,
 				{ TEXT("airSpeedLimit"), TEXT("hoverCollective"), TEXT("throttleLeverRate"), TEXT("linearDamping"), TEXT("angularDamping"), TEXT("rotors"),
-				  TEXT("spinBones"), TEXT("pilotGrips") },
+				  TEXT("spinBones"), TEXT("pilotGrips"), TEXT("heightHold"), TEXT("yawHold"), TEXT("aerofoils") },
 				{ TEXT("airSpeedLimit"), TEXT("hoverCollective"), TEXT("rotors") })
 			|| !P.Number(Block, Pointer, TEXT("airSpeedLimit"), TEXT("helicopter/airSpeedLimit"), H.AirSpeedLimit)
 			|| !P.Number(Block, Pointer, TEXT("hoverCollective"), TEXT("helicopter/hoverCollective"), H.HoverCollective)
 			|| !P.OptNumber(Block, Pointer, TEXT("throttleLeverRate"), TEXT("helicopter/throttleLeverRate"), H.ThrottleLeverRate)
 			|| !P.OptNumber(Block, Pointer, TEXT("linearDamping"), TEXT("helicopter/linearDamping"), H.LinearDamping)
 			|| !P.OptNumber(Block, Pointer, TEXT("angularDamping"), TEXT("helicopter/angularDamping"), H.AngularDamping)
+			|| (Block->HasField(TEXT("heightHold")) && !P.Bool(Block, Pointer, TEXT("heightHold"), H.bHeightHold))
+			|| (Block->HasField(TEXT("yawHold")) && !P.Bool(Block, Pointer, TEXT("yawHold"), H.bYawHold))
+			|| !ReadVehicleAerofoils(P, Block, Pointer, TEXT("helicopter"), 0, H.Aerofoils)
 			|| !P.Array(Block->TryGetField(TEXT("rotors")), Pointer + TEXT("/rotors"), 1, FMantleVehicleLimits::MaxRotors, Rotors))
 		{
 			return;
@@ -1809,13 +1886,14 @@ namespace MantleVehicleAssetPrivate
 			}
 			FMantleVehicleRotorDesc R;
 			if (!P.Keys(Item, ItemPointer,
-					{ TEXT("bone"), TEXT("location"), TEXT("axis"), TEXT("maxThrust"), TEXT("pitchAcceleration"), TEXT("rollAcceleration"), TEXT("yawAcceleration"),
+					{ TEXT("bone"), TEXT("location"), TEXT("axis"), TEXT("maxThrust"), TEXT("diameter"), TEXT("pitchAcceleration"), TEXT("rollAcceleration"), TEXT("yawAcceleration"),
 					  TEXT("stabilityAssist"), TEXT("stabilityStiffness"), TEXT("stabilityDamping"), TEXT("stabilityMaxAcceleration") },
 					{ TEXT("location"), TEXT("maxThrust") })
 				|| !ReadVehicleOptionalBone(P, Item, ItemPointer, R.Bone)
 				|| !P.Vector(Item->TryGetField(TEXT("location")), ItemPointer + TEXT("/location"), TEXT("helicopter/rotors/*/location/*"), R.Location)
 				|| !ReadVehicleDirection(P, Item, ItemPointer, TEXT("axis"), TEXT("helicopter/rotors/*/axis"), R.Axis)
 				|| !P.Number(Item, ItemPointer, TEXT("maxThrust"), TEXT("helicopter/rotors/*/maxThrust"), R.MaxThrustNewtons)
+				|| !P.OptNumber(Item, ItemPointer, TEXT("diameter"), TEXT("helicopter/rotors/*/diameter"), R.Diameter)
 				|| !P.OptNumber(Item, ItemPointer, TEXT("pitchAcceleration"), TEXT("helicopter/rotors/*/pitchAcceleration"), R.PitchAcceleration)
 				|| !P.OptNumber(Item, ItemPointer, TEXT("rollAcceleration"), TEXT("helicopter/rotors/*/rollAcceleration"), R.RollAcceleration)
 				|| !P.OptNumber(Item, ItemPointer, TEXT("yawAcceleration"), TEXT("helicopter/rotors/*/yawAcceleration"), R.YawAcceleration)
@@ -2020,6 +2098,60 @@ namespace MantleVehicleAssetPrivate
 			D.bHitch = true;
 			D.Hitch = Hitch;
 		}
+	}
+
+	/**
+	 * A tracked vehicle's block: exactly its keys, the track's width, the optional numbers the contract's defaults, and the sprockets, idlers and return
+	 * rollers within their cap, each on a bone of its own. Its road wheels are the document's wheels (CheckVehicleRules has their rules).
+	 */
+	void ReadVehicleTracked(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
+	{
+		const FString Pointer = TEXT("/tracked");
+		TSharedPtr<FJsonObject> Block;
+		FMantleVehicleTrackedDesc T;
+		if (!P.Object(Root, TEXT(""), TEXT("tracked"), Block)
+			|| !P.Keys(Block, Pointer, { TEXT("pivotTrackSpeed"), TEXT("lateralShare"), TEXT("trackWidth"), TEXT("padPitch"), TEXT("rollers") }, { TEXT("trackWidth") })
+			|| !P.OptNumber(Block, Pointer, TEXT("pivotTrackSpeed"), TEXT("tracked/pivotTrackSpeed"), T.PivotTrackSpeed)
+			|| !P.OptNumber(Block, Pointer, TEXT("lateralShare"), TEXT("tracked/lateralShare"), T.LateralShare)
+			|| !P.Number(Block, Pointer, TEXT("trackWidth"), TEXT("tracked/trackWidth"), T.TrackWidth)
+			|| !P.OptNumber(Block, Pointer, TEXT("padPitch"), TEXT("tracked/padPitch"), T.PadPitch))
+		{
+			return;
+		}
+		const TArray<TSharedPtr<FJsonValue>>* Rollers = nullptr;
+		if (Block->HasField(TEXT("rollers")) && !P.Array(Block->TryGetField(TEXT("rollers")), Pointer + TEXT("/rollers"), 0, FMantleVehicleLimits::MaxTrackRollers, Rollers))
+		{
+			return;
+		}
+		for (int32 Index = 0; Rollers && Index < Rollers->Num(); ++Index)
+		{
+			const FString ItemPointer = FString::Printf(TEXT("%s/rollers/%d"), *Pointer, Index);
+			const TSharedPtr<FJsonValue>& Value = (*Rollers)[Index];
+			const TSharedPtr<FJsonObject> Item = Value.IsValid() && Value->Type == EJson::Object ? Value->AsObject() : nullptr;
+			if (!Item.IsValid())
+			{
+				P.Fail(ItemPointer, TEXT("must be an object"));
+				return;
+			}
+			FMantleVehicleTrackRollerDesc Roller;
+			if (!P.Keys(Item, ItemPointer, { TEXT("bone"), TEXT("radius") }, { TEXT("bone"), TEXT("radius") })
+				|| !ReadLinkageBone(P, Item, ItemPointer, TEXT("bone"), Roller.Bone)
+				|| !P.Number(Item, ItemPointer, TEXT("radius"), TEXT("tracked/rollers/*/radius"), Roller.Radius))
+			{
+				return;
+			}
+			for (int32 Before = 0; Before < T.Rollers.Num(); ++Before)
+			{
+				// FName compares without regard to case, as the body's bone names do. One bone spins at one speed.
+				if (T.Rollers[Before].Bone == Roller.Bone)
+				{
+					P.Fail(ItemPointer + TEXT("/bone"), FString::Printf(TEXT("is %s, rollers/%d's bone too; each roller has its own"), *Roller.Bone.ToString(), Before));
+					return;
+				}
+			}
+			T.Rollers.Add(Roller);
+		}
+		D.Tracked = MoveTemp(T);
 	}
 
 	/**
@@ -2269,6 +2401,18 @@ namespace MantleVehicleAssetPrivate
 		{
 			return false;
 		}
+		// A roller spins at its belt's speed over its own radius; a road wheel already spins with its own suspension and ground, so it is not one too.
+		if (D.MovementType == EMantleVehicleMovementKind::Tracked)
+		{
+			for (int32 Index = 0; Index < D.Tracked.Rollers.Num(); ++Index)
+			{
+				if (OnWheel(D.Tracked.Rollers[Index].Bone))
+				{
+					return P.Fail(FString::Printf(TEXT("/tracked/rollers/%d/bone"), Index),
+						FString::Printf(TEXT("is %s, a road wheel's bone; a sprocket, idler or return roller has a bone of its own"), *D.Tracked.Rollers[Index].Bone.ToString()));
+				}
+			}
+		}
 		if (D.bRider)
 		{
 			if (D.SeatKind != EMantleVehicleSeatKind::Motorcycle)
@@ -2285,14 +2429,15 @@ namespace MantleVehicleAssetPrivate
 		return true;
 	}
 
-	/** The movement type the document names: wheeled when it names none, else wheeled, plane, helicopter, hover, boat or trailer. */
+	/** The movement type the document names: wheeled when it names none, else wheeled, plane, helicopter, hover, tracked, boat or trailer. */
 	bool ReadVehicleMovementType(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
 	{
 		if (!Root->HasField(TEXT("movementType")))
 		{
 			return true;
 		}
-		static const TCHAR* const Kinds[] = { TEXT("wheeled"), TEXT("plane"), TEXT("helicopter"), TEXT("hover"), TEXT("boat"), TEXT("trailer") };
+		// In EMantleVehicleMovementKind's order.
+		static const TCHAR* const Kinds[] = { TEXT("wheeled"), TEXT("plane"), TEXT("helicopter"), TEXT("hover"), TEXT("tracked"), TEXT("boat"), TEXT("trailer") };
 		int32 Kind = 0;
 		if (!ReadVehicleEnumName(P, Root, TEXT(""), TEXT("movementType"), Kinds, Kind))
 		{
@@ -2303,8 +2448,8 @@ namespace MantleVehicleAssetPrivate
 	}
 
 	/**
-	 * Whether the movement blocks agree with the movement type (the cook's movementRules): a plane has a flight block, a helicopter a helicopter block and a
-	 * hovercraft a hover block, and no other type has any block.
+	 * Whether the movement blocks agree with the movement type (the cook's movementRules): a plane has a flight block, a helicopter a helicopter block, a
+	 * hovercraft a hover block and a tracked vehicle a tracked block, and no other type has any block.
 	 */
 	bool CheckVehicleMovementBlocks(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, const EMantleVehicleMovementKind Movement)
 	{
@@ -2318,10 +2463,12 @@ namespace MantleVehicleAssetPrivate
 			{ EMantleVehicleMovementKind::Plane, TEXT("flight"), TEXT("plane") },
 			{ EMantleVehicleMovementKind::Helicopter, TEXT("helicopter"), TEXT("helicopter") },
 			{ EMantleVehicleMovementKind::Hover, TEXT("hover"), TEXT("hover") },
+			{ EMantleVehicleMovementKind::Tracked, TEXT("tracked"), TEXT("tracked") },
 			{ EMantleVehicleMovementKind::Boat, TEXT("boat"), TEXT("boat") },
 			{ EMantleVehicleMovementKind::Trailer, TEXT("trailer"), TEXT("trailer") },
 		};
-		static const TCHAR* const Names[] = { TEXT("wheeled"), TEXT("plane"), TEXT("helicopter"), TEXT("hover"), TEXT("boat"), TEXT("trailer") };
+		// In EMantleVehicleMovementKind's order.
+		static const TCHAR* const Names[] = { TEXT("wheeled"), TEXT("plane"), TEXT("helicopter"), TEXT("hover"), TEXT("tracked"), TEXT("boat"), TEXT("trailer") };
 		for (const FBlock& Block : Blocks)
 		{
 			const bool bHas = Root->HasField(Block.Key);
@@ -2454,7 +2601,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 		  TEXT("engine"), TEXT("transmission"), TEXT("suspension"), TEXT("steering"), TEXT("brakes"), TEXT("tires"), TEXT("wheels"),
 		  TEXT("seat"), TEXT("camera"), TEXT("collision"), TEXT("materials"), TEXT("paint"), TEXT("lights"), TEXT("liveries"), TEXT("liveryNames"), TEXT("liveryGlow"), TEXT("liveryUV"),
 		  TEXT("defaultLivery"), TEXT("linkage"), TEXT("parts"), TEXT("passengerSeat"), TEXT("trunk"), TEXT("hood"), TEXT("rearLeftDoor"), TEXT("rearRightDoor"), TEXT("horn"), TEXT("preset"), TEXT("movementType"),
-		  TEXT("flight"), TEXT("helicopter"), TEXT("hover"), TEXT("boat"), TEXT("trailer"), TEXT("hitch") },
+		  TEXT("flight"), TEXT("helicopter"), TEXT("hover"), TEXT("tracked"), TEXT("boat"), TEXT("trailer"), TEXT("hitch") },
 		{ TEXT("schemaVersion"), TEXT("mass"), TEXT("dragCoefficient"), TEXT("frontalArea"), TEXT("engine"),
 		  TEXT("transmission"), TEXT("suspension"), TEXT("steering"), TEXT("brakes"), TEXT("tires"), TEXT("wheels"), TEXT("seat"),
 		  TEXT("camera"), TEXT("collision") });
@@ -2608,7 +2755,8 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	}
 
 	TSharedPtr<FJsonObject> Tires;
-	if (P.Ok() && P.Object(Root, TEXT(""), TEXT("tires"), Tires) && P.Keys(Tires, TEXT("/tires"), { TEXT("friction"), TEXT("rearFriction") }, { TEXT("friction") }))
+	if (P.Ok() && P.Object(Root, TEXT(""), TEXT("tires"), Tires)
+		&& P.Keys(Tires, TEXT("/tires"), { TEXT("friction"), TEXT("rearFriction"), TEXT("rollingResistance") }, { TEXT("friction") }))
 	{
 		P.Number(Tires, TEXT("/tires"), TEXT("friction"), TEXT("tires/friction"), D.TireFriction);
 		// Optional, and absent from a vehicle whose every wheel grips alike.
@@ -2616,10 +2764,20 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 		{
 			D.bTireRearFriction = P.Number(Tires, TEXT("/tires"), TEXT("rearFriction"), TEXT("tires/rearFriction"), D.TireRearFriction);
 		}
+		// Optional (#448, shared with #447): absent is a car tyre's 0.012, so a vehicle cooked before it existed rolls as it did.
+		if (P.Ok())
+		{
+			P.OptNumber(Tires, TEXT("/tires"), TEXT("rollingResistance"), TEXT("tires/rollingResistance"), D.TiresRollingResistance);
+		}
 	}
 
+	// A tracked vehicle's wheels are its road wheels, 3 to 10 on each side (CheckTrackedLayout counts the sides where the bones are known): more than any
+	// other type may have, and never fewer than three a side.
+	const bool bTrackedWheels = D.MovementType == EMantleVehicleMovementKind::Tracked;
+	const int32 MinWheelCount = bTrackedWheels ? 2 * FMantleVehicleLimits::MinTrackRoadWheelsPerSide : FMantleVehicleLimits::MinWheels;
+	const int32 MaxWheelCount = bTrackedWheels ? FMantleVehicleLimits::MaxTrackedWheels : FMantleVehicleLimits::MaxWheels;
 	const TArray<TSharedPtr<FJsonValue>>* Wheels = nullptr;
-	if (P.Ok() && P.Array(Root->TryGetField(TEXT("wheels")), TEXT("/wheels"), FMantleVehicleLimits::MinWheels, FMantleVehicleLimits::MaxWheels, Wheels))
+	if (P.Ok() && P.Array(Root->TryGetField(TEXT("wheels")), TEXT("/wheels"), MinWheelCount, MaxWheelCount, Wheels))
 	{
 		for (int32 Index = 0; Index < Wheels->Num() && P.Ok(); ++Index)
 		{
@@ -2867,6 +3025,10 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	{
 		ReadVehicleHover(P, Root, D);
 	}
+	if (P.Ok() && D.MovementType == EMantleVehicleMovementKind::Tracked)
+	{
+		ReadVehicleTracked(P, Root, D);
+	}
 	if (P.Ok() && D.MovementType == EMantleVehicleMovementKind::Boat)
 	{
 		ReadVehicleBoat(P, Root, D);
@@ -2924,7 +3086,7 @@ bool FMantleVehicleAssetReader::ResolveMovementBones(FMantleVehicleDesc& D, cons
 		}
 	}
 
-	// How the movement blocks use a bone: a posed one (an aerofoil's, a spin bone) is not the root, a wheel's or one a wheel hangs from; the fork is neither the
+	// How the movement blocks use a bone: a posed one (an aerofoil's, a spin bone, a track's roller) is not the root, a wheel's or one a wheel hangs from; the fork is neither the
 	// root nor a wheel's; a grip's bone is any (an unnamed one is the root); a thruster's or a rotor's is a reference only.
 	enum class EUse : uint8
 	{
@@ -2989,6 +3151,14 @@ bool FMantleVehicleAssetReader::ResolveMovementBones(FMantleVehicleDesc& D, cons
 			AddGrips(TEXT("pilot's"), D.Helicopter.PilotGrips);
 		}
 	}
+	// A tracked vehicle's sprockets, idlers and return rollers spin at their belt's speed: posed, so free of the root and the road wheels.
+	if (D.MovementType == EMantleVehicleMovementKind::Tracked)
+	{
+		for (int32 Index = 0; Index < D.Tracked.Rollers.Num(); ++Index)
+		{
+			Refs.Add({ &D.Tracked.Rollers[Index].Bone, FString::Printf(TEXT("track roller %d"), Index), EUse::Posed });
+		}
+	}
 	if (D.bRider)
 	{
 		Refs.Add({ &D.Rider.ForkBone, TEXT("rider's fork"), EUse::Fork });
@@ -3028,6 +3198,63 @@ bool FMantleVehicleAssetReader::ResolveMovementBones(FMantleVehicleDesc& D, cons
 		}
 		// The body's own spelling, which the skeleton and the simulation modules use.
 		*Ref.Name = Bones[Bone].Name;
+	}
+	return true;
+}
+
+bool FMantleVehicleAssetReader::CheckTrackedLayout(const FMantleVehicleDesc& Desc, const TConstArrayView<FVector> WheelPositions, FString& OutError)
+{
+	using namespace MantleVehicleAssetPrivate;
+
+	if (Desc.MovementType != EMantleVehicleMovementKind::Tracked)
+	{
+		return true;
+	}
+	if (WheelPositions.Num() != Desc.Wheels.Num())
+	{
+		return FailVehicle(OutError, FString::Printf(TEXT("that tracked vehicle has %d wheels but %d wheel positions"), Desc.Wheels.Num(), WheelPositions.Num()));
+	}
+	// Each road wheel is on the track of its side: the sign of its bone's rest Y (as WheelSide). A wheel within a centimeter of the centerline belongs to
+	// neither: its side cannot be told, so it is refused rather than guessed.
+	int32 Count[2] = { 0, 0 };
+	double SumAbsY[2] = { 0.0, 0.0 };
+	double MinX = TNumericLimits<double>::Max();
+	double MaxX = -TNumericLimits<double>::Max();
+	double SumRadius = 0.0;
+	for (int32 Index = 0; Index < Desc.Wheels.Num(); ++Index)
+	{
+		const FVector& Position = WheelPositions[Index];
+		if (FMath::Abs(Position.Y) < FMantleVehicleLimits::TrackSideMinOffset)
+		{
+			return FailVehicle(OutError, FString::Printf(
+				TEXT("that tracked vehicle's wheel %d (bone %s) is on the centerline (Y %.2f cm), so it is on neither track; move its bone at least %g cm to the left (-Y) or the right (+Y)"),
+				Index, *Desc.Wheels[Index].Bone.ToString(), Position.Y, FMantleVehicleLimits::TrackSideMinOffset));
+		}
+		const int32 Side = Position.Y < 0.0 ? 0 : 1;
+		++Count[Side];
+		SumAbsY[Side] += FMath::Abs(Position.Y);
+		MinX = FMath::Min(MinX, Position.X);
+		MaxX = FMath::Max(MaxX, Position.X);
+		SumRadius += Desc.Wheels[Index].Radius;
+	}
+	for (int32 Side = 0; Side < 2; ++Side)
+	{
+		if (Count[Side] < FMantleVehicleLimits::MinTrackRoadWheelsPerSide || Count[Side] > FMantleVehicleLimits::MaxTrackRoadWheelsPerSide)
+		{
+			return FailVehicle(OutError, FString::Printf(TEXT("that tracked vehicle has %d road wheels on its %s track; each track has %d to %d"), Count[Side],
+				Side == 0 ? TEXT("left (-Y)") : TEXT("right (+Y)"), FMantleVehicleLimits::MinTrackRoadWheelsPerSide, FMantleVehicleLimits::MaxTrackRoadWheelsPerSide));
+		}
+	}
+	// Turning on the spot: each track slides sideways against its own lateral resistance, which twists back harder the longer the track is against the
+	// gauge that levers it round. Past l / B x lateralShare = 2 the tracks' grip cannot turn it (the cook's and validate.py's rule).
+	const double Gauge = SumAbsY[0] / Count[0] + SumAbsY[1] / Count[1];
+	const double ContactLength = (MaxX - MinX) + SumRadius / Desc.Wheels.Num();
+	const double TurnRatio = ContactLength / Gauge * Desc.Tracked.LateralShare;
+	if (TurnRatio >= FMantleVehicleLimits::TrackedMaxTurnRatio)
+	{
+		return FailVehicle(OutError, FString::Printf(
+			TEXT("this tracked vehicle can't turn on the spot: its tracks are too long for their gauge (contact length %.0f cm over gauge %.0f cm, times lateralShare %g, is %.2f; it must be under %g)"),
+			ContactLength, Gauge, Desc.Tracked.LateralShare, TurnRatio, FMantleVehicleLimits::TrackedMaxTurnRatio));
 	}
 	return true;
 }
@@ -3179,6 +3406,11 @@ bool FMantleVehicleAssetReader::Read(const TConstArrayView<uint8> Data, FMantleV
 		// The body's own spelling, which the skeleton and the simulation modules use.
 		Desc.Bone = Bones[Found].Name;
 		Out.WheelPositions.Add(Component[Found].GetLocation());
+	}
+	// A tracked vehicle's two tracks, now that its road wheels have their places.
+	if (!CheckTrackedLayout(Out.Desc, Out.WheelPositions, Why))
+	{
+		return FailVehicle(OutError, Why);
 	}
 
 	// (b): every bone the linkage names is the body's (in its spelling), and none it moves is the root, a wheel

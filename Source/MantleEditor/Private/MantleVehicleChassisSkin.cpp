@@ -495,7 +495,10 @@ namespace MantleVehicleChassisSkinPrivate
 			FString Side;
 			if (Rest.Split(TEXT("_"), &Axle, &Side))
 			{
-				return FText::FromString(FString::Printf(TEXT("%s wheel, axle %s"), Side == TEXT("l") ? TEXT("Left") : TEXT("Right"), *Axle));
+				// A tracked vehicle's axles are its road-wheel pairs, counted from the front along each track.
+				return FText::FromString(Spec.Tracked.bSet
+					? FString::Printf(TEXT("%s road wheel %s (from the front)"), Side == TEXT("l") ? TEXT("Left") : TEXT("Right"), *Axle)
+					: FString::Printf(TEXT("%s wheel, axle %s"), Side == TEXT("l") ? TEXT("Left") : TEXT("Right"), *Axle));
 			}
 		}
 		if (Bone.StartsWith(TEXT("fork")))
@@ -782,7 +785,8 @@ TArray<FMantleVehiclePartSlot> FMantleVehicleChassisSkin::PartSlots(const FMantl
 		Slot.ChassisBone = Chassis.Bones[Bone].Name;
 		if (Name.StartsWith(TEXT("wheel_")))
 		{
-			// A helicopter's skids and a hovercraft's pads are the chassis's, never drawn, so there is no wheel to assign.
+			// A helicopter's skids and a hovercraft's pads are the chassis's, never drawn, so there is no wheel to assign. A tracked vehicle's road wheels are drawn:
+			// each is a wheel slot.
 			if (bHiddenWheels)
 			{
 				continue;
@@ -1285,7 +1289,7 @@ FMantleVehicleModelPlacement FMantleVehicleChassisSkin::FitPlacement(const FMant
 	}
 	else if (WheelFloor < TNumericLimits<double>::Max() && FMantleVehicleShape::UsesSize(Spec))
 	{
-		// A plane with its wheels assigned stands on them.
+		// A plane, or a tracked vehicle, with its wheels assigned stands on them.
 		Floor = WheelFloor;
 	}
 	Placement.Offset = FVector(GrayCenter.X - Center.X, GrayCenter.Y - Center.Y, -Floor);
