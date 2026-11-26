@@ -805,11 +805,20 @@ FString FMantleChassisSpec::ComposeDocument(const FMantleChassisSpec& Spec, TArr
 	SetDefault(Doc, TEXT("frontalArea"), DefaultFrontalArea);
 
 	const TSharedPtr<FJsonObject> Engine = ChildObject(Doc, TEXT("engine"));
-	SetDefault(Engine, TEXT("idleRPM"), DefaultIdleRpm);
+	// An electric motor (#445) has no idle, and its one gear no reverse ratio or shift points: the reader refuses them on it.
+	FString Drive;
+	const bool bElectric = Engine->TryGetStringField(TEXT("drive"), Drive) && Drive == TEXT("electric");
+	if (!bElectric)
+	{
+		SetDefault(Engine, TEXT("idleRPM"), DefaultIdleRpm);
+	}
 	const TSharedPtr<FJsonObject> Transmission = ChildObject(Doc, TEXT("transmission"));
-	SetDefault(Transmission, TEXT("reverseRatio"), DefaultReverseRatio);
+	if (!bElectric)
+	{
+		SetDefault(Transmission, TEXT("reverseRatio"), DefaultReverseRatio);
+	}
 	double RedlineRpm = 0.0;
-	if (Engine->TryGetNumberField(TEXT("maxRPM"), RedlineRpm))
+	if (!bElectric && Engine->TryGetNumberField(TEXT("maxRPM"), RedlineRpm))
 	{
 		SetDefault(Transmission, TEXT("changeUpRPM"), FMath::FloorToDouble(RedlineRpm * 0.85));
 		SetDefault(Transmission, TEXT("changeDownRPM"), FMath::FloorToDouble(RedlineRpm * 0.4));
