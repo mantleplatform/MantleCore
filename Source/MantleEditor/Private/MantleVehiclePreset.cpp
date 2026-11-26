@@ -123,7 +123,7 @@ namespace MantleVehiclePresetPrivate
 			TEXT("engine/maxTorque"), TEXT("engine/maxRPM"), TEXT("engine/idleRPM"), TEXT("engine/torqueCurve"),
 			TEXT("engine/tractionControl"), TEXT("engine/engineBraking"),
 			TEXT("transmission/gearRatios"), TEXT("transmission/reverseRatio"), TEXT("transmission/finalDrive"),
-			TEXT("transmission/changeUpRPM"), TEXT("transmission/changeDownRPM"),
+			TEXT("transmission/changeUpRPM"), TEXT("transmission/changeDownRPM"), TEXT("transmission/shiftTime"),
 			TEXT("suspension/maxRaise"), TEXT("suspension/maxDrop"), TEXT("suspension/springRate"),
 			TEXT("suspension/springPreload"), TEXT("suspension/damping"),
 			TEXT("steering/maxAngle"), TEXT("steering/ackermann"), TEXT("steering/speedCurve"),
@@ -574,6 +574,8 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 	Reader.Float(TEXT("transmission/finalDrive"), T.FinalDrive);
 	Reader.Int(TEXT("transmission/changeUpRPM"), T.ChangeUpRPM);
 	Reader.Int(TEXT("transmission/changeDownRPM"), T.ChangeDownRPM);
+	// #376: each gear change's time, part of the car; absent, the tuning keeps its own (0.5 s).
+	Reader.Float(TEXT("transmission/shiftTime"), T.ShiftTime);
 
 	Reader.Float(TEXT("suspension/maxRaise"), T.SuspensionMaxRaise);
 	Reader.Float(TEXT("suspension/maxDrop"), T.SuspensionMaxDrop);

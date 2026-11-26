@@ -406,6 +406,10 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0", ClampMax = "20000"))
 	int32 ChangeDownRPM = 0;
 
+	/** Seconds each gear change takes (transmission.shiftTime), with no drive while it shifts. 0.5 is Epic's default. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0.05", ClampMax = "2"))
+	float ShiftTime = 0.5f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Suspension", meta = (ClampMin = "0", ClampMax = "50", Units = "cm"))
 	float SuspensionMaxRaise = 10.f;
 

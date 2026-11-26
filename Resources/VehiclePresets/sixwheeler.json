@@ -63,7 +63,8 @@
       "reverseRatio": 5.5,
       "finalDrive": 4.43,
       "changeUpRPM": 2100,
-      "changeDownRPM": 1100
+      "changeDownRPM": 1100,
+      "shiftTime": 0.5
     },
     "suspension": {
       "maxRaise": 15,
@@ -98,6 +99,7 @@
     "engine/maxRPM": [1800, 4500],
     "engine/idleRPM": [400, 900],
     "engine/engineBraking": [0, 2],
+    "transmission/shiftTime": [0.05, 2],
     "suspension/maxRaise": [5, 40],
     "suspension/maxDrop": [5, 40],
     "suspension/springRate": [400, 2000],

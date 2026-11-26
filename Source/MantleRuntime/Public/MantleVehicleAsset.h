@@ -489,6 +489,8 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	double FinalDrive = 0.0;
 	int32 ChangeUpRPM = 0;
 	int32 ChangeDownRPM = 0;
+	/** transmission.shiftTime: seconds each gear change takes (no drive while it shifts). Absent: 0.5, Epic's GearChangeTime default. */
+	double ShiftTime = 0.5;
 
 	double SuspensionMaxRaise = 10.0;
 	double SuspensionMaxDrop = 10.0;

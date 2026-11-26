@@ -29,6 +29,8 @@ struct MANTLERUNTIME_API FMantleChassisHandling
 	double MaxSteerAngle = 0.0;
 	double BrakeTorque = 0.0;
 	double HandbrakeTorque = 0.0;
+	/** engine.engineBraking, Nm per engine rpm on each driven wheel (0: none, and the document then leaves it out). */
+	double EngineBraking = 0.0;
 	double TireFriction = 0.0;
 	double CameraArmLength = 0.0;
 	double CameraHeight = 0.0;

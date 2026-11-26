@@ -56,6 +56,7 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("transmission/finalDrive"), 0.1, 10.0 },
 		{ TEXT("transmission/changeUpRPM"), 500.0, 20000.0 },
 		{ TEXT("transmission/changeDownRPM"), 300.0, 20000.0 },
+		{ TEXT("transmission/shiftTime"), 0.05, 2.0 },
 		{ TEXT("suspension/maxRaise"), 0.0, 50.0 },
 		{ TEXT("suspension/maxDrop"), 0.0, 50.0 },
 		{ TEXT("suspension/springRate"), 1.0, 5000.0 },
@@ -2311,7 +2312,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	TSharedPtr<FJsonObject> Transmission;
 	if (P.Ok() && P.Object(Root, TEXT(""), TEXT("transmission"), Transmission)
 		&& P.Keys(Transmission, TEXT("/transmission"),
-			{ TEXT("gearRatios"), TEXT("reverseRatio"), TEXT("finalDrive"), TEXT("changeUpRPM"), TEXT("changeDownRPM") },
+			{ TEXT("gearRatios"), TEXT("reverseRatio"), TEXT("finalDrive"), TEXT("changeUpRPM"), TEXT("changeDownRPM"), TEXT("shiftTime") },
 			{ TEXT("gearRatios"), TEXT("reverseRatio"), TEXT("finalDrive"), TEXT("changeUpRPM"), TEXT("changeDownRPM") }))
 	{
 		const TArray<TSharedPtr<FJsonValue>>* Gears = nullptr;
@@ -2331,6 +2332,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 		P.Number(Transmission, TEXT("/transmission"), TEXT("finalDrive"), TEXT("transmission/finalDrive"), D.FinalDrive);
 		P.Int(Transmission, TEXT("/transmission"), TEXT("changeUpRPM"), TEXT("transmission/changeUpRPM"), D.ChangeUpRPM);
 		P.Int(Transmission, TEXT("/transmission"), TEXT("changeDownRPM"), TEXT("transmission/changeDownRPM"), D.ChangeDownRPM);
+		P.OptNumber(Transmission, TEXT("/transmission"), TEXT("shiftTime"), TEXT("transmission/shiftTime"), D.ShiftTime);
 	}
 
 	TSharedPtr<FJsonObject> Suspension;

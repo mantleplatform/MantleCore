@@ -47,6 +47,7 @@ namespace MantleChassisDeriveTestPrivate
 			{ TEXT("maxAngle"), D.MaxSteerAngle, H.MaxSteerAngle },
 			{ TEXT("brakeTorque"), D.BrakeTorque, H.BrakeTorque },
 			{ TEXT("handbrakeTorque"), D.HandbrakeTorque, H.HandbrakeTorque },
+			{ TEXT("engineBraking"), D.EngineBraking, H.EngineBraking },
 			{ TEXT("friction"), D.TireFriction, H.TireFriction },
 			{ TEXT("cameraArmLength"), D.CameraArmLength, H.CameraArmLength },
 			{ TEXT("cameraHeight"), D.CameraHeight, H.CameraHeight },
@@ -166,6 +167,8 @@ namespace MantleChassisDeriveTestPrivate
 		if (bOk)
 		{
 			H.CenterOfMass = FVector(Parts[0], Parts[1], Parts[2]);
+			// Engine braking is left out of a document that has none.
+			Number(Json, TEXT("engine"), TEXT("engineBraking"), H.EngineBraking);
 			// A ground car's document holds its preset's one friction as the front's and the rear's (6/7 and 8/7 of it, so their mean is the preset's).
 			const TSharedPtr<FJsonObject>* Tires = nullptr;
 			double RearFriction = 0.0;
@@ -552,6 +555,7 @@ bool FMantleChassisDeriveScalingLawsTest::RunTest(const FString& Parameters)
 				ScalesRounded(H.SpringRate, Own.SpringRate, S * S) && ScalesRounded(H.SpringPreload, Own.SpringPreload, S * S));
 			TestTrue(*FString::Printf(TEXT("%s: the engine's torque follows the mass at the same power-to-weight, S^3"), *Label), ScalesRounded(H.MaxTorque, Own.MaxTorque, S * S * S));
 			TestTrue(*FString::Printf(TEXT("%s: the brakes give the same deceleration, torque S^4"), *Label), ScalesRounded(H.BrakeTorque, Own.BrakeTorque, S * S * S * S));
+			TestTrue(*FString::Printf(TEXT("%s: engine braking gives the same lift-off deceleration, S^4"), *Label), ScalesRounded(H.EngineBraking, Own.EngineBraking, S * S * S * S));
 			// The lock is the archetype's own angle, so a uniform scale leaves it alone (and the turning circle, which follows the wheelbase, grows with the size).
 			TestEqual(*FString::Printf(TEXT("%s: the steering lock is an angle, the same"), *Label), H.MaxSteerAngle, Own.MaxSteerAngle);
 			TestTrue(*FString::Printf(TEXT("%s: the archetype's tire, drag and damping are kept"), *Label),
@@ -763,7 +767,7 @@ bool FMantleChassisDeriveHoldsAreVisibleTest::RunTest(const FString& Parameters)
 	using namespace MantleChassisDeriveTestPrivate;
 	// Every path Derive holds a result to is one the document has a range for: a path the document did not know would hold nothing, silently.
 	const TArray<FString> Paths = FMantleChassisDerive::LimitedPaths();
-	TestEqual(TEXT("Derive holds fifteen numbers"), Paths.Num(), 15);
+	TestEqual(TEXT("Derive holds sixteen numbers"), Paths.Num(), 16);
 	for (const FString& Path : Paths)
 	{
 		double Min = 0.0;

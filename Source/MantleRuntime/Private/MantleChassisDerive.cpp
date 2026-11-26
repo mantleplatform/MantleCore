@@ -43,6 +43,7 @@ namespace MantleChassisDerivePrivate
 		constexpr const TCHAR* MaxSteerAngle = TEXT("steering/maxAngle");
 		constexpr const TCHAR* BrakeTorque = TEXT("brakes/brakeTorque");
 		constexpr const TCHAR* HandbrakeTorque = TEXT("brakes/handbrakeTorque");
+		constexpr const TCHAR* EngineBraking = TEXT("engine/engineBraking");
 		constexpr const TCHAR* TireFriction = TEXT("tires/friction");
 		constexpr const TCHAR* CameraArmLength = TEXT("camera/armLength");
 		constexpr const TCHAR* CameraHeight = TEXT("camera/height");
@@ -66,7 +67,7 @@ namespace MantleChassisDerivePrivate
 	const TCHAR* const LimitedPathTable[] = {
 		DocPath::Mass, DocPath::MaxSpeed, DocPath::FrontalArea, DocPath::MaxTorque, DocPath::FinalDrive, DocPath::MaxRaise, DocPath::MaxDrop,
 		DocPath::SpringRate, DocPath::SpringPreload, DocPath::MaxSteerAngle, DocPath::BrakeTorque, DocPath::HandbrakeTorque, DocPath::TireFriction,
-		DocPath::CameraArmLength, DocPath::CameraHeight,
+		DocPath::CameraArmLength, DocPath::CameraHeight, DocPath::EngineBraking,
 	};
 
 	/** Whether a rule's answer differs from what it was held to by more than the floating-point noise of working it out (a result at a bound must not look held). */
@@ -169,7 +170,7 @@ namespace MantleChassisDerivePrivate
 	void RoundHandling(FMantleChassisHandling& H)
 	{
 		for (double* Number : { &H.Mass, &H.MaxSpeed, &H.DragCoefficient, &H.FrontalArea, &H.MaxTorque, &H.FinalDrive, &H.MaxRaise, &H.MaxDrop, &H.SpringRate,
-				 &H.SpringPreload, &H.SpringDamping, &H.MaxSteerAngle, &H.BrakeTorque, &H.HandbrakeTorque, &H.TireFriction, &H.CameraArmLength, &H.CameraHeight,
+				 &H.SpringPreload, &H.SpringDamping, &H.MaxSteerAngle, &H.BrakeTorque, &H.HandbrakeTorque, &H.EngineBraking, &H.TireFriction, &H.CameraArmLength, &H.CameraHeight,
 				 &H.WingAreaM2, &H.TailplaneAreaM2, &H.FinAreaM2, &H.EngineThrustNewtons, &H.RotorThrustNewtons, &H.HoverThrustNewtons, &H.PadSpringRate,
 				 &H.HoverFinAreaM2 })
 		{
@@ -273,6 +274,9 @@ FMantleChassisHandling FMantleChassisDerive::Derive(const FMantleChassisSpec& Sp
 	// Brakes: the same deceleration, so each wheel's torque follows the mass it carries and its radius; the handbrake follows the brakes.
 	H.BrakeTorque = Limited(H.Clamped, DocPath::BrakeTorque, Arch.BrakeTorque * MassRatio * (BaseWheels / Wheels) * RadiusRatio);
 	H.HandbrakeTorque = Limited(H.Clamped, DocPath::HandbrakeTorque, Arch.HandbrakeTorque * SizeRatio(H.BrakeTorque, Arch.BrakeTorque));
+	// Engine braking: the same lift-off deceleration, so like the brakes it follows the mass each wheel carries and its radius (the final drive keeps
+	// the engine's rpm at a given speed, so the rpm it multiplies does not change with the size).
+	H.EngineBraking = Limited(H.Clamped, DocPath::EngineBraking, Arch.EngineBraking * MassRatio * (BaseWheels / Wheels) * RadiusRatio);
 
 	// Tires and drag: the archetype's tire and drag coefficient; the frontal area is the body's face against its own.
 	H.TireFriction = Limited(H.Clamped, DocPath::TireFriction, Arch.TireFriction * (1.0 + Reach * Grip));

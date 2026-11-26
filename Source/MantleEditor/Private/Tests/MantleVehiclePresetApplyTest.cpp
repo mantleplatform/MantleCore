@@ -245,7 +245,7 @@ bool FMantleVehiclePresetDriverAidsTest::RunTest(const FString& Parameters)
 	// Cars step 7 (#376): ABS, traction control, brake balance and engine braking are part of the car. A preset's are read in and written out.
 	FMantleVehiclePreset Preset;
 	FString Error;
-	const TCHAR* Defaults = TEXT("{ \"brakes\": { \"abs\": false, \"frontShare\": 0.55 }, \"engine\": { \"tractionControl\": false, \"engineBraking\": 0.3 } }");
+	const TCHAR* Defaults = TEXT("{ \"brakes\": { \"abs\": false, \"frontShare\": 0.55 }, \"engine\": { \"tractionControl\": false, \"engineBraking\": 0.3 }, \"transmission\": { \"shiftTime\": 0.15 } }");
 	if (TestTrue(TEXT("the inline preset parses"), FMantleVehiclePresets::Parse(PresetWithDefaults(Defaults), Preset, Error)))
 	{
 		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage());
@@ -256,6 +256,7 @@ bool FMantleVehiclePresetDriverAidsTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("frontShare read in"), T.BrakeFrontShare, 0.55f);
 		TestFalse(TEXT("tractionControl read in"), T.bTractionControl);
 		TestEqual(TEXT("engineBraking read in"), T.EngineBraking, 0.3f);
+		TestEqual(TEXT("shiftTime read in"), T.ShiftTime, 0.15f);
 		const TSharedRef<FJsonObject> Document = FMantleVehicleConverter::MakeDocument(*Source, TMap<FString, FString>());
 		ExpectFragment(*this, TEXT("driver aids"), Preset.Defaults, Document);
 	}
@@ -267,6 +268,7 @@ bool FMantleVehiclePresetDriverAidsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("absent: traction control on"), F.bTractionControl);
 	TestEqual(TEXT("absent: 0.65 on the front"), F.BrakeFrontShare, 0.65f);
 	TestEqual(TEXT("absent: no engine braking"), F.EngineBraking, 0.f);
+	TestEqual(TEXT("absent: a gear change takes 0.5 s"), F.ShiftTime, 0.5f);
 	const TSharedRef<FJsonObject> Plain = FMantleVehicleConverter::MakeDocument(*Fresh, TMap<FString, FString>());
 	const TSharedPtr<FJsonObject>* Brakes = nullptr;
 	const TSharedPtr<FJsonObject>* Engine = nullptr;
@@ -278,15 +280,20 @@ bool FMantleVehiclePresetDriverAidsTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("the document says traction control on"), (*Engine)->TryGetBoolField(TEXT("tractionControl"), bTC) && bTC);
 		TestTrue(TEXT("the document says 0.65 on the front"), (*Brakes)->TryGetNumberField(TEXT("frontShare"), Share) && FMath::IsNearlyEqual(Share, 0.65, 1e-4));
 		TestFalse(TEXT("no engine braking is left out"), (*Engine)->HasField(TEXT("engineBraking")));
+		const TSharedPtr<FJsonObject>* Transmission = nullptr;
+		double Shift = 0.0;
+		TestTrue(TEXT("the document says a gear change takes 0.5 s"), Plain->TryGetObjectField(TEXT("transmission"), Transmission) && Transmission
+			&& (*Transmission)->TryGetNumberField(TEXT("shiftTime"), Shift) && FMath::IsNearlyEqual(Shift, 0.5, 1e-4));
 	}
 
 	// Out of range: the check says so, by name.
 	UMantleVehicleSource* Wild = NewObject<UMantleVehicleSource>(GetTransientPackage());
 	Wild->Tuning.BrakeFrontShare = 1.5f;
 	Wild->Tuning.EngineBraking = 6.f;
+	Wild->Tuning.ShiftTime = 3.f;
 	TArray<FMantleValidationIssue> Issues;
 	FMantleVehicleConverter::CheckSource(Wild, FString(), Issues);
-	for (const TCHAR* What : { TEXT("Brake Front Share"), TEXT("Engine Braking") })
+	for (const TCHAR* What : { TEXT("Brake Front Share"), TEXT("Engine Braking"), TEXT("Shift Time") })
 	{
 		TestTrue(FString::Printf(TEXT("%s out of range is an error"), What), Issues.ContainsByPredicate([What](const FMantleValidationIssue& Issue)
 		{

@@ -1222,6 +1222,7 @@
         "transmission/finalDrive": [0.1, 10],
         "transmission/changeUpRPM": [500, 20000],
         "transmission/changeDownRPM": [300, 20000],
+        "transmission/shiftTime": [0.05, 2],
         "suspension/maxRaise": [0, 50],
         "suspension/maxDrop": [0, 50],
         "suspension/springRate": [1, 5000],

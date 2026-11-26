@@ -3965,6 +3965,8 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 	{
 		Transmission->SetField(TEXT("changeDownRPM"), VehicleInteger(T.ChangeDownRPM));
 	}
+	// Each gear change's time (#376), part of the car: always written, so the creator's document says it (absent, the game takes 0.5 s).
+	Transmission->SetField(TEXT("shiftTime"), VehicleNumber(T.ShiftTime));
 	Doc->SetObjectField(TEXT("transmission"), Transmission);
 
 	TSharedRef<FJsonObject> Suspension = MakeShared<FJsonObject>();
@@ -4671,6 +4673,7 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 				TEXT("Lower Change Down RPM, or set it to 0 for 40% of Max RPM."));
 		}
 	}
+	VehicleCheckRange(Subject, TEXT("Shift Time"), TEXT("transmission/shiftTime"), T.ShiftTime, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Suspension Max Raise"), TEXT("suspension/maxRaise"), T.SuspensionMaxRaise, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Suspension Max Drop"), TEXT("suspension/maxDrop"), T.SuspensionMaxDrop, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Spring Rate"), TEXT("suspension/springRate"), T.SpringRate, OutIssues);

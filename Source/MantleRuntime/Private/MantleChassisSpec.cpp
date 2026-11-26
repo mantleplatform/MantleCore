@@ -408,6 +408,7 @@ namespace MantleChassisSpecPrivate
 			{ TEXT("steering/maxAngle"), &FMantleChassisHandling::MaxSteerAngle, DefaultMaxSteerAngle, false },
 			{ TEXT("brakes/brakeTorque"), &FMantleChassisHandling::BrakeTorque, DefaultBrakeTorque, false },
 			{ TEXT("brakes/handbrakeTorque"), &FMantleChassisHandling::HandbrakeTorque, DefaultHandbrakeTorque, false },
+			{ TEXT("engine/engineBraking"), &FMantleChassisHandling::EngineBraking, 0.0, false },
 			{ TEXT("tires/friction"), &FMantleChassisHandling::TireFriction, DefaultTireFriction, false },
 			{ TEXT("camera/armLength"), &FMantleChassisHandling::CameraArmLength, DefaultCameraArmLength, false },
 			{ TEXT("camera/height"), &FMantleChassisHandling::CameraHeight, DefaultCameraHeight, false },
@@ -472,7 +473,13 @@ namespace MantleChassisSpecPrivate
 		Doc->SetNumberField(TEXT("maxSpeed"), Handling.MaxSpeed);
 		Doc->SetNumberField(TEXT("dragCoefficient"), Handling.DragCoefficient);
 		Doc->SetNumberField(TEXT("frontalArea"), Handling.FrontalArea);
-		ChildObject(Doc, TEXT("engine"))->SetNumberField(TEXT("maxTorque"), Handling.MaxTorque);
+		const TSharedPtr<FJsonObject> Engine = ChildObject(Doc, TEXT("engine"));
+		Engine->SetNumberField(TEXT("maxTorque"), Handling.MaxTorque);
+		// A preset without engine braking keeps the field out of its document (absent is none).
+		if (Handling.EngineBraking > 0.0 || Engine->HasField(TEXT("engineBraking")))
+		{
+			Engine->SetNumberField(TEXT("engineBraking"), Handling.EngineBraking);
+		}
 		ChildObject(Doc, TEXT("transmission"))->SetNumberField(TEXT("finalDrive"), Handling.FinalDrive);
 		const TSharedPtr<FJsonObject> Suspension = ChildObject(Doc, TEXT("suspension"));
 		Suspension->SetNumberField(TEXT("maxRaise"), Handling.MaxRaise);
