@@ -3,7 +3,7 @@
   "id": "atv",
   "name": "ATV (quad bike)",
   "description": "A four-wheeled quad bike: ATVs, farm quads and sport quads. The rider sits astride it and steers by the handlebars, all four wheels pull, and it is light, narrow and nimble off the road.",
-  "comment": "A vehicle preset (#728); see sedan.json for the format. The real machine is a Polaris Sportsman 570 (#376 step 9d), from Polaris's published specs: 567 cc ProStar single, 44 hp, an automatic PVT (a CVT) with on-demand AWD, 318 kg (701 lb) estimated dry weight plus about 12 kg of fuel, 128.3 cm (50.5 in) wheelbase, 210.8 x 121.9 x 119.4 cm, 29.2 cm ground clearance, an 84.5 cm seat, 25 x 8-12 front and 25 x 10-12 rear tires (31.75 cm radius) and 20.8 / 24.1 cm of travel. No instrumented test was found, so it is reported, not judged. Its rider straddles it on a motorcycle seat (chassis.rider): a quad's, whose four wheels steer themselves and whose grips ride a handlebar bone between them (#376 step 9d). ABS and traction control are off (real quads have neither; Joshua 2026-11-25), and both axles drive all the time. Estimates: the torque (52 Nm at 5500 rpm, 48 at the 6500 rpm power peak), the 7000 rpm limit, the CVT as six close steps holding the engine near its peak with a 0.05 s change, the ~90 km/h top speed (the governor), the 97 cm track, the 45/55 split, the drag and frontal area, the 110 cm body, the handlebar, footboards and seat, and a 0.65 g grip on asphalt (knobby tires). The centre of mass sits at the car type's stability bound (42 cm; a real quad's is nearer 50, so this one tips less easily). Springs, damping, brakes and engine braking follow steps 7-9's rules, with springs for a 1.8 Hz ride with a rider on board.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format. The real machine is a Polaris Sportsman 570 (#376 step 9d), from Polaris's published specs: 567 cc ProStar single, 44 hp, an automatic PVT (a CVT) with on-demand AWD, 318 kg (701 lb) estimated dry weight plus about 12 kg of fuel, 128.3 cm (50.5 in) wheelbase, 210.8 x 121.9 x 119.4 cm, 29.2 cm ground clearance, an 84.5 cm seat, 25 x 8-12 front and 25 x 10-12 rear tires (31.75 cm radius) and 20.8 / 24.1 cm of travel. No instrumented test was found, so it is reported, not judged. Its rider straddles it on a motorcycle seat (chassis.rider): a quad's, whose four wheels steer themselves and whose grips ride a handlebar bone between them (#376 step 9d). ABS and traction control are off (real quads have neither; Joshua 2026-11-25), and both axles drive all the time. Estimates: the torque (52 Nm at 5500 rpm, 48 at the 6500 rpm power peak), the 7000 rpm limit, the CVT as six close steps holding the engine near its peak with a 0.05 s change, the ~90 km/h top speed (the governor), the 97 cm track, the 45/55 split, the drag and frontal area, the 110 cm body, the handlebar, footboards and seat, and a 0.65 g grip on asphalt (knobby tires): friction 0.9 (1.0 cornered at 0.725 g). The centre of mass sits at the car type's stability bound (42 cm; a real quad's is nearer 50, so this one tips less easily). Springs, damping, brakes and engine braking follow steps 7-9's rules, with springs for a 1.8 Hz ride with a rider on board. Its tire forces act at the wheel centres, not the contact patch as a car's do: at the patch the light, narrow quad rocked side to side at rest.",
   "movementType": "wheeled",
   "publishable": true,
   "type": "car",
@@ -82,13 +82,13 @@
       "ackermann": true
     },
     "brakes": {
-      "brakeTorque": 750,
+      "brakeTorque": 660,
       "handbrakeTorque": 600,
       "abs": false,
       "frontShare": 0.6
     },
     "tires": {
-      "friction": 1
+      "friction": 0.9
     },
     "camera": {
       "armLength": 260,
