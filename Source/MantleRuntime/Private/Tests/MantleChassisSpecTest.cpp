@@ -383,7 +383,7 @@ namespace MantleChassisSpecTestPrivate
 		{
 			return Value;
 		}
-		for (const TCHAR* Key : { TEXT("movementType"), TEXT("flight"), TEXT("helicopter"), TEXT("hover") })
+		for (const TCHAR* Key : { TEXT("movementType"), TEXT("flight"), TEXT("helicopter"), TEXT("hover"), TEXT("boat") })
 		{
 			Doc->RemoveField(Key);
 		}
