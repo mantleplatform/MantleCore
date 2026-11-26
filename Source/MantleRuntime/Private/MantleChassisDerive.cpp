@@ -174,7 +174,7 @@ namespace MantleChassisDerivePrivate
 		for (double* Number : { &H.Mass, &H.MaxSpeed, &H.DragCoefficient, &H.FrontalArea, &H.MaxTorque, &H.FinalDrive, &H.MaxRaise, &H.MaxDrop, &H.SpringRate,
 				 &H.SpringPreload, &H.SpringDamping, &H.MaxSteerAngle, &H.BrakeTorque, &H.HandbrakeTorque, &H.EngineBraking, &H.PeakPower, &H.TireFriction, &H.CameraArmLength, &H.CameraHeight,
 				 &H.WingAreaM2, &H.TailplaneAreaM2, &H.FinAreaM2, &H.EngineThrustNewtons, &H.RotorThrustNewtons, &H.HoverThrustNewtons, &H.PadSpringRate,
-				 &H.HoverFinAreaM2 })
+				 &H.HoverFinAreaM2, &H.BoatThrustNewtons, &H.BoatRudderAreaM2 })
 		{
 			*Number = RoundSignificant(*Number);
 		}
@@ -230,7 +230,9 @@ FMantleChassisHandling FMantleChassisDerive::Derive(const FMantleChassisSpec& Sp
 
 	// Mass: the archetype's, by the body's volume (length x width x (height + ground clearance)) against its own.
 	const double VolumeRatio = SizeRatio(Spec.Length * Spec.Width * (Spec.Height + Spec.Clearance), Base.Length * Base.Width * (Base.Height + Base.Clearance));
-	H.Mass = Limited(H.Clamped, DocPath::Mass, Arch.Mass * VolumeRatio);
+	// A pedalled vehicle (#447) carries its rider in its mass, and the rider doesn't shrink or grow with the frame: only the rest goes by the volume.
+	const double FixedRiderKg = Spec.bPedal ? FMath::Min(FMantleChassisSpec::PedalRiderMassKg, Arch.Mass) : 0.0;
+	H.Mass = Limited(H.Clamped, DocPath::Mass, FixedRiderKg + (Arch.Mass - FixedRiderKg) * VolumeRatio);
 	const double MassRatio = SizeRatio(H.Mass, Arch.Mass);
 
 	// Center of mass: forward by the archetype's share of the wheelbase, up by its share of the body above the wheel centers, lowered if the track needs it
@@ -326,6 +328,12 @@ FMantleChassisHandling FMantleChassisDerive::Derive(const FMantleChassisSpec& Sp
 		H.HoverThrustNewtons = Arch.HoverThrustNewtons * MassRatio;
 		H.PadSpringRate = Arch.PadSpringRate * MassRatio * (BaseWheels / Wheels) * SizeRatio(BaseCompression, Compression);
 		H.HoverFinAreaM2 = Arch.HoverFinAreaM2 * SizeRatio(Spec.Hovercraft.FinHeight * Spec.Hovercraft.FinChord, Own.FinHeight * Own.FinChord);
+	}
+	// A boat's drive pushes the same share of its weight at every size, as a hovercraft's fan does; its rudder follows the hull's side (length by height).
+	if (Spec.Boat.bSet)
+	{
+		H.BoatThrustNewtons = Arch.BoatThrustNewtons * MassRatio;
+		H.BoatRudderAreaM2 = Arch.BoatRudderAreaM2 * SizeRatio(Spec.Length * Spec.Height, Base.Length * Base.Height);
 	}
 
 	RoundHandling(H);

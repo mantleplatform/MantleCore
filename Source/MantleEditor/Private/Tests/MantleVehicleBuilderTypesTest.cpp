@@ -81,9 +81,10 @@ bool FMantleVehicleBuilderCardsTest::RunTest(const FString& Parameters)
 {
 	const TArray<const FMantleVehiclePreset*> Cards = FMantleVehiclePresets::Publishable();
 
-	// Every type a creator can build has a card: three kinds of ground vehicle, the bike and the three that leave the ground.
+	// Every type a creator can build has a card: three kinds of ground vehicle, the bike, the three that leave the ground, the semi and its trailers (#446).
 	const TCHAR* const Expected[] = { TEXT("sedan"), TEXT("sports"), TEXT("limousine"), TEXT("pickup"), TEXT("van"), TEXT("truck"), TEXT("sixwheeler"),
-		TEXT("compact"), TEXT("muscle"), TEXT("drift"), TEXT("supercar"), TEXT("offroad"), TEXT("bus"), TEXT("atv"), TEXT("electric"), TEXT("motorcycle"), TEXT("plane"), TEXT("jet"), TEXT("helicopter"), TEXT("hovercraft") };
+		TEXT("compact"), TEXT("muscle"), TEXT("drift"), TEXT("supercar"), TEXT("offroad"), TEXT("bus"), TEXT("atv"), TEXT("electric"), TEXT("motorcycle"), TEXT("plane"), TEXT("jet"), TEXT("helicopter"),
+		TEXT("hovercraft"), TEXT("semi"), TEXT("semitrailer"), TEXT("utilitytrailer") };
 	for (const TCHAR* Id : Expected)
 	{
 		TestTrue(*FString::Printf(TEXT("%s has a card"), Id), Cards.ContainsByPredicate([Id](const FMantleVehiclePreset* Card) { return Card->Id == Id; }));
@@ -122,10 +123,11 @@ bool FMantleVehicleBuilderCardsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("surrounding space is trimmed"), Card(TEXT("  A van.  ")), FString(TEXT("A van.")));
 	TestEqual(TEXT("no description, no sentence"), Card(TEXT("")), FString());
 
-	// Road vehicles first, then what flies, then what floats.
+	// Road vehicles first, then what flies, then what floats, then what is towed.
 	const auto Rank = [](const FMantleVehiclePreset* Card)
 	{
-		return Card->MovementType == TEXT("wheeled") ? 0 : Card->MovementType == TEXT("plane") ? 1 : Card->MovementType == TEXT("helicopter") ? 2 : 3;
+		return Card->MovementType == TEXT("wheeled") ? 0 : Card->MovementType == TEXT("plane") ? 1 : Card->MovementType == TEXT("helicopter") ? 2
+			: Card->MovementType == TEXT("trailer") ? 4 : 3;
 	};
 	bool bInOrder = true;
 	for (int32 Index = 1; Index < Cards.Num(); ++Index)

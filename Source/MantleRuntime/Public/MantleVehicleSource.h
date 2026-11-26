@@ -434,6 +434,10 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	/** Seconds a turbo takes from no boost to full boost with the revs already above Spool RPM: its lag (engine.spoolTime). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "0.1", ClampMax = "3", EditCondition = "Induction == EMantleVehicleSourceInduction::Turbo"))
 	float SpoolTime = 0.8f;
+	/** The engine's size in cc (engine.displacement, #378), as the vehicle builder's engine pick sets it on a motorcycle. Sound and scripts read it;
+	 *  the driving never does. 0: not given (written only when set). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (EditCondition = "!bElectric", ClampMin = "0", ClampMax = "2500", DisplayName = "Engine Size (cc)"))
+	int32 EngineDisplacement = 0;
 
 	/** Forward gears, first gear first, 1 to 8. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission")
@@ -510,6 +514,29 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tires", meta = (EditCondition = "bTireRearFriction", ClampMin = "0.1", ClampMax = "10"))
 	float TireRearFriction = 2.f;
+
+	/** How much every wheel loses to rolling (tires.rollingResistance, #448, shared with #447): a car tyre's 0.012, which its absence means; a track's road wheels 0.04. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tires", meta = (ClampMin = "0.002", ClampMax = "0.05"))
+	float TireRollingResistance = 0.012f;
+
+	/** #447: the rider pedals it (the document's pedal block, set by a pedalled preset such as the Bicycle): the rider is its engine. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pedal", meta = (DisplayName = "Pedalled"))
+	bool bPedal = false;
+	/** W the rider holds at full effort (a fit rider ~250). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pedal", meta = (EditCondition = "bPedal", ClampMin = "50", ClampMax = "600", DisplayName = "Rider Power (W)"))
+	float PedalRiderPower = 250.f;
+	/** W while sprinting, standing on the pedals (at least the rider power). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pedal", meta = (EditCondition = "bPedal", ClampMin = "100", ClampMax = "2500", DisplayName = "Sprint Power (W)"))
+	float PedalSprintPower = 900.f;
+	/** kJ of effort above the rider power a full sprint holds; 0: no sprint. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pedal", meta = (EditCondition = "bPedal", ClampMin = "0", ClampMax = "60", DisplayName = "Sprint Reserve (kJ)"))
+	float PedalSprintReserve = 15.f;
+	/** rpm where the rider's push runs out. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pedal", meta = (EditCondition = "bPedal", ClampMin = "60", ClampMax = "300", DisplayName = "Max Cadence (rpm)"))
+	float PedalMaxCadence = 200.f;
+	/** rpm the gears shift to hold (at least 20 under the max cadence). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pedal", meta = (EditCondition = "bPedal", ClampMin = "40", ClampMax = "150", DisplayName = "Cadence (rpm)"))
+	float PedalCadence = 85.f;
 
 	/** For a model with no inside: the driver isn't drawn while driving, so only the vehicle shows. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Seat", meta = (DisplayName = "Hide the driver"))
@@ -957,6 +984,13 @@ public:
 	FName Preset;
 
 	/**
+	 * The engine picked inside the preset (#378: a motorcycle's "125", "300", "600", "1000" or "1800"), whose numbers the vehicle started from.
+	 * None for a type without engines. Picking another engine in the vehicle builder starts again from that engine's numbers.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vehicle")
+	FName PresetEngine;
+
+	/**
 	 * The uniform size applied to the whole vehicle on export so the Mantle character fits it. The vehicle builder proposes it
 	 * from the preset; the creator may change it. 1 is as modeled.
 	 */
@@ -994,7 +1028,8 @@ public:
 	TArray<FMantleVehicleSourcePart> Parts;
 
 	/**
-	 * Which simulation builds it: wheeled for a car, truck, six-wheeler or motorcycle, plane for a plane or jet, helicopter, or hover. Anything but
+	 * Which simulation builds it: wheeled for a car, truck, six-wheeler or motorcycle, plane for a plane or jet, helicopter, hover, or boat (a boat or a jet
+	 * ski). Anything but
 	 * wheeled also needs its block in MovementBlocks. Written into the document as movementType (FMantleVehicleChassisDocument::MergeSource).
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement")
@@ -1008,7 +1043,7 @@ public:
 	EMantleVehicleSeatKind PassengerSeatKind = EMantleVehicleSeatKind::Car;
 
 	/**
-	 * The movement numbers a document carries, as the JSON object text they have in it: a top-level flight, helicopter or hover block,
+	 * The movement numbers a document carries, as the JSON object text they have in it: a top-level flight, helicopter, hover or boat block,
 	 * and seat (exitSideDistance, rider) and camera (boomLocation) with only those keys. Flat numbers in the body's space at the reference pose, never a
 	 * preset id. FMantleVehicleChassisDocument::MovementBlocksJson makes it from a chassis spec; empty for a wheeled vehicle with no rider fit.
 	 */

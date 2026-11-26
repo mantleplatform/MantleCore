@@ -3904,6 +3904,11 @@ const UMantleVehicleSource* FMantleVehicleConverter::MakeExportView(const UMantl
 	return View;
 }
 
+int32 FMantleVehicleConverter::SpoolRPMFor(const FMantleVehicleSourceTuning& Tuning)
+{
+	return Tuning.SpoolRPM > 0 ? Tuning.SpoolRPM : FMath::RoundToInt(Tuning.MaxRPM * 0.4f);
+}
+
 TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehicleSource& Authored, const TMap<FString, FString>& SectionMaterialIds, FString* OutError)
 {
 	using namespace MantleVehicleConverterPrivate;
@@ -3959,6 +3964,20 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 		{
 			Engine->SetField(TEXT("engineBraking"), VehicleNumber(T.EngineBraking));
 		}
+	}
+	// #378: the engine's size, only when the vehicle has one (a motorcycle's engine pick); sound and scripts read it. Never on a motor (#445).
+	if (T.EngineDisplacement > 0 && !T.bElectric)
+	{
+		Engine->SetNumberField(TEXT("displacement"), T.EngineDisplacement);
+	}
+	// #444: a turbo or supercharger. Written only with one, all four fields together (a document without them is an engine with none, so a car
+	// without one cooks as before); boost settings without an induction are refused in CheckSource, never dropped here without a word.
+	if (T.Induction != EMantleVehicleSourceInduction::None && !T.bElectric)
+	{
+		Engine->SetStringField(TEXT("induction"), T.Induction == EMantleVehicleSourceInduction::Turbo ? TEXT("turbo") : TEXT("supercharger"));
+		Engine->SetField(TEXT("maxBoost"), VehicleNumber(T.MaxBoost));
+		Engine->SetField(TEXT("spoolRPM"), VehicleInteger(FMantleVehicleConverter::SpoolRPMFor(T)));
+		Engine->SetField(TEXT("spoolTime"), VehicleNumber(T.SpoolTime));
 	}
 	Doc->SetObjectField(TEXT("engine"), Engine);
 
@@ -4031,7 +4050,24 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 	{
 		Tires->SetField(TEXT("rearFriction"), VehicleNumber(T.TireRearFriction));
 	}
+	// Rolling resistance (#447, #448): only when it is not what its absence means (a car tire's), so a car's document is what it was before the key.
+	if (!FMath::IsNearlyEqual(static_cast<double>(T.TireRollingResistance), FMantleVehicleDesc().TiresRollingResistance, 1.0e-6))
+	{
+		Tires->SetField(TEXT("rollingResistance"), VehicleNumber(T.TireRollingResistance));
+	}
 	Doc->SetObjectField(TEXT("tires"), Tires);
+
+	// #447: a pedalled vehicle (a bicycle): the rider is its engine. Absent on every other vehicle, so their documents are what they were.
+	if (T.bPedal)
+	{
+		TSharedRef<FJsonObject> Pedal = MakeShared<FJsonObject>();
+		Pedal->SetField(TEXT("riderPower"), VehicleNumber(T.PedalRiderPower));
+		Pedal->SetField(TEXT("sprintPower"), VehicleNumber(T.PedalSprintPower));
+		Pedal->SetField(TEXT("sprintReserve"), VehicleNumber(T.PedalSprintReserve));
+		Pedal->SetField(TEXT("maxCadence"), VehicleNumber(T.PedalMaxCadence));
+		Pedal->SetField(TEXT("cadence"), VehicleNumber(T.PedalCadence));
+		Doc->SetObjectField(TEXT("pedal"), Pedal);
+	}
 
 	TArray<TSharedPtr<FJsonValue>> Wheels;
 	for (const FMantleVehicleSourceWheel& Wheel : Source.Wheels)
@@ -4629,11 +4665,47 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 		VehicleCheckRange(Subject, TEXT("Peak Power"), TEXT("engine/peakPower"), T.PeakPower, OutIssues);
 		VehicleCheckRange(Subject, TEXT("Regen Braking"), TEXT("engine/regenBraking"), T.RegenBraking, OutIssues);
 		VehicleCheckRange(Subject, TEXT("Battery Capacity"), TEXT("engine/batteryCapacity"), T.BatteryCapacity, OutIssues);
+		// The document leaves a combustion engine's turbo and size out of an electric car, so the creator's settings would do nothing.
+		if (T.Induction != EMantleVehicleSourceInduction::None)
+		{
+			AddError(TEXT("is electric with an Induction; an electric motor has no turbo or supercharger."), TEXT("Set Induction to None."));
+		}
+		if (T.EngineDisplacement > 0)
+		{
+			AddError(TEXT("is electric with an Engine Size; an electric motor has none."), TEXT("Set Engine Size to 0."));
+		}
 	}
 	else
 	{
 		VehicleCheckRange(Subject, TEXT("Idle RPM"), TEXT("engine/idleRPM"), T.IdleRPM, OutIssues);
 		VehicleCheckRange(Subject, TEXT("Engine Braking"), TEXT("engine/engineBraking"), T.EngineBraking, OutIssues);
+		if (T.EngineDisplacement > 0)
+		{
+			VehicleCheckRange(Subject, TEXT("Engine Size"), TEXT("engine/displacement"), T.EngineDisplacement, OutIssues);
+		}
+		// #444: a turbo or supercharger's settings, each to its range, and full boost above idle and no later than the rev limit. Boost settings changed
+		// on an engine without an induction are refused: the document would leave them out, so the creator's numbers would do nothing.
+		if (T.Induction != EMantleVehicleSourceInduction::None)
+		{
+			const int32 Spool = FMantleVehicleConverter::SpoolRPMFor(T);
+			VehicleCheckRange(Subject, TEXT("Max Boost"), TEXT("engine/maxBoost"), T.MaxBoost, OutIssues);
+			VehicleCheckRange(Subject, TEXT("Spool RPM"), TEXT("engine/spoolRPM"), Spool, OutIssues);
+			VehicleCheckRange(Subject, TEXT("Spool Time"), TEXT("engine/spoolTime"), T.SpoolTime, OutIssues);
+			if (Spool <= T.IdleRPM || Spool > T.MaxRPM)
+			{
+				AddError(FString::Printf(TEXT("reaches full boost at %d RPM, not above its Idle RPM (%d) and at most its Max RPM (%d)."), Spool, T.IdleRPM, T.MaxRPM),
+					TEXT("Set Spool RPM between them (0 uses 40% of Max RPM)."));
+			}
+		}
+		else
+		{
+			const FMantleVehicleSourceTuning Defaults;
+			if (T.MaxBoost != Defaults.MaxBoost || T.SpoolRPM != Defaults.SpoolRPM || T.SpoolTime != Defaults.SpoolTime)
+			{
+				AddError(TEXT("has Max Boost, Spool RPM or Spool Time changed but no Induction, so they would do nothing."),
+					TEXT("Set Induction to Turbo or Supercharger, or put those three back to their defaults."));
+			}
+		}
 		if (T.IdleRPM >= T.MaxRPM)
 		{
 			AddError(FString::Printf(TEXT("idles at %d RPM, not below its Max RPM (%d)."), T.IdleRPM, T.MaxRPM), TEXT("Lower Idle RPM or raise Max RPM."));
@@ -4678,6 +4750,26 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 	if (T.bTireRearFriction)
 	{
 		VehicleCheckRange(Subject, TEXT("Tire Rear Friction"), TEXT("tires/rearFriction"), T.TireRearFriction, OutIssues);
+	}
+	VehicleCheckRange(Subject, TEXT("Tire Rolling Resistance"), TEXT("tires/rollingResistance"), T.TireRollingResistance, OutIssues);
+	// #447: a pedalled vehicle's rider, and the two rules the cook holds them to.
+	if (T.bPedal)
+	{
+		VehicleCheckRange(Subject, TEXT("Rider Power"), TEXT("pedal/riderPower"), T.PedalRiderPower, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Sprint Power"), TEXT("pedal/sprintPower"), T.PedalSprintPower, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Sprint Reserve"), TEXT("pedal/sprintReserve"), T.PedalSprintReserve, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Max Cadence"), TEXT("pedal/maxCadence"), T.PedalMaxCadence, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Cadence"), TEXT("pedal/cadence"), T.PedalCadence, OutIssues);
+		if (T.PedalSprintPower < T.PedalRiderPower)
+		{
+			AddError(FString::Printf(TEXT("has a Sprint Power (%g W) under its Rider Power (%g W)."), T.PedalSprintPower, T.PedalRiderPower),
+				TEXT("Set Sprint Power to at least the Rider Power."));
+		}
+		if (T.PedalCadence + 20.f > T.PedalMaxCadence)
+		{
+			AddError(FString::Printf(TEXT("has a Cadence (%g rpm) within 20 of its Max Cadence (%g rpm)."), T.PedalCadence, T.PedalMaxCadence),
+				TEXT("Lower Cadence or raise Max Cadence so they are at least 20 rpm apart."));
+		}
 	}
 	if (T.bElectric && T.GearRatios.Num() != 1)
 	{
