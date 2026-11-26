@@ -269,6 +269,64 @@ namespace MantleChassisSpecTestPrivate
 		}
 	},
 	{
+		TEXT("offroad"),
+		TEXT(R"MCS({"mass":2097,"maxSpeed":4917,"dragCoefficient":0.45,"frontalArea":3,"engine":{"maxTorque":353,"maxRPM":6600,"idleRPM":700,"torqueCurve":[[0,0.55],[1000,0.7],[2500,0.85],[4800,1],[6400,0.9],[6600,0.85]],"tractionControl":true,"engineBraking":0.052},"transmission":{"gearRatios":[4.71,3.13,2.1,1.67,1.28,1.0,0.84,0.67],"reverseRatio":3.3,"finalDrive":4.1,"changeUpRPM":6400,"changeDownRPM":2000,"shiftTime":0.3},"suspension":{"maxRaise":20,"maxDrop":18,"springRate":171,"springPreload":100,"damping":0.66},"steering":{"maxAngle":41,"ackermann":true},"brakes":{"brakeTorque":6400,"handbrakeTorque":6000,"abs":true,"frontShare":0.65},"tires":{"friction":1.05},"camera":{"armLength":510,"height":200},"schemaVersion":1,"wheels":[{"bone":"wheel_fl","steering":true,"driven":true,"handbrake":false,"radius":41.5,"width":29},{"bone":"wheel_fr","steering":true,"driven":true,"handbrake":false,"radius":41.5,"width":29},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":true,"radius":41.5,"width":29},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":true,"radius":41.5,"width":29}],"collision":[{"center":[0.0,0.0,77.5],"extent":[239.0,94.0,37.5]}],"centerOfMass":[9,0,70],"seat":{"location":[-10,-40,102],"steeringWheel":{"location":[36.8,-40,105],"rotation":[-20.0,0.0,0.0],"radius":19}},"passengerSeat":{"location":[-10,40,102]}})MCS"),
+		320, 204,
+		{ -239.0, -96.5, 0.0 }, { 239.0, 96.5, 115.0 },
+		{
+			{ TEXT("root"), -1, { 0.0, 0.0, 0.0 } },
+			{ TEXT("wheel_fl"), 0, { 150.5, -82.0, 41.5 } },
+			{ TEXT("wheel_fr"), 0, { 150.5, 82.0, 41.5 } },
+			{ TEXT("wheel_rl"), 0, { -150.5, -82.0, 41.5 } },
+			{ TEXT("wheel_rr"), 0, { -150.5, 82.0, 41.5 } }
+		},
+		{
+			{ 150.5, -82.0, 41.5 },
+			{ 150.5, 82.0, 41.5 },
+			{ -150.5, -82.0, 41.5 },
+			{ -150.5, 82.0, 41.5 }
+		}
+	},
+	{
+		TEXT("atv"),
+		TEXT(R"MCS({"mass":330,"maxSpeed":2500,"dragCoefficient":0.9,"frontalArea":1,"engine":{"maxTorque":52,"maxRPM":7000,"idleRPM":1200,"torqueCurve":[[0,0.6],[2500,0.8],[5500,1],[6500,0.927],[7000,0.8]],"tractionControl":false,"engineBraking":0.007},"transmission":{"gearRatios":[3.4,2.4,1.8,1.4,1.15,1.0],"reverseRatio":3.4,"finalDrive":8.6,"changeUpRPM":6500,"changeDownRPM":4000,"shiftTime":0.05},"suspension":{"maxRaise":10,"maxDrop":10,"springRate":72,"springPreload":20,"damping":0.19},"steering":{"maxAngle":35,"ackermann":true},"brakes":{"brakeTorque":750,"handbrakeTorque":600,"abs":false,"frontShare":0.6},"tires":{"friction":1},"camera":{"armLength":260,"height":155},"schemaVersion":1,"wheels":[{"bone":"wheel_fl","steering":true,"driven":true,"handbrake":false,"radius":32,"width":23},{"bone":"wheel_fr","steering":true,"driven":true,"handbrake":false,"radius":32,"width":23},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":true,"radius":32,"width":23},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":true,"radius":32,"width":23}],"collision":[{"center":[0.0,0.0,56.5],"extent":[105.5,55.0,27.5]}],"centerOfMass":[-6,0,42],"seat":{"location":[-20,0,79]}})MCS"),
+		320, 204,
+		{ -105.5, -60.0, 0.0 }, { 105.5, 60.0, 84.0 },
+		{
+			{ TEXT("root"), -1, { 0.0, 0.0, 0.0 } },
+			{ TEXT("wheel_fl"), 0, { 64.0, -48.5, 32.0 } },
+			{ TEXT("wheel_fr"), 0, { 64.0, 48.5, 32.0 } },
+			{ TEXT("wheel_rl"), 0, { -64.0, -48.5, 32.0 } },
+			{ TEXT("wheel_rr"), 0, { -64.0, 48.5, 32.0 } },
+			{ TEXT("handlebar"), 0, { 30.0, 0.0, 108.0 } }
+		},
+		{
+			{ 64.0, -48.5, 32.0 },
+			{ 64.0, 48.5, 32.0 },
+			{ -64.0, -48.5, 32.0 },
+			{ -64.0, 48.5, 32.0 }
+		}
+	},
+	{
+		TEXT("bus"),
+		TEXT(R"MCS({"mass":12587,"maxSpeed":2917,"dragCoefficient":0.65,"frontalArea":7.5,"engine":{"maxTorque":1356,"maxRPM":2200,"idleRPM":650,"torqueCurve":[[0,0.6],[800,0.8],[1400,1],[2000,0.866],[2200,0.75]],"tractionControl":true,"engineBraking":2.1},"transmission":{"gearRatios":[3.51,1.91,1.43,1.0,0.74,0.64],"reverseRatio":4.8,"finalDrive":4.88,"changeUpRPM":2000,"changeDownRPM":1100,"shiftTime":0.5},"suspension":{"maxRaise":15,"maxDrop":18,"springRate":1000,"springPreload":300,"damping":3.9},"steering":{"maxAngle":46,"ackermann":true},"brakes":{"brakeTorque":19500,"handbrakeTorque":16000,"abs":true,"frontShare":0.3},"tires":{"friction":1.16},"camera":{"armLength":1235,"height":310},"schemaVersion":1,"wheels":[{"bone":"wheel_fl","steering":true,"driven":false,"handbrake":false,"radius":50,"width":31},{"bone":"wheel_fr","steering":true,"driven":false,"handbrake":false,"radius":50,"width":31},{"bone":"wheel_rl","steering":false,"driven":true,"handbrake":true,"radius":50,"width":31},{"bone":"wheel_rr","steering":false,"driven":true,"handbrake":true,"radius":50,"width":31}],"collision":[{"center":[0.0,0.0,92.5],"extent":[612.0,129.5,67.5]}],"centerOfMass":[-108,0,105],"seat":{"location":[470,-80,120],"steeringWheel":{"location":[515,-80,128],"rotation":[-20.0,0.0,0.0],"radius":25}},"passengerSeat":{"location":[470,80,120]}})MCS"),
+		320, 204,
+		{ -612.0, -129.5, 0.0 }, { 612.0, 129.5, 160.0 },
+		{
+			{ TEXT("root"), -1, { 0.0, 0.0, 0.0 } },
+			{ TEXT("wheel_fl"), 0, { 360.5, -105.0, 50.0 } },
+			{ TEXT("wheel_fr"), 0, { 360.5, 105.0, 50.0 } },
+			{ TEXT("wheel_rl"), 0, { -360.5, -105.0, 50.0 } },
+			{ TEXT("wheel_rr"), 0, { -360.5, 105.0, 50.0 } }
+		},
+		{
+			{ 360.5, -105.0, 50.0 },
+			{ 360.5, 105.0, 50.0 },
+			{ -360.5, -105.0, 50.0 },
+			{ -360.5, 105.0, 50.0 }
+		}
+	},
+	{
 		TEXT("sedan"),
 		TEXT(R"MCS({"mass":1546,"maxSpeed":5944,"dragCoefficient":0.31,"frontalArea":2.6,"engine":{"maxTorque":249,"maxRPM":7000,"idleRPM":900,"torqueCurve":[[0,0.6],[1000,0.7],[2500,0.88],[4800,1],[6600,0.877],[7000,0.8]],"tractionControl":true,"engineBraking":0.08},"transmission":{"gearRatios":[5.25,3.028,1.95,1.456,1.22,1.0,0.808,0.673],"reverseRatio":4.014,"finalDrive":2.685,"changeUpRPM":6600,"changeDownRPM":2000,"shiftTime":0.3},"suspension":{"maxRaise":10,"maxDrop":16,"springRate":150,"springPreload":50,"damping":0.57},"steering":{"maxAngle":40,"ackermann":true},"brakes":{"brakeTorque":4300,"handbrakeTorque":6000,"abs":true,"frontShare":0.65},"tires":{"friction":1.25},"camera":{"armLength":420,"height":160},"schemaVersion":1,"wheels":[{"bone":"wheel_fl","steering":true,"driven":true,"handbrake":false,"radius":32,"width":21},{"bone":"wheel_fr","steering":true,"driven":true,"handbrake":false,"radius":32,"width":21},{"bone":"wheel_rl","steering":false,"driven":false,"handbrake":true,"radius":32,"width":21},{"bone":"wheel_rr","steering":false,"driven":false,"handbrake":true,"radius":32,"width":21}],"collision":[{"center":[0.0,0.0,55.0],"extent":[235.0,91.0,35.0]}],"centerOfMass":[25,0,46],"seat":{"location":[0,-36,76],"steeringWheel":{"location":[46.8,-36,79],"rotation":[-20.0,0.0,0.0],"radius":19}},"passengerSeat":{"location":[0,36,76]}})MCS"),
 		320, 204,

@@ -474,6 +474,7 @@ bool FMantleVehicleChassisSkinGroundHandlingTest::RunTest(const FString& Paramet
 	}
 	TestTrue(TEXT("its own corner-named wheels fit the sedan"), FMantleVehicleBuilder::FitsOwnWheels(Body, TEXT("sedan")));
 	TestFalse(TEXT("but not a motorcycle's"), FMantleVehicleBuilder::FitsOwnWheels(Body, TEXT("motorcycle")));
+	TestFalse(TEXT("nor a quad's (#376 step 9d: its rider's grips ride the chassis's handlebar bone)"), FMantleVehicleBuilder::FitsOwnWheels(Body, TEXT("atv")));
 	TestFalse(TEXT("and not a plane's"), FMantleVehicleBuilder::FitsOwnWheels(Body, TEXT("plane")));
 	const FMantleVehicleBuildResult Built = FMantleVehicleBuilder::BuildAny(Body, TEXT("sedan"));
 	for (const FString& Problem : Built.Problems)
@@ -597,6 +598,10 @@ bool FMantleVehicleChassisSkinPanelTest::RunTest(const FString& Parameters)
 	Access::PickType(*Panel, TEXT("motorcycle"), TEXT("Motorcycle"));
 	TestTrue(TEXT("a car body is worn as a motorcycle's skin"), Access::UsesSkin(*Panel));
 	TestEqual(TEXT("the bike has its two wheels and its fork to point out"), Access::NumSlots(*Panel), 3);
+	// A quad (#376 step 9d): worn as a skin, with its four wheels and its handlebar to point out.
+	Access::PickType(*Panel, TEXT("atv"), TEXT("ATV (quad bike)"));
+	TestTrue(TEXT("a car body is worn as a quad's skin"), Access::UsesSkin(*Panel));
+	TestEqual(TEXT("the quad has its four wheels and its handlebar to point out"), Access::NumSlots(*Panel), 5);
 	// No model: no rows, and nothing breaks.
 	Access::SetMesh(*Panel, nullptr);
 	TestFalse(TEXT("clearing the model clears what was read"), Access::HaveModel(*Panel));

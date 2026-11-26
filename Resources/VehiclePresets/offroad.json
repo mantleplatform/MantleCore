@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "id": "offroad",
+  "name": "Off-road 4x4",
+  "description": "A tall, short four-wheel-drive off-roader: Jeeps, Land Cruisers, Broncos and rock crawlers. All four wheels pull, the suspension travels a long way and it sits high, so it climbs what a car can't, but it leans and grips less on the road.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format. The real car is a 2018 Jeep Wrangler JL Unlimited (4-door) Rubicon 3.6 V6 8-speed automatic with 4.10 axles (#376 step 9c): Car and Driver's test 0-60 mph 7.5 s, 70-0 mph 212 ft, 0.68 g on its mud-terrain tires; Stellantis's spec sheet for the same driveline: 4623 lb curb, 2451/2172 lb front/rear (53/47), 285 hp at 6400 rpm and 260 lb-ft at 4800, 850RE ratios, LT285/70R17 tires (41.5 cm radius, so the final drive is the real 4.10), 3008 mm wheelbase, 1636 mm track, 11.8 m curb-to-curb turning circle. Both axles drive all the time (the real one is part-time 4WD with a 4:1 low range and locking differentials, which Mantle doesn't have). The 177 km/h governor, the 6600 rpm limit, the low end of the torque curve, the drag and frontal area, the body's underside (40 cm; the 27 cm clearance is under the axles) and the travel are estimates. Grip, springs, damping, brakes and engine braking follow steps 4-9's rules: 1.55 friction per g of skidpad, a 1.2 Hz ride, a 0.27 damping ratio, brake torque for the rear to reach its grip, engine braking for about 0.125 g lifting off at 100 km/h.",
+  "movementType": "wheeled",
+  "publishable": true,
+  "type": "car",
+  "seats": {
+    "driver": "car",
+    "passenger": "car"
+  },
+  "fit": {
+    "wheelRadius": 41.5,
+    "trackWidth": 164,
+    "minScale": 0.5,
+    "maxScale": 2
+  },
+  "wheels": {
+    "min": 4,
+    "max": 6
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 301,
+      "track": 164,
+      "wheelRadius": 41.5,
+      "wheelWidth": 29,
+      "axles": [
+        { "steer": true, "drive": true },
+        { "steer": false, "drive": true, "handbrake": true }
+      ]
+    },
+    "body": { "length": 478, "width": 188, "height": 75, "groundClearance": 40 },
+    "centerOfMass": [9, 0, 70],
+    "seat": {
+      "location": [-10, -40, 102],
+      "steeringWheel": { "location": [36.8, -40, 105], "radius": 19 }
+    }
+  },
+  "derive": {
+    "stability": 1.15,
+    "cameraArmPerLength": 0.63,
+    "cameraHeightPerHeight": 1.1
+  },
+  "defaults": {
+    "mass": 2097,
+    "maxSpeed": 4917,
+    "dragCoefficient": 0.45,
+    "frontalArea": 3,
+    "engine": {
+      "maxTorque": 353,
+      "maxRPM": 6600,
+      "idleRPM": 700,
+      "torqueCurve": [[0, 0.55], [1000, 0.7], [2500, 0.85], [4800, 1], [6400, 0.9], [6600, 0.85]],
+      "tractionControl": true,
+      "engineBraking": 0.052
+    },
+    "transmission": {
+      "gearRatios": [4.71, 3.13, 2.1, 1.67, 1.28, 1.0, 0.84, 0.67],
+      "reverseRatio": 3.3,
+      "finalDrive": 4.1,
+      "changeUpRPM": 6400,
+      "changeDownRPM": 2000,
+      "shiftTime": 0.3
+    },
+    "suspension": {
+      "maxRaise": 20,
+      "maxDrop": 18,
+      "springRate": 171,
+      "springPreload": 100,
+      "damping": 0.66
+    },
+    "steering": {
+      "maxAngle": 41,
+      "ackermann": true
+    },
+    "brakes": {
+      "brakeTorque": 6400,
+      "handbrakeTorque": 6000,
+      "abs": true,
+      "frontShare": 0.65
+    },
+    "tires": {
+      "friction": 1.05
+    },
+    "camera": {
+      "armLength": 510,
+      "height": 200
+    }
+  },
+  "ranges": {
+    "mass": [1500, 3500],
+    "maxSpeed": [2500, 6000],
+    "dragCoefficient": [0.3, 0.7],
+    "engine/maxTorque": [200, 1500],
+    "engine/maxRPM": [4000, 8000],
+    "engine/idleRPM": [500, 1100],
+    "engine/engineBraking": [0, 0.3],
+    "transmission/shiftTime": [0.05, 1],
+    "suspension/maxRaise": [5, 40],
+    "suspension/maxDrop": [5, 40],
+    "suspension/springRate": [60, 1000],
+    "suspension/damping": [0.2, 2],
+    "steering/maxAngle": [25, 50],
+    "brakes/brakeTorque": [1500, 10000],
+    "brakes/frontShare": [0.5, 0.8],
+    "tires/friction": [0.8, 5],
+    "wheels/*/radius": [30, 60]
+  }
+}

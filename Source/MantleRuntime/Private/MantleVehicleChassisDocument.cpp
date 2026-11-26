@@ -317,7 +317,9 @@ namespace MantleVehicleChassisDocumentPrivate
 		C.AutoCenterYawStrength = Control.AutoCenterYawStrength;
 		D.bRider = true;
 		D.bSeatExitSideDistance = true;
-		D.SeatExitSideDistance = FMantleVehicleChassisDocument::BikeExitSideDistance;
+		// A quad (#376 step 9d) is as wide as a small car, not a bike's 40 cm: its rider steps off clear of its wheels and fenders.
+		const double QuadHalfWidth = Spec.bCenterline ? 0.0 : 0.5 * FMath::Max(Spec.Width, Spec.Track + Spec.WheelWidth);
+		D.SeatExitSideDistance = FMath::Max(FMantleVehicleChassisDocument::BikeExitSideDistance, QuadHalfWidth + FMantleVehicleChassisDocument::QuadExitClearance);
 	}
 
 	/** A plane's airframe (ApplyAircraft): the wing's two halves, the elevator and the rudder, the engines and their propellers, the pilot's hands. */

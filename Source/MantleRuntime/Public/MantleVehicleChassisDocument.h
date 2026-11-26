@@ -35,6 +35,8 @@ struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 	static constexpr double PlanePitchAuthority = 0.5;
 	/** How far to the side a bike's rider steps off, cm: a body-width, not a car's door (seat.exitSideDistance). */
 	static constexpr double BikeExitSideDistance = 100.0;
+	/** A quad rider (#376 step 9d) steps off this far beyond the quad's half-width (body or wheels, whichever is wider), cm. */
+	static constexpr double QuadExitClearance = 50.0;
 	/**
 	 * A car's (a ground chassis on more than two wheels) tire grip per axle, as shares of its preset's one friction: the steered front's and the rest's, 3.0 and 4.0
 	 * of a 3.5, the built-in sports car's balance. The front's is written as tires.friction and the rear's as tires.rearFriction. A bike's tires keep their own.
