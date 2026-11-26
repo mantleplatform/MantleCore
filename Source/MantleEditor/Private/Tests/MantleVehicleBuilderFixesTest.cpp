@@ -315,9 +315,9 @@ bool FMantleVehicleBuilderFlierAdviceTest::RunTest(const FString& Parameters)
 		TestTrue(*FString::Printf(TEXT("%s loads"), Id), FMantleVehicleChassisBuilder::LoadSpec(Id, Spec, Error));
 		return FMantleVehicleShape::DriveAdvice(Spec).ToString();
 	};
-	TestTrue(TEXT("the plane needs about 375 m or a runway"), Advice(TEXT("plane")).Contains(TEXT("375 m")) && Advice(TEXT("plane")).Contains(TEXT("runway")));
-	TestTrue(TEXT("the warbird needs about 460 m or a runway"), Advice(TEXT("warbird")).Contains(TEXT("460 m")) && Advice(TEXT("warbird")).Contains(TEXT("runway")));
-	TestTrue(TEXT("the jet needs about 375 m or a runway"), Advice(TEXT("jet")).Contains(TEXT("375 m")) && Advice(TEXT("jet")).Contains(TEXT("runway")));
+	TestTrue(TEXT("the plane needs about 410 m or a runway"), Advice(TEXT("plane")).Contains(TEXT("410 m")) && Advice(TEXT("plane")).Contains(TEXT("runway")));
+	TestTrue(TEXT("the warbird needs about 530 m or a runway"), Advice(TEXT("warbird")).Contains(TEXT("530 m")) && Advice(TEXT("warbird")).Contains(TEXT("runway")));
+	TestTrue(TEXT("the jet needs about 350 m or a runway"), Advice(TEXT("jet")).Contains(TEXT("350 m")) && Advice(TEXT("jet")).Contains(TEXT("runway")));
 	TestTrue(TEXT("the helicopter needs open space above"), Advice(TEXT("helicopter")).Contains(TEXT("open space above")));
 	for (const TCHAR* Id : { TEXT("sedan"), TEXT("motorcycle"), TEXT("hovercraft"), TEXT("tank"), TEXT("bulldozer") })
 	{
@@ -412,7 +412,7 @@ bool FMantleVehicleBuilderFlierAdviceTest::RunTest(const FString& Parameters)
 		TestTrue(*FString::Printf(TEXT("on a flat floor a jet stays 6 m ahead (at %s, wanted %s)"), *Spawn->GetActorLocation().ToString(), *Wanted.ToString()),
 			FVector::Dist2D(Spawn->GetActorLocation(), Wanted) < 1.0);
 		TestTrue(*FString::Printf(TEXT("and sits on the floor (Z %.0f, floor %.0f)"), Spawn->GetActorLocation().Z, FloorTop), FMath::IsNearlyEqual(Spawn->GetActorLocation().Z, FloorTop + 50.0, 1.0));
-		TestTrue(*FString::Printf(TEXT("it says what a jet needs and where it is (%s)"), *Note), Note.Contains(TEXT("150 m")) && Note.Contains(TEXT("6 m in front of you")) && Note.Contains(TEXT("long and flat")));
+		TestTrue(*FString::Printf(TEXT("it says what a jet needs and where it is (%s)"), *Note), Note.Contains(TEXT("A jet needs about 350 m")) && Note.Contains(TEXT("6 m in front of you")) && Note.Contains(TEXT("long and flat")));
 	}
 
 	// A bump where it would go: the nearest stretch that is flat for its whole run is further on, so that is where it is put, and the creator is told.
@@ -423,10 +423,10 @@ bool FMantleVehicleBuilderFlierAdviceTest::RunTest(const FString& Parameters)
 			FVector::Dist2D(Spawn->GetActorLocation(), Camera) > 1500.0);
 		TestTrue(*FString::Printf(TEXT("and says how far it went (%s)"), *Note), Note.Contains(TEXT("m in front of you")) && !Note.Contains(TEXT(" 6 m in front of you")));
 	}
-	// The plane needs a longer run than the jet and says so.
+	// The light plane is told it is a plane, with its own run (#379: longer than the jet's on its afterburner).
 	if (Place(*Plane, Note))
 	{
-		TestTrue(*FString::Printf(TEXT("the plane needs 350 m (%s)"), *Note), Note.Contains(TEXT("350 m")));
+		TestTrue(*FString::Printf(TEXT("the plane needs 410 m (%s)"), *Note), Note.Contains(TEXT("A plane needs about 410 m")));
 	}
 	// A helicopter and a car stay 6 m ahead; the helicopter is told about open space, the car nothing.
 	if (Place(*Heli, Note))
