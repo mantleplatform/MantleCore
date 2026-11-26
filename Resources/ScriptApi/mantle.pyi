@@ -1753,6 +1753,9 @@ class _VehiclesService:
     def get_boost_strength(self, vehicle: Entity, /) -> float:
         """How hard the boost pushes, from 0 (nothing) to 1 (the hardest it can; about 18 m/s of extra speed every second). 0.5 unless you change it."""
         ...
+    def get_engine_size(self, vehicle: Entity, /) -> Optional[float]:
+        """The vehicle's engine size in cc (cubic centimeters), as its creator picked it: a motorcycle's 125, 300, 600, 1000 or 1800 cc engine. nil when the vehicle does not give one (cars, aircraft). Errors if the entity is not a vehicle or no longer exists."""
+        ...
     def get_fuel(self, vehicle: Entity, /) -> float:
         """The fuel in the tank, from 0 to MaxFuel."""
         ...
@@ -1765,11 +1768,17 @@ class _VehiclesService:
     def get_health(self, vehicle: Entity, /) -> float:
         """The car's health, from 0 to MaxHealth. It only changes while health is on."""
         ...
+    def get_lean_angle(self, vehicle: Entity, /) -> Optional[float]:
+        """How far a motorcycle leans now, in degrees: positive leaning right, negative left, 0 upright. A motorcycle leans into the turn it makes, as far as its speed and the turn need, up to its max lean. nil for a vehicle that is not a motorcycle. Errors if the entity is not a vehicle or no longer exists."""
+        ...
     def get_lights(self, vehicle: Entity, light: str, /) -> str:
         """The script's word on a light: 'on', 'off' or 'auto' (the game decides). light is 'head', 'rear', 'reverse', 'left' or 'right'. Errors if the entity is not a car or no longer exists."""
         ...
     def get_liveries(self, vehicle: Entity, /) -> list[str]:
         """The names of the car's liveries, in the order SetLivery counts them: the first name is livery index 0, the next is 1, and so on. A name is what the vehicle's creator called it, or 'Livery 1', 'Livery 2' and so on for one without a name. The list is empty for a car published with no liveries, for the built-in cars, and for an entity that is not a car."""
+        ...
+    def get_local_lean_angle(self) -> Optional[float]:
+        """How far the motorcycle the local player is riding leans now, in degrees (Vehicles:GetLeanAngle's sign: positive right). nil while the local player is not riding a motorcycle. Works on a client script; read it every frame for a lean readout."""
         ...
     def get_local_speed(self) -> Optional[float]:
         """The speed of the vehicle the local player is driving, in centimeters per second (Vehicles:GetSpeed's unit; multiply by 0.036 for km/h): its whole velocity, so it is not negative in reverse. nil while the local player is not driving a vehicle. Works on a client script, where Vehicles:GetSpeed does not; read it every frame to draw a speedometer."""

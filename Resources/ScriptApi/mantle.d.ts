@@ -1633,6 +1633,8 @@ interface VehiclesService {
 	getBoostRegen(vehicle: Entity): number;
 	/** How hard the boost pushes, from 0 (nothing) to 1 (the hardest it can; about 18 m/s of extra speed every second). 0.5 unless you change it. (server only) */
 	getBoostStrength(vehicle: Entity): number;
+	/** The vehicle's engine size in cc (cubic centimeters), as its creator picked it: a motorcycle's 125, 300, 600, 1000 or 1800 cc engine. nil when the vehicle does not give one (cars, aircraft). Errors if the entity is not a vehicle or no longer exists. (server only) */
+	getEngineSize(vehicle: Entity): number | undefined;
 	/** The fuel in the tank, from 0 to MaxFuel. (server only) */
 	getFuel(vehicle: Entity): number;
 	/** How much fuel the car burns each second while it is driven and moving (1 unless you change it). (server only) */
@@ -1641,10 +1643,14 @@ interface VehiclesService {
 	getHeadlightColor(vehicle: Entity): string | undefined;
 	/** The car's health, from 0 to MaxHealth. It only changes while health is on. (server only) */
 	getHealth(vehicle: Entity): number;
+	/** How far a motorcycle leans now, in degrees: positive leaning right, negative left, 0 upright. A motorcycle leans into the turn it makes, as far as its speed and the turn need, up to its max lean. nil for a vehicle that is not a motorcycle. Errors if the entity is not a vehicle or no longer exists. (server only) */
+	getLeanAngle(vehicle: Entity): number | undefined;
 	/** The script's word on a light: "on", "off" or "auto" (the game decides). light is "head", "rear", "reverse", "left" or "right". Errors if the entity is not a car or no longer exists. (server only) */
 	getLights(vehicle: Entity, light: string): string;
 	/** The names of the car's liveries, in the order SetLivery counts them: the first name is livery index 0, the next is 1, and so on. A name is what the vehicle's creator called it, or "Livery 1", "Livery 2" and so on for one without a name. The list is empty for a car published with no liveries, for the built-in cars, and for an entity that is not a car. (server only) */
 	getLiveries(vehicle: Entity): (string)[];
+	/** How far the motorcycle the local player is riding leans now, in degrees (Vehicles:GetLeanAngle's sign: positive right). nil while the local player is not riding a motorcycle. Works on a client script; read it every frame for a lean readout. (client only) */
+	getLocalLeanAngle(): number | undefined;
 	/** The speed of the vehicle the local player is driving, in centimeters per second (Vehicles:GetSpeed's unit; multiply by 0.036 for km/h): its whole velocity, so it is not negative in reverse. nil while the local player is not driving a vehicle. Works on a client script, where Vehicles:GetSpeed does not; read it every frame to draw a speedometer. (client only) */
 	getLocalSpeed(): number | undefined;
 	/** The throttle of the aircraft the local player is flying, from 0 to 1; for a helicopter it is the collective. nil while the local player is not flying a plane or a helicopter (a car has no throttle lever; read its speed instead). (client only) */
