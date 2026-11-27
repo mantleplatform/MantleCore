@@ -349,8 +349,9 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 * when the build saved it.
 	 */
 	static void ApplyEngineSound(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options);
-	/** The engine sounds a type's vehicles may pick (FMantleEngineSounds: a car's, a motorcycle's on two wheels, both on handlebars over more wheels),
-	 *  by its movement, wheels, driver's seat, pedals and drive; empty for one with none to pick (pedalled, electric, a trailer or an aircraft). Pure. */
+	/** The engine sounds a type's vehicles may pick (FMantleEngineSounds: a car's, a motorcycle's on two wheels, both on handlebars over more wheels,
+	 *  an aircraft's on a plane, a helicopter or a hovercraft), by its movement, wheels, driver's seat, pedals and drive; empty for one with none to
+	 *  pick (pedalled, electric or a trailer). Pure. */
 	static void EngineSoundOptions(const FMantleVehiclePreset& Type, TArray<FName>& OutIds);
 	/** The engine sound a type's preset gives its vehicles (defaults.engine.sound); None when it gives none. Pure. */
 	static FName PresetEngineSound(const FMantleVehiclePreset& Type);

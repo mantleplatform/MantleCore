@@ -154,7 +154,7 @@ bool FMantleVehicleEngineSoundConverterTest::RunTest(const FString& Parameters)
 	Boat->DriverSeatKind = EMantleVehicleSeatKind::Motorcycle;
 	TestNull(TEXT("but not on a jet ski's handlebars"), FindIssue(Boat, EMantleIssueSeverity::Error, TEXT("Engine Sound"), Issues));
 
-	// Electric: no sound written and a note (it plays its own motor), not an error; a plane the same.
+	// Electric: no sound written and a note (it plays its own motor), not an error.
 	UMantleVehicleSource* Electric = NewObject<UMantleVehicleSource>(GetTransientPackage());
 	SetWheels(*Electric, 4);
 	Electric->Tuning.bElectric = true;
@@ -164,12 +164,22 @@ bool FMantleVehicleEngineSoundConverterTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("and is told its Engine Sound does nothing"), FindIssue(Electric, EMantleIssueSeverity::Warning, TEXT("Engine Sound"), Issues));
 	TestNull(TEXT("as a note, not an error"), FindIssue(Electric, EMantleIssueSeverity::Error, TEXT("Engine Sound"), Issues));
 	TestEqual(TEXT("an electric car's list is None alone"), Electric->GetEngineSoundOptions().Num(), 1);
+	// Car sounds step 4: a plane, a helicopter or a hovercraft takes an aircraft's sound, and only an aircraft's; nothing else takes one.
 	UMantleVehicleSource* Plane = NewObject<UMantleVehicleSource>(GetTransientPackage());
 	SetWheels(*Plane, 3);
 	Plane->MovementType = EMantleVehicleMovementKind::Plane;
+	Plane->Tuning.EngineSound = TEXT("aircraft_fighter");
+	TestEqual(TEXT("a plane's fighter jet is written"), DocumentSound(*Plane), FString(TEXT("aircraft_fighter")));
+	TestNull(TEXT("and is no error"), FindIssue(Plane, EMantleIssueSeverity::Error, TEXT("Engine Sound"), Issues));
+	TestNull(TEXT("nor a note"), FindIssue(Plane, EMantleIssueSeverity::Warning, TEXT("Engine Sound"), Issues));
 	Plane->Tuning.EngineSound = TEXT("v8");
-	TestEqual(TEXT("a plane writes no sound"), DocumentSound(*Plane), FString());
-	TestNotNull(TEXT("and is told its Engine Sound is left out"), FindIssue(Plane, EMantleIssueSeverity::Warning, TEXT("has an Engine Sound"), Issues));
+	TestNotNull(TEXT("a car's sound on a plane is an error"), FindIssue(Plane, EMantleIssueSeverity::Error, TEXT("Engine Sound 'v8'"), Issues));
+	TestEqual(TEXT("a plane's list: None and an aircraft's sounds"), Plane->GetEngineSoundOptions().Num(), 1 + FMantleEngineSounds::Aircraft().Num());
+	Plane->MovementType = EMantleVehicleMovementKind::Hover;
+	Plane->Tuning.EngineSound = TEXT("hovercraft");
+	TestNull(TEXT("a hovercraft's sound on a hovercraft is no error"), FindIssue(Plane, EMantleIssueSeverity::Error, TEXT("Engine Sound"), Issues));
+	Car->Tuning.EngineSound = TEXT("helicopter");
+	TestNotNull(TEXT("an aircraft's sound on a car is an error"), FindIssue(Car, EMantleIssueSeverity::Error, TEXT("Engine Sound 'helicopter'"), Issues));
 	return true;
 }
 

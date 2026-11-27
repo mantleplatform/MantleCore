@@ -65,12 +65,14 @@ bool FMantleVehicleBuilderEngineSoundTest::RunTest(const FString& Parameters)
 	using FAccess = FMantleVehicleBuilderEngineSoundAccess;
 	const int32 CarCount = FMantleEngineSounds::Car().Num();
 	const int32 BikeCount = FMantleEngineSounds::Bike().Num();
+	const int32 AircraftCount = FMantleEngineSounds::Aircraft().Num();
 
-	// Each type's list: a car's for cars, trucks, tanks and boats; a motorcycle's for the motorcycle; both on handlebars over more wheels; none for the
-	// types with nothing to pick.
+	// Each type's list: a car's for cars, trucks, tanks and boats; a motorcycle's for the motorcycle; both on handlebars over more wheels; an
+	// aircraft's for planes, helicopters and hovercraft; none for the types with nothing to pick.
 	const TPair<const TCHAR*, int32> Lists[] = { { TEXT("sedan"), CarCount }, { TEXT("truck"), CarCount }, { TEXT("tank"), CarCount }, { TEXT("boat"), CarCount },
 		{ TEXT("motorcycle"), BikeCount }, { TEXT("atv"), CarCount + BikeCount }, { TEXT("jetski"), CarCount + BikeCount }, { TEXT("electric"), 0 },
-		{ TEXT("bicycle"), 0 }, { TEXT("plane"), 0 }, { TEXT("helicopter"), 0 }, { TEXT("hovercraft"), 0 }, { TEXT("semitrailer"), 0 } };
+		{ TEXT("bicycle"), 0 }, { TEXT("plane"), AircraftCount }, { TEXT("jet"), AircraftCount }, { TEXT("helicopter"), AircraftCount },
+		{ TEXT("hovercraft"), AircraftCount }, { TEXT("semitrailer"), 0 } };
 	for (const TPair<const TCHAR*, int32>& List : Lists)
 	{
 		const FMantleVehiclePreset* Type = FMantleVehiclePresets::Find(List.Key);
@@ -85,6 +87,8 @@ bool FMantleVehicleBuilderEngineSoundTest::RunTest(const FString& Parameters)
 		TestTrue(*FString::Printf(TEXT("%s: its own sound (%s) is one of them, or it has none"), List.Key, *Own.ToString()), Own.IsNone() || Ids.Contains(Own));
 	}
 	TestEqual(TEXT("A sedan's own sound"), FMantleVehicleBuilder::PresetEngineSound(*FMantleVehiclePresets::Find(TEXT("sedan"))), FName(TEXT("inline4")));
+	TestEqual(TEXT("A jet's own sound"), FMantleVehicleBuilder::PresetEngineSound(*FMantleVehiclePresets::Find(TEXT("jet"))), FName(TEXT("aircraft_fighter")));
+	TestEqual(TEXT("A hovercraft's own sound"), FMantleVehicleBuilder::PresetEngineSound(*FMantleVehiclePresets::Find(TEXT("hovercraft"))), FName(TEXT("hovercraft")));
 
 	// Names in plain words.
 	TestEqual(TEXT("v8"), FMantleVehicleBuilder::EngineSoundName(TEXT("v8")), FString(TEXT("V8")));
@@ -95,6 +99,8 @@ bool FMantleVehicleBuilderEngineSoundTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("bike_inline4"), FMantleVehicleBuilder::EngineSoundName(TEXT("bike_inline4")), FString(TEXT("Motorcycle inline-4")));
 	TestEqual(TEXT("bike_highrev"), FMantleVehicleBuilder::EngineSoundName(TEXT("bike_highrev")), FString(TEXT("Motorcycle high-rev")));
 	TestEqual(TEXT("none"), FMantleVehicleBuilder::EngineSoundName(NAME_None), FString(TEXT("Mantle's default")));
+	TestEqual(TEXT("aircraft_fighter"), FMantleVehicleBuilder::EngineSoundName(TEXT("aircraft_fighter")), FString(TEXT("Fighter jet")));
+	TestEqual(TEXT("helicopter"), FMantleVehicleBuilder::EngineSoundName(TEXT("helicopter")), FString(TEXT("Helicopter")));
 
 	// ApplyEngineSound: the pick goes into the built vehicle's settings; one it can't have, or on a vehicle with none, is a note and nothing.
 	{
@@ -115,8 +121,15 @@ bool FMantleVehicleBuilderEngineSoundTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("a boat takes a V8"), Boat.Source->Tuning.EngineSound, FName(TEXT("v8")));
 		FMantleVehicleBuildResult Plane = MakeBuilt(EMantleVehicleMovementKind::Plane, 3);
 		FMantleVehicleBuilder::ApplyEngineSound(Plane, WithSound(TEXT("v8")));
-		TestTrue(TEXT("a plane takes none"), Plane.Source->Tuning.EngineSound.IsNone());
-		TestTrue(TEXT("with a note"), Plane.Notes.ContainsByPredicate([](const FString& Note) { return Note.Contains(TEXT("none to pick")); }));
+		TestTrue(TEXT("a plane takes no car's"), Plane.Source->Tuning.EngineSound.IsNone());
+		TestTrue(TEXT("with a note"), Plane.Notes.ContainsByPredicate([](const FString& Note) { return Note.Contains(TEXT("doesn't fit")); }));
+		FMantleVehicleBuilder::ApplyEngineSound(Plane, WithSound(TEXT("aircraft_fighter")));
+		TestEqual(TEXT("a plane takes a fighter jet's"), Plane.Source->Tuning.EngineSound, FName(TEXT("aircraft_fighter")));
+		FMantleVehicleBuildResult Hover = MakeBuilt(EMantleVehicleMovementKind::Hover, 0);
+		FMantleVehicleBuilder::ApplyEngineSound(Hover, WithSound(TEXT("hovercraft")));
+		TestEqual(TEXT("a hovercraft takes a hovercraft's"), Hover.Source->Tuning.EngineSound, FName(TEXT("hovercraft")));
+		FMantleVehicleBuilder::ApplyEngineSound(Car, WithSound(TEXT("aircraft_airliner")));
+		TestEqual(TEXT("an airliner's on a car is not"), Car.Source->Tuning.EngineSound, FName(TEXT("v8")));
 	}
 
 	// The window: the row lists the type's sounds and starts on its own one; Build sends the pick; a type with none hides the row and sends nothing.

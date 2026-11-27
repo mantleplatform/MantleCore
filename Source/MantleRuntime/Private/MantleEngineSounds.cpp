@@ -14,20 +14,31 @@ const TArray<FName>& FMantleEngineSounds::Bike()
 	return Ids;
 }
 
-void FMantleEngineSounds::Options(const bool bTwoWheeler, const bool bHandlebars, TArray<FName>& OutIds)
+const TArray<FName>& FMantleEngineSounds::Aircraft()
+{
+	static const TArray<FName> Ids = { TEXT("aircraft_airliner"), TEXT("aircraft_fighter"), TEXT("aircraft_transport"), TEXT("helicopter"), TEXT("hovercraft") };
+	return Ids;
+}
+
+void FMantleEngineSounds::Options(const bool bFlier, const bool bTwoWheeler, const bool bHandlebars, TArray<FName>& OutIds)
 {
 	OutIds.Reset();
-	if (TakesCar(bTwoWheeler))
+	if (TakesCar(bFlier, bTwoWheeler))
 	{
 		OutIds.Append(Car());
 	}
-	if (TakesBike(bTwoWheeler, bHandlebars))
+	if (TakesBike(bFlier, bTwoWheeler, bHandlebars))
 	{
 		OutIds.Append(Bike());
 	}
+	if (TakesAircraft(bFlier))
+	{
+		OutIds.Append(Aircraft());
+	}
 }
 
-bool FMantleEngineSounds::Fits(const FName Id, const bool bTwoWheeler, const bool bHandlebars)
+bool FMantleEngineSounds::Fits(const FName Id, const bool bFlier, const bool bTwoWheeler, const bool bHandlebars)
 {
-	return (TakesCar(bTwoWheeler) && Car().Contains(Id)) || (TakesBike(bTwoWheeler, bHandlebars) && Bike().Contains(Id));
+	return (TakesCar(bFlier, bTwoWheeler) && Car().Contains(Id)) || (TakesBike(bFlier, bTwoWheeler, bHandlebars) && Bike().Contains(Id))
+		|| (TakesAircraft(bFlier) && Aircraft().Contains(Id));
 }

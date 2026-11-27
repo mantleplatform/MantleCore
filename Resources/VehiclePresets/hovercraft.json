@@ -57,6 +57,7 @@
     "dragCoefficient": 0.5,
     "frontalArea": 2,
     "engine": {
+      "sound": "hovercraft",
       "maxTorque": 300,
       "maxRPM": 3000,
       "idleRPM": 600,

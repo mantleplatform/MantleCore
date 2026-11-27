@@ -57,6 +57,7 @@
     "dragCoefficient": 0.4,
     "frontalArea": 1.9,
     "engine": {
+      "sound": "helicopter",
       "maxTorque": 300,
       "maxRPM": 3000,
       "idleRPM": 600,

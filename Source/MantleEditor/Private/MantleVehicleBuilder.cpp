@@ -1634,11 +1634,11 @@ void FMantleVehicleBuilder::ApplyEngineSound(FMantleVehicleBuildResult& Built, c
 	if (!Id.IsNone() && !Source->CanPickEngineSound())
 	{
 		// The same words as CheckSource's note (an electric motor's sound is its own motor's).
-		Built.Notes.Add(TEXT("Engine sound: a pedalled vehicle, an electric motor, a trailer or an aircraft has none to pick, so it is left out of this one."));
+		Built.Notes.Add(TEXT("Engine sound: a pedalled vehicle, an electric motor or a trailer has none to pick, so it is left out of this one."));
 		return;
 	}
 	const bool bTwoWheeler = FMantleEngineSounds::IsTwoWheeler(Source->MovementType == EMantleVehicleMovementKind::Wheeled, Source->Wheels.Num());
-	if (!Id.IsNone() && !FMantleEngineSounds::Fits(Id, bTwoWheeler, Source->DriverSeatKind == EMantleVehicleSeatKind::Motorcycle))
+	if (!Id.IsNone() && !FMantleEngineSounds::Fits(Id, Source->IsFlier(), bTwoWheeler, Source->DriverSeatKind == EMantleVehicleSeatKind::Motorcycle))
 	{
 		Built.Notes.Add(FString::Printf(TEXT("Engine sound: %s doesn't fit this vehicle, so it keeps %s."), *EngineSoundName(Id),
 			*EngineSoundName(Source->Tuning.EngineSound)));
@@ -1662,11 +1662,12 @@ void FMantleVehicleBuilder::EngineSoundOptions(const FMantleVehiclePreset& Type,
 		&& (*Engine)->TryGetStringField(TEXT("drive"), Drive) && Drive == TEXT("electric");
 	const bool bPedal = Type.Defaults.IsValid() && Type.Defaults->HasField(TEXT("pedal"));
 	const bool bEngineMovement = Type.MovementType == TEXT("wheeled") || Type.MovementType == TEXT("tracked") || Type.MovementType == TEXT("boat");
-	if (!FMantleEngineSounds::CanPick(bEngineMovement, bPedal, bElectric))
+	const bool bFlier = Type.MovementType == TEXT("plane") || Type.MovementType == TEXT("helicopter") || Type.MovementType == TEXT("hover");
+	if (!FMantleEngineSounds::CanPick(bEngineMovement, bFlier, bPedal, bElectric))
 	{
 		return;
 	}
-	FMantleEngineSounds::Options(FMantleEngineSounds::IsTwoWheeler(Type.MovementType == TEXT("wheeled"), Type.MaxWheels),
+	FMantleEngineSounds::Options(bFlier, FMantleEngineSounds::IsTwoWheeler(Type.MovementType == TEXT("wheeled"), Type.MaxWheels),
 		Type.DriverSeat == TEXT("motorcycle"), OutIds);
 }
 
@@ -1686,7 +1687,9 @@ FString FMantleVehicleBuilder::EngineSoundName(const FName Id)
 	}
 	// "v8" -> "V8", "inline4" -> "Inline-4", "flat6" -> "Flat-6", "bike_vtwin" -> "Motorcycle V-twin", "bike_highrev" -> "Motorcycle high-rev".
 	static const TMap<FString, FString> Words = { { TEXT("standard"), TEXT("Standard") }, { TEXT("rotary"), TEXT("Rotary") }, { TEXT("diesel"), TEXT("Diesel") },
-		{ TEXT("vtwin"), TEXT("V-twin") }, { TEXT("highrev"), TEXT("high-rev") } };
+		{ TEXT("vtwin"), TEXT("V-twin") }, { TEXT("highrev"), TEXT("high-rev") }, { TEXT("aircraft_airliner"), TEXT("Airliner") },
+		{ TEXT("aircraft_fighter"), TEXT("Fighter jet") }, { TEXT("aircraft_transport"), TEXT("Transport plane") }, { TEXT("helicopter"), TEXT("Helicopter") },
+		{ TEXT("hovercraft"), TEXT("Hovercraft") } };
 	FString Text = Id.ToString().ToLower();
 	const bool bBike = Text.RemoveFromStart(TEXT("bike_"));
 	if (const FString* Word = Words.Find(Text))

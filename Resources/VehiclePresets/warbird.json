@@ -43,6 +43,7 @@
     "dragCoefficient": 0.1,
     "frontalArea": 0.8,
     "engine": {
+      "sound": "aircraft_transport",
       "maxTorque": 300,
       "maxRPM": 3000,
       "idleRPM": 600,

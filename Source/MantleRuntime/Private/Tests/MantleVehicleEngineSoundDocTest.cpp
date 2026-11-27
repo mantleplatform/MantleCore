@@ -95,23 +95,32 @@ bool FMantleVehicleEngineSoundDocTest::RunTest(const FString&)
 	TestFalse(TEXT("a car is not"), FMantleEngineSounds::IsTwoWheeler(true, 4));
 	TestFalse(TEXT("nor is anything not wheeled"), FMantleEngineSounds::IsTwoWheeler(false, 2));
 	TArray<FName> Ids;
-	FMantleEngineSounds::Options(/*bTwoWheeler*/ false, /*bHandlebars*/ false, Ids);
+	FMantleEngineSounds::Options(/*bFlier*/ false, /*bTwoWheeler*/ false, /*bHandlebars*/ false, Ids);
 	TestEqual(TEXT("a car or a boat: a car's engines"), Ids, FMantleEngineSounds::Car());
-	FMantleEngineSounds::Options(true, true, Ids);
+	FMantleEngineSounds::Options(false, true, true, Ids);
 	TestEqual(TEXT("a motorcycle: a motorcycle's"), Ids, FMantleEngineSounds::Bike());
-	FMantleEngineSounds::Options(false, true, Ids);
+	FMantleEngineSounds::Options(false, false, true, Ids);
 	TestEqual(TEXT("an ATV or a jet ski: both"), Ids.Num(), FMantleEngineSounds::Car().Num() + FMantleEngineSounds::Bike().Num());
-	TestTrue(TEXT("an ATV takes inline3"), FMantleEngineSounds::Fits(TEXT("inline3"), false, true));
-	TestTrue(TEXT("an ATV takes bike_inline4"), FMantleEngineSounds::Fits(TEXT("bike_inline4"), false, true));
-	TestFalse(TEXT("a car does not take bike_vtwin"), FMantleEngineSounds::Fits(TEXT("bike_vtwin"), false, false));
-	TestFalse(TEXT("a motorcycle does not take v8"), FMantleEngineSounds::Fits(TEXT("v8"), true, true));
-	TestFalse(TEXT("an unknown id fits nothing"), FMantleEngineSounds::Fits(TEXT("jet_fighter"), false, true));
-	TestTrue(TEXT("a boat picks one"), FMantleEngineSounds::CanPick(true, false, false));
-	TestFalse(TEXT("a pedalled vehicle picks none"), FMantleEngineSounds::CanPick(true, true, false));
-	TestFalse(TEXT("an electric motor picks none"), FMantleEngineSounds::CanPick(true, false, true));
-	TestFalse(TEXT("a plane picks none"), FMantleEngineSounds::CanPick(false, false, false));
+	FMantleEngineSounds::Options(/*bFlier*/ true, false, false, Ids);
+	TestEqual(TEXT("a plane, a helicopter or a hovercraft: an aircraft's"), Ids, FMantleEngineSounds::Aircraft());
+	TestTrue(TEXT("an ATV takes inline3"), FMantleEngineSounds::Fits(TEXT("inline3"), false, false, true));
+	TestTrue(TEXT("an ATV takes bike_inline4"), FMantleEngineSounds::Fits(TEXT("bike_inline4"), false, false, true));
+	TestFalse(TEXT("a car does not take bike_vtwin"), FMantleEngineSounds::Fits(TEXT("bike_vtwin"), false, false, false));
+	TestFalse(TEXT("a motorcycle does not take v8"), FMantleEngineSounds::Fits(TEXT("v8"), false, true, true));
+	TestFalse(TEXT("an unknown id fits nothing"), FMantleEngineSounds::Fits(TEXT("jet_fighter"), false, false, true));
+	TestTrue(TEXT("a plane takes aircraft_fighter"), FMantleEngineSounds::Fits(TEXT("aircraft_fighter"), true, false, false));
+	TestTrue(TEXT("a helicopter takes helicopter"), FMantleEngineSounds::Fits(TEXT("helicopter"), true, false, false));
+	TestFalse(TEXT("a plane does not take v8"), FMantleEngineSounds::Fits(TEXT("v8"), true, false, false));
+	TestFalse(TEXT("... nor bike_vtwin, even on two wheels with handlebars"), FMantleEngineSounds::Fits(TEXT("bike_vtwin"), true, true, true));
+	TestFalse(TEXT("a car does not take hovercraft"), FMantleEngineSounds::Fits(TEXT("hovercraft"), false, false, false));
+	TestFalse(TEXT("an ATV does not take aircraft_airliner"), FMantleEngineSounds::Fits(TEXT("aircraft_airliner"), false, false, true));
+	TestTrue(TEXT("a boat picks one"), FMantleEngineSounds::CanPick(true, false, false, false));
+	TestFalse(TEXT("a pedalled vehicle picks none"), FMantleEngineSounds::CanPick(true, false, true, false));
+	TestFalse(TEXT("an electric motor picks none"), FMantleEngineSounds::CanPick(true, false, false, true));
+	TestTrue(TEXT("a plane picks one"), FMantleEngineSounds::CanPick(false, true, false, false));
+	TestFalse(TEXT("a trailer picks none"), FMantleEngineSounds::CanPick(false, false, false, false));
 
-	// The lists are the schema's engine.sound enum, car then motorcycle (only where the game's schema is beside the project; the plugin has none).
+	// The lists are the schema's engine.sound enum, car, motorcycle, then aircraft (only where the game's schema is beside the project; the plugin has none).
 	const FString SchemaPath = FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectDir(), TEXT("../schema/vehicle.schema.json")));
 	FString SchemaText;
 	if (FFileHelper::LoadFileToString(SchemaText, *SchemaPath))
@@ -134,6 +143,7 @@ bool FMantleVehicleEngineSoundDocTest::RunTest(const FString&)
 			}
 			TArray<FName> Ours = FMantleEngineSounds::Car();
 			Ours.Append(FMantleEngineSounds::Bike());
+			Ours.Append(FMantleEngineSounds::Aircraft());
 			TestEqual(TEXT("the schema's ids are ours"), SchemaIds, Ours);
 		}
 	}

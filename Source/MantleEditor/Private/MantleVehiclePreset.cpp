@@ -757,7 +757,7 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 		if (Reader.String(TEXT("engine/sound"), Sound))
 		{
 			const FName Id(*Sound);
-			if (FMantleEngineSounds::Car().Contains(Id) || FMantleEngineSounds::Bike().Contains(Id))
+			if (FMantleEngineSounds::Car().Contains(Id) || FMantleEngineSounds::Bike().Contains(Id) || FMantleEngineSounds::Aircraft().Contains(Id))
 			{
 				T.EngineSound = Id;
 			}
