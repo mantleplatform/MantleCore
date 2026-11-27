@@ -263,9 +263,16 @@ bool FMantleVehicleBuilderHitchConsoleTest::RunTest(const FString& Parameters)
 		const TArray<FString> Args = { Model->GetPathName(), TEXT("sedan"), FString(TEXT("folder=")) + Folder, TEXT("name=HitchConsole"), TEXT("overwrite=1"),
 			FString(TEXT("hitch=")) + Hitch };
 		Command->Execute(Args, nullptr, *GLog);
+		// The build saves the vehicle as <name>_Vehicle in a folder of its name (build 8's log: /Temp/MantleHitchConsoleOut/HitchConsole/HitchConsole_Vehicle).
+		const FString Path = Folder + TEXT("/HitchConsole/HitchConsole_Vehicle.HitchConsole_Vehicle");
+		if (UMantleVehicleSource* Found = FindObject<UMantleVehicleSource>(nullptr, *Path); IsValid(Found))
+		{
+			return Found;
+		}
+		// Else any live vehicle the build made in that folder.
 		for (TObjectIterator<UMantleVehicleSource> It; It; ++It)
 		{
-			if (It->GetName() == TEXT("HitchConsole") && It->GetPathName().StartsWith(Folder) && IsValid(*It))
+			if (IsValid(*It) && It->GetPathName().StartsWith(Folder + TEXT("/HitchConsole/")))
 			{
 				return *It;
 			}
