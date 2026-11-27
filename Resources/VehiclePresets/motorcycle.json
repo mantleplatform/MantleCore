@@ -114,7 +114,7 @@
       "ackermann": false
     },
     "brakes": {
-      "brakeTorque": 370,
+      "brakeTorque": 400,
       "handbrakeTorque": 185,
       "abs": true,
       "frontShare": 0.75
@@ -274,7 +274,7 @@
           "shiftTime": 0.15
         },
         "brakes": {
-          "brakeTorque": 370,
+          "brakeTorque": 400,
           "handbrakeTorque": 185,
           "abs": true,
           "frontShare": 0.75
