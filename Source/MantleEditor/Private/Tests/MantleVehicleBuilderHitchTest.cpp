@@ -4,6 +4,7 @@
 #include "MantleVehicleChassisDocument.h"
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleSource.h"
+#include "MantlePlaceValidator.h"
 
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
@@ -113,6 +114,29 @@ bool FMantleVehicleBuilderHitchTest::RunTest(const FString& Parameters)
 		FMantleVehicleConverter::MakeDocument(*Plane, TMap<FString, FString>(), &Error);
 		TestTrue(*FString::Printf(TEXT("a plane's hitch is refused (%s)"), *Error), Error.Contains(TEXT("only for a wheeled or tracked vehicle")));
 	}
+	// A boat given a tow ball in its settings: the creator sees why, in the vehicle's own issue (not "movement settings that can't be read").
+	{
+		UMantleVehicleSource* Boat = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		Boat->MovementType = EMantleVehicleMovementKind::Boat;
+		Boat->Tuning.Hitch = EMantleVehicleSourceHitch::Ball;
+		TArray<FMantleValidationIssue> Issues;
+		FMantleVehicleConverter::CheckSource(Boat, FString(), Issues);
+		const bool bSaid = Issues.ContainsByPredicate([](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(TEXT("has a hitch, but a boat tows nothing"));
+		});
+		TestTrue(TEXT("a boat's hitch is an error the creator sees"), bSaid);
+		TestFalse(TEXT("and not also as unreadable movement settings"), Issues.ContainsByPredicate([](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Problem.Contains(TEXT("movement settings that can't be read")) && Issue.Problem.Contains(TEXT("hitch"));
+		}));
+	}
+	// The rear-centre default, in the body's space: a tow ball 10 cm behind the rear end on the centre line at a utility trailer's coupler height above
+	// the ground, a fifth wheel just ahead of the rear axles at a semi trailer's.
+	TestTrue(TEXT("a default tow ball is behind the rear end, centred, 50 cm up"),
+		FMantleVehicleChassisDocument::DefaultHitchLocation(EMantleVehicleHitchKind::Ball, -240.0, -140.0, -30.0).Equals(FVector(-250.0, 0.0, 20.0)));
+	TestTrue(TEXT("a default fifth wheel is 30 cm ahead of the rear axles, centred, 119 cm up"),
+		FMantleVehicleChassisDocument::DefaultHitchLocation(EMantleVehicleHitchKind::FifthWheel, -300.0, -190.0, 0.0).Equals(FVector(-160.0, 0.0, 119.0)));
 	return true;
 }
 

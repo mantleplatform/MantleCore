@@ -4710,11 +4710,23 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 	}
 	const FVehiclePresetScope PresetScope(Preset);
 
+	// The creator's hitch (#446) on a vehicle that tows nothing: said in its own words, not as unreadable movement settings.
+	const EMantleVehicleSourceHitch HitchChoice = Authored->Tuning.Hitch;
+	const bool bHitchRefused = (HitchChoice == EMantleVehicleSourceHitch::Ball || HitchChoice == EMantleVehicleSourceHitch::FifthWheel)
+		&& Authored->MovementType != EMantleVehicleMovementKind::Wheeled && Authored->MovementType != EMantleVehicleMovementKind::Tracked;
+	if (bHitchRefused)
+	{
+		AddError(FString::Printf(TEXT("has a hitch, but a %s tows nothing: only a wheeled or tracked vehicle pulls a trailer."),
+				FMantleVehicleChassisDocument::MovementName(Authored->MovementType)),
+			TEXT("Set Towing > Hitch to The type's own or None."));
+	}
+
 	// The movement blocks (a plane's flight block, a bike's rider): a malformed one would export a vehicle without it, so it is an error and not a quiet drop.
 	{
 		FString MovementError;
 		FMantleVehicleConverter::MakeDocument(*Authored, TMap<FString, FString>(), &MovementError);
-		if (!MovementError.IsEmpty())
+		// A refused hitch is MergeSource's last step, so its error is the hitch's alone, said above.
+		if (!MovementError.IsEmpty() && !(bHitchRefused && MovementError.Contains(TEXT("hitch"))))
 		{
 			AddError(FString::Printf(TEXT("has movement settings that can't be read (%s), so it would be published without them."), *FMantleVehicleShape::PlainReason(MovementError)),
 				TEXT("Build the vehicle again from the Build a vehicle window, or fix its Movement Blocks."));
