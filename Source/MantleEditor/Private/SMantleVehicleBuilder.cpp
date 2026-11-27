@@ -388,6 +388,10 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeTypeStep()
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
 					[
+						MakeEngineSoundRow()
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
+					[
 						SNew(STextBlock)
 							.AutoWrapText(true)
 							.ColorAndOpacity(FSlateColor(Bad))
@@ -478,6 +482,74 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeEngineRow()
 		];
 }
 
+TSharedRef<SWidget> SMantleVehicleBuilder::MakeEngineSoundRow()
+{
+	return SNew(SHorizontalBox)
+		.Visibility_Lambda([this] { return EngineSoundIds.Num() > 0 ? EVisibility::Visible : EVisibility::Collapsed; })
+		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 2.f, 8.f, 2.f)
+		[
+			SNew(STextBlock)
+				.Text(LOCTEXT("EngineSoundLabel", "Engine sound"))
+				.ToolTipText(LOCTEXT("EngineSoundTip", "Which engine it sounds like. A turbo or supercharger is heard on top of it. The same setting as Engine Sound in the vehicle's settings: change it in either place."))
+		]
+		+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
+		[
+			SNew(SComboBox<TSharedPtr<FString>>)
+				.OptionsSource(&EngineSoundChoices)
+				.OnGenerateWidget_Lambda([](TSharedPtr<FString> Item) { return SNew(STextBlock).Text(FText::FromString(*Item)); })
+				.OnSelectionChanged_Lambda([this](TSharedPtr<FString> Item, ESelectInfo::Type)
+				{
+					const int32 At = EngineSoundChoices.IndexOfByKey(Item);
+					if (At != INDEX_NONE)
+					{
+						PickEngineSound(EngineSoundIds[At]);
+					}
+				})
+				[
+					SNew(STextBlock).Text_Lambda([this] { return FText::FromString(FMantleVehicleBuilder::EngineSoundName(CurrentEngineSound())); })
+				]
+		];
+}
+
+void SMantleVehicleBuilder::RefreshEngineSounds()
+{
+	EngineSoundChoices.Reset();
+	EngineSoundIds.Reset();
+	EngineSoundChoice = NAME_None;
+	const FMantleVehiclePreset* Type = FMantleVehiclePresets::Find(SelectedPresetId);
+	if (!Type)
+	{
+		return;
+	}
+	FMantleVehicleBuilder::EngineSoundOptions(*Type, EngineSoundIds);
+	for (const FName Id : EngineSoundIds)
+	{
+		EngineSoundChoices.Add(MakeShared<FString>(FMantleVehicleBuilder::EngineSoundName(Id)));
+	}
+	// The pick starts on the type's own sound (the one its preset gives every vehicle of it).
+	if (EngineSoundIds.Num() > 0)
+	{
+		EngineSoundChoice = FMantleVehicleBuilder::PresetEngineSound(*Type);
+	}
+}
+
+void SMantleVehicleBuilder::PickEngineSound(const FName Id)
+{
+	EngineSoundChoice = Id;
+	// The vehicle this window built takes it at once: its Details and this row are one setting (Build sends it again, which then changes nothing).
+	if (UMantleVehicleSource* Built = BuiltSource.Get(); Built && Built->CanPickEngineSound() && Built->Tuning.EngineSound != Id)
+	{
+		Built->Modify();
+		Built->Tuning.EngineSound = Id;
+	}
+}
+
+FName SMantleVehicleBuilder::CurrentEngineSound() const
+{
+	const UMantleVehicleSource* Built = BuiltSource.Get();
+	return Built ? Built->Tuning.EngineSound : EngineSoundChoice;
+}
+
 void SMantleVehicleBuilder::PickEngine(const FString& EngineId)
 {
 	const FString TypeId = SelectedTypeId();
@@ -547,6 +619,8 @@ void SMantleVehicleBuilder::PickPreset(const FString& PresetId, const FText& Nam
 
 	// A different type is a different vehicle: what was made for the last one stays in the project, and this window stops pointing at it.
 	ForgetBuild();
+	// #258: its own engine sounds, starting on its own one.
+	RefreshEngineSounds();
 
 	// A model already picked is read again for the new type: its moving parts, its facing, its size and whether it fits are the new type's.
 	ReadModel();
@@ -849,6 +923,11 @@ bool SMantleVehicleBuilder::CanBuild() const
 
 void SMantleVehicleBuilder::ForgetBuild()
 {
+	// #258: the engine sound the built vehicle had (set here or in its Details) stays the pick for the next build of this type.
+	if (const UMantleVehicleSource* Built = BuiltSource.Get())
+	{
+		EngineSoundChoice = Built->Tuning.EngineSound;
+	}
 	BuiltSource.Reset();
 	if (ThumbnailSection.IsValid())
 	{
@@ -2197,6 +2276,11 @@ FMantleVehicleModelOptions SMantleVehicleBuilder::MakeBuildOptions() const
 	// The Towing choice (#446), always sent: the type's own then undoes an earlier pick when the same vehicle is built again, and a type that tows
 	// nothing is built with its own whatever was picked before (FMantleVehicleBuilder::HitchOptions).
 	FMantleVehicleBuilder::HitchOptions(Options, TypeTows(), HitchChoice, bHitchPlaced, HitchAt);
+	// #258: the Engine Sound pick, on a type that has one to pick (the built vehicle's own setting while there is one).
+	if (EngineSoundIds.Num() > 0)
+	{
+		Options.EngineSound = CurrentEngineSound();
+	}
 	if (bUseSkin)
 	{
 		Options.Spec = Shape.GetShaped();

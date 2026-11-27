@@ -53,6 +53,8 @@ class SMantleVehicleBuilder : public SCompoundWidget
 	friend struct FMantleVehicleBuilderLiveryAccess;
 	/** The tests of the Towing choice (#446): what Build sends, and that a new type starts on its own hitch. */
 	friend struct FMantleVehicleBuilderHitchAccess;
+	/** The tests of the Engine Sound pick (#258): its list by type, what Build sends, and that it and the built vehicle's settings show one value. */
+	friend struct FMantleVehicleBuilderEngineSoundAccess;
 
 public:
 	SLATE_BEGIN_ARGS(SMantleVehicleBuilder) {}
@@ -99,6 +101,14 @@ private:
 	FString SelectedTypeId() const;
 	/** The Engine row under the cards, shown when the selected type has engines. */
 	TSharedRef<SWidget> MakeEngineRow();
+	/** #258: the Engine Sound row under it, shown when the selected type's vehicles can pick one (FMantleVehicleBuilder::EngineSoundOptions). */
+	TSharedRef<SWidget> MakeEngineSoundRow();
+	/** #258: the selected type's engine sounds and its own one, which the pick starts on (PickPreset). */
+	void RefreshEngineSounds();
+	/** #258: picks an engine sound: the vehicle this window built gets it at once (so its Details show the same), and Build sends it. */
+	void PickEngineSound(FName Id);
+	/** #258: the engine sound the window shows: the built vehicle's own setting while there is one (changed in its Details too), else the pick. */
+	FName CurrentEngineSound() const;
 
 	// Feel and size.
 	void SetShapeSize(double Value);
@@ -305,6 +315,10 @@ private:
 	/** #378: the selected type's engines by name, and their ids in the same order. */
 	TArray<TSharedPtr<FString>> EngineChoices;
 	TArray<FString> EngineIds;
+	/** #258: the selected type's engine sounds by name and id (empty: it has none to pick), and the pick (the type's own until the creator picks). */
+	TArray<TSharedPtr<FString>> EngineSoundChoices;
+	TArray<FName> EngineSoundIds;
+	FName EngineSoundChoice;
 	TArray<double> YawValues;
 	/** The picked model is worn as a skin on the frame (else its own wheels are fitted). Worked out when the model or the type is picked. */
 	bool bUseSkin = false;

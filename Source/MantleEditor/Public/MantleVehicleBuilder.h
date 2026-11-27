@@ -15,6 +15,7 @@ class UMantleVehicleSource;
 class UObject;
 class USkeletalMesh;
 struct FMantleSkinnedMesh;
+struct FMantleVehiclePreset;
 struct FMantleVehicleSurroundings;
 struct FMantleVehicleSourcePart;
 struct FSkeletalMaterial;
@@ -89,6 +90,11 @@ struct FMantleVehicleModelOptions
 	 */
 	TOptional<EMantleVehicleSourceHitch> Hitch;
 	TOptional<FVector> HitchLocation;
+	/**
+	 * The creator's engine sound (#258, the window's Engine Sound pick): an id of FMantleEngineSounds that the vehicle can have, written into its
+	 * Tuning.EngineSound after the type's own (FMantleVehicleBuilder::ApplyEngineSound). Unset: the type's own, as its preset sets it.
+	 */
+	TOptional<FName> EngineSound;
 	/** The chassis to put the model on, already shaped (the window's); unset, the type's own sized to the model (FMantleVehicleChassisSkin::Propose). */
 	TOptional<FMantleChassisSpec> Spec;
 	/** The folder (a long package path) the vehicle is saved under, one subfolder of its name inside; empty for the project's MantleVehicles folder. */
@@ -336,6 +342,20 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 * vehicle again when the build saved it.
 	 */
 	static void ApplyHitch(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options);
+
+	/**
+	 * The creator's engine sound (#258) on the built vehicle: Options.EngineSound into its Tuning.EngineSound, so the window's pick and the asset's
+	 * Details show one value. Nothing when unset; a note and nothing on a vehicle that has none to pick or can't have that one. Saves the vehicle again
+	 * when the build saved it.
+	 */
+	static void ApplyEngineSound(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options);
+	/** The engine sounds a type's vehicles may pick (FMantleEngineSounds: a car's, a motorcycle's on two wheels, both on handlebars over more wheels),
+	 *  by its movement, wheels, driver's seat, pedals and drive; empty for one with none to pick (pedalled, electric, a trailer or an aircraft). Pure. */
+	static void EngineSoundOptions(const FMantleVehiclePreset& Type, TArray<FName>& OutIds);
+	/** The engine sound a type's preset gives its vehicles (defaults.engine.sound); None when it gives none. Pure. */
+	static FName PresetEngineSound(const FMantleVehiclePreset& Type);
+	/** An engine sound's name in the window's words: "V8", "Inline-4", "Motorcycle V-twin"; "Mantle's default" for None. Pure. */
+	static FString EngineSoundName(FName Id);
 
 	/**
 	 * The window's Towing choice as build options (#446). Always sets Options.Hitch, so the type's own (Preset) undoes an earlier pick on a vehicle built
