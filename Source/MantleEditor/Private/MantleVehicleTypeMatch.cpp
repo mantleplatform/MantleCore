@@ -382,8 +382,12 @@ EMantleVehicleModelFamily FMantleVehicleTypeMatchCheck::FamilyOfModel(const FMan
 		return EMantleVehicleModelFamily::Plane;
 	}
 
-	// Tracks (#448), only on real evidence, before the wheels a track runs over would say a road vehicle: a part named like a track's (its bones by their own
-	// spelling, so a RoadWheel splits into its words), or a row of 4 or more wheels on each side packed into a track. Two rows of 3 stay a six-wheeled truck.
+	// Tracks (#448), only on real evidence, before the wheels a track runs over would say a road vehicle. A name alone is weak (a car's "Tread" material, a
+	// seat belts slot), and so are packed wheels alone (a tandem trailer's tires sit close), so it takes two signs together:
+	// - bones named like a track's parts (by their own spelling, so a RoadWheel splits into its words) and wheels packed 4 or more a side into two rows;
+	// - a part or material named like a track's and no normal wheel layout (under 3 wheel bones: the tracks are meshes, the wheels aren't rigged);
+	// - or packed wheels alone when there are 5 or more a side, as on every real tank and crawler (a trailer's tandem has 2 to 4 axles).
+	// Two rows of 3 stay a six-wheeled truck.
 	{
 		TArray<FString> TrackBones;
 		for (const FMantleSkinnedMeshBone& Bone : Model.Bones)
@@ -409,13 +413,17 @@ EMantleVehicleModelFamily FMantleVehicleTypeMatchCheck::FamilyOfModel(const FMan
 			}
 			bPacked = WheelsPackedLikeTracks(Hubs, WheelBounds.Min.Z, WheelBounds.GetSize());
 		}
-		if (TrackBones.Num() > 0 || bTrackMaterial || bPacked)
+		const bool bNoWheelLayout = Wheels.Num() < 3;
+		const bool bNamedBones = TrackBones.Num() > 0 && (bPacked || bNoWheelLayout);
+		const bool bNamedMaterial = bTrackMaterial && bNoWheelLayout;
+		const bool bPackedAlone = bPacked && Wheels.Num() >= 2 * MinRoadWheelsPerSideUnnamed;
+		if (bNamedBones || bNamedMaterial || bPackedAlone)
 		{
-			if (TrackBones.Num() > 0)
+			if (bNamedBones)
 			{
 				OutEvidence.Add(FString::Printf(TEXT("parts named like a track's (%s)"), *TrackBones[0]));
 			}
-			if (bTrackMaterial)
+			if (bNamedMaterial)
 			{
 				OutEvidence.Add(TEXT("a track material"));
 			}

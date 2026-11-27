@@ -99,6 +99,12 @@ struct MANTLEEDITOR_API FMantleVehicleTypeMatchCheck
 	/** How far apart along its side a track's neighboring road wheels may be, in wheel diameters, for WheelsPackedLikeTracks. */
 	static constexpr double MaxGapPerDiameter = 1.2;
 
+	/**
+	 * Packed wheels with no track-named bone read as tracks only from this many a side: every real tank and crawler has 5 or more road wheels a side, and a
+	 * tandem trailer's 2 to 4 axles can sit as close (an 8-tire trailer, 124 cm apart on 105 cm tires, is packed by MaxGapPerDiameter).
+	 */
+	static constexpr int32 MinRoadWheelsPerSideUnnamed = 5;
+
 	/** Reads Asset (a static or skeletal mesh) and checks it. False, with the reason in OutError, when the model cannot be read. */
 	static bool CheckAsset(UObject* Asset, const FString& TypeId, FMantleVehicleTypeMatch& Out, FString& OutError);
 };

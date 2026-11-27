@@ -199,15 +199,32 @@ bool FMantleVehicleTypeMatchTrackedTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("the tank's type is tracked"), Check::FamilyOfType(TEXT("tank")), EMantleVehicleModelFamily::Tracked);
 	TestEqual(TEXT("and the bulldozer's"), Check::FamilyOfType(TEXT("bulldozer")), EMantleVehicleModelFamily::Tracked);
 
-	// A car's four wheels and a sprocket on each side: named like a track's, so tracked whatever its wheels say.
-	const FMantleVehicleModel Sprockets = Rows(TEXT("Wheel"), 2, 270.0, 35.0, { FName("Sprocket_L"), FName("Sprocket_R") });
+	// A name alone is weak evidence (Plugin Manager's review of #448): it takes packed wheels with it, or no normal wheel layout.
+	// Four packed a side with a sprocket bone on each side: the names and the packing together say tracks.
+	const FMantleVehicleModel Sprockets = Rows(TEXT("Wheel"), 4, 124.0, 52.5, { FName("Sprocket_L"), FName("Sprocket_R") });
 	Evidence.Reset();
-	TestEqual(TEXT("a rig with named sprockets is tracked"), Check::FamilyOfModel(Sprockets, Evidence, Confidence), EMantleVehicleModelFamily::Tracked);
+	TestEqual(TEXT("4 packed a side with named sprockets is tracked"), Check::FamilyOfModel(Sprockets, Evidence, Confidence), EMantleVehicleModelFamily::Tracked);
 	TestTrue(*FString::Printf(TEXT("because of the name (%s)"), *FString::Join(Evidence, TEXT(", "))),
 		Evidence.ContainsByPredicate([](const FString& Line) { return Line.Contains(TEXT("Sprocket_")); }));
-	// A track material is evidence too.
+	// A car's four spread wheels and a sprocket on each side: the wheels are a car's, so the names don't make it a tank.
+	TestEqual(TEXT("a car's four wheels with sprocket bones stay a road vehicle"), FamilyOf(Rows(TEXT("Wheel"), 2, 270.0, 35.0, { FName("Sprocket_L"), FName("Sprocket_R") })),
+		EMantleVehicleModelFamily::Road);
+	// Track bones with no wheels rigged (the tracks and road wheels are meshes): tracked.
+	TestEqual(TEXT("track bones and no wheel bones are tracked"), FamilyOf(MakeModel(FVector(770, 375, 250), { { FName("root"), INDEX_NONE, FVector::ZeroVector },
+		{ FName("Track_L"), 0, FVector(0, -155, 40) }, { FName("Track_R"), 0, FVector(0, 155, 40) } })), EMantleVehicleModelFamily::Tracked);
+	// A track material and no wheel bones is evidence too.
 	TestEqual(TEXT("a model with a track material is tracked"), FamilyOf(MakeModel(FVector(770, 375, 250), {}, { FName("M_Hull"), FName("M_TankTracks") })),
 		EMantleVehicleModelFamily::Tracked);
+
+	// A sedan whose materials say tread (its tires') and belts (a seat belts slot) is a car: its four wheels are a car's.
+	const FMantleVehicleModel TreadSedan = MakeModel(FVector(450, 190, 140), { { FName("root"), INDEX_NONE, FVector::ZeroVector },
+		{ FName("Wheel_FL"), 0, FVector(135, -80, 35) }, { FName("Wheel_FR"), 0, FVector(135, 80, 35) },
+		{ FName("Wheel_BL"), 0, FVector(-135, -80, 35) }, { FName("Wheel_BR"), 0, FVector(-135, 80, 35) }, { FName("Belts"), 0, FVector(0, -40, 90) } },
+		{ FName("Body"), FName("Tread"), FName("Wheel_Tread"), FName("Rubber_Tread"), FName("Belts") });
+	TestEqual(TEXT("a sedan with Tread materials and a Belts slot and bone is a road vehicle"), FamilyOf(TreadSedan), EMantleVehicleModelFamily::Road);
+	TestEqual(TEXT("and fits the sedan"), Check::Check(TreadSedan, TEXT("sedan")).Verdict, EMantleVehicleTypeVerdict::Fits);
+	// A 4-axle tandem trailer, one bone per tire, 124 cm apart on 105 cm tires: packed, but 4 a side with no track names is a trailer, not a tank.
+	TestEqual(TEXT("a 4-axle tandem trailer is a road vehicle"), FamilyOf(Rows(TEXT("Wheel"), 4, 124.0, 52.5)), EMantleVehicleModelFamily::Road);
 
 	// Two rows of 3 wheels, even close together, are a six-wheeled truck: a road vehicle that fits the six-wheeler.
 	const FMantleVehicleModel SixWheeler = Rows(TEXT("Wheel"), 3, 80.0, 35.0);
@@ -215,8 +232,8 @@ bool FMantleVehicleTypeMatchTrackedTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("and fit the six-wheeler"), Check::Check(SixWheeler, TEXT("sixwheeler")).Verdict, EMantleVehicleTypeVerdict::Fits);
 	// Four a side spread far apart (an 8x8 truck's axles, 150 cm apart on 50 cm wheels: 1.5 wheels across) are a road vehicle too.
 	TestEqual(TEXT("an 8x8 truck's spread axles stay a road vehicle"), FamilyOf(Rows(TEXT("Wheel"), 4, 150.0, 50.0)), EMantleVehicleModelFamily::Road);
-	// Positive control for that: the same eight wheels packed close are tracks.
-	TestEqual(TEXT("the same eight packed close are tracked"), FamilyOf(Rows(TEXT("Wheel"), 4, 90.0, 50.0)), EMantleVehicleModelFamily::Tracked);
+	// Positive control for that: five a side packed close are tracks, even a short track whose wheels span less than its gauge (240 cm on 310).
+	TestEqual(TEXT("five a side packed close are tracked"), FamilyOf(Rows(TEXT("Wheel"), 5, 60.0, 50.0)), EMantleVehicleModelFamily::Tracked);
 	TestEqual(TEXT("and the car is still a road vehicle"), FamilyOf(Car()), EMantleVehicleModelFamily::Road);
 
 	// Names: whole words of a track, not a word that only has one in it, nor a car's belts, a tire's tread or a track rod.
