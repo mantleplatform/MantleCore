@@ -643,9 +643,9 @@ namespace MantleVehicleBuilderPrivate
 	// Mantle.Vehicle.BuildModel: what the Build a vehicle window's Build button does for a model that is worn as a skin, from the console or a script.
 	FAutoConsoleCommand BuildModelCommand(
 		TEXT("Mantle.Vehicle.BuildModel"),
-		TEXT("Mantle.Vehicle.BuildModel <model object path> <vehicle type id> [yaw=<deg>] [name=<Name>] [folder=</Game/...>] [bone.<chassis bone>=<model bone>] [section.<chassis bone>=<n>] [overwrite=1] [hideriders=1] [drive=front|rear|all] [paint=<words>] [notpaint=<words>] [secondary=<words>] [wheels=<words>] [interior=<words>] [dashboard=<words>] [secondaryfinish=<finish>] [wheelsfinish=<finish>] [interiorfinish=<finish>] [dashboardfinish=<finish>] "
+		TEXT("Mantle.Vehicle.BuildModel <model object path> <vehicle type id> [yaw=<deg>] [name=<Name>] [folder=</Game/...>] [bone.<chassis bone>=<model bone>] [section.<chassis bone>=<n>] [overwrite=1] [hideriders=1] [drive=front|rear|all] [hitch=own|none|ball|fifthWheel] [paint=<words>] [notpaint=<words>] [secondary=<words>] [wheels=<words>] [interior=<words>] [dashboard=<words>] [secondaryfinish=<finish>] [wheelsfinish=<finish>] [interiorfinish=<finish>] [dashboardfinish=<finish>] "
 			 "-- puts a static or skeletal mesh on the type's chassis (BuildFromModel), saves it under the folder (default /Game/MantleVehicles) and logs MANTLE_VEHICLE_BUILD_MODEL "
-			 "ok=<0|1> with the vehicle's path, its Size and every note. The paint options pick the sections that have those whole words (wheels=rim is not PRIMARY). With no yaw or parts given Mantle chooses them. A name= that a vehicle already has is refused unless overwrite=1."),
+			 "ok=<0|1> with the vehicle's path, its Size and every note. The paint options pick the sections that have those whole words (wheels=rim is not PRIMARY). With no yaw or parts given Mantle chooses them. hitch= is the Towing choice: a ball or fifth wheel goes where Mantle puts it (behind the rear end, or just ahead of the rear axles), own puts the type's back. A name= that a vehicle already has is refused unless overwrite=1."),
 		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
 		{
 			if (Args.Num() < 2)
@@ -820,7 +820,9 @@ namespace MantleVehicleBuilderPrivate
 				}
 				Options.PaintedSections = Ticked;
 			}
-			const FMantleVehicleBuildResult Result = FMantleVehicleBuilder::BuildFromModel(Asset, Args[1], Options);
+			FMantleVehicleBuildResult Result = FMantleVehicleBuilder::BuildFromModel(Asset, Args[1], Options);
+			// The creator's hitch (#446): hitch= goes on as the window's Build puts it (BuildAny), so own, none, ball and fifthWheel all take, and own undoes an earlier pick.
+			FMantleVehicleBuilder::ApplyHitch(Result, Options);
 			FString Parts;
 			for (const TPair<FName, FMantleVehicleModelPiece>& Part : Result.ModelMap.Parts)
 			{

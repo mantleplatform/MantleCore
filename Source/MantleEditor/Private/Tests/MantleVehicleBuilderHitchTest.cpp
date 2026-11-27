@@ -1,7 +1,10 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleVehicleAsset.h"
 #include "MantleVehicleBuilder.h"
+#include "MantleVehicleChassisBuilder.h"
 #include "MantleVehicleChassisDocument.h"
+#include "MantleVehicleChassisMesh.h"
+#include "MantleVehicleScratchBody.h"
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleSource.h"
 #include "MantlePlaceValidator.h"
@@ -9,7 +12,11 @@
 
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
+#include "Engine/SkeletalMesh.h"
 #include "Framework/Application/SlateApplication.h"
+#include "HAL/IConsoleManager.h"
+#include "Misc/ScopeExit.h"
+#include "UObject/UObjectIterator.h"
 #include "Misc/AutomationTest.h"
 #include "UObject/Package.h"
 #include "UObject/UObjectGlobals.h"
@@ -221,6 +228,67 @@ bool FMantleVehicleBuilderHitchUndoTest::RunTest(const FString& Parameters)
 		&& !PlaneOptions.HitchLocation.IsSet());
 	Access::PickType(*Panel, TEXT("sedan"), TEXT("Sedan"));
 	TestTrue(TEXT("a wheeled type after it starts on its own too"), Access::Choice(*Panel) == EMantleVehicleSourceHitch::Preset);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleBuilderHitchConsoleTest,
+	"Mantle.Vehicle.BuildModel.Hitch",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleBuilderHitchConsoleTest::RunTest(const FString& Parameters)
+{
+	// The console's Mantle.Vehicle.BuildModel (the route the Car Uploader builds every FiveM car through, Plugin Manager's review): hitch=ball puts a
+	// tow ball at the default place on the built vehicle, and a build again with hitch=own puts the type's own back.
+	IConsoleCommand* Command = IConsoleManager::Get().FindConsoleObject(TEXT("Mantle.Vehicle.BuildModel")) ? IConsoleManager::Get().FindConsoleObject(TEXT("Mantle.Vehicle.BuildModel"))->AsCommand() : nullptr;
+	if (!TestNotNull(TEXT("the console command is there"), Command))
+	{
+		return false;
+	}
+	// A model: the sedan's own gray body as a skeletal mesh, worn on the sedan's frame.
+	FString Error;
+	FMantleChassisSpec Spec;
+	FMantleVehicleAsset Asset;
+	USkeletalMesh* Model = FMantleVehicleChassisBuilder::LoadSpec(TEXT("sedan"), Spec, Error) && FMantleVehicleChassisBuilder::MakeAsset(Spec, Asset, Error)
+		? FMantleVehicleChassisMesh::Create(Asset.Body, TEXT("/Temp/MantleHitchConsoleTest"), TEXT("HitchConsoleCar"), Error) : nullptr;
+	if (!TestNotNull(*FString::Printf(TEXT("the sample car is made (%s)"), *Error), Model))
+	{
+		return false;
+	}
+	ON_SCOPE_EXIT { MantleVehicleScratchBody::Discard(Model); };
+
+	const FString Folder = TEXT("/Temp/MantleHitchConsoleOut");
+	auto BuildWith = [&](const TCHAR* Hitch) -> UMantleVehicleSource*
+	{
+		const TArray<FString> Args = { Model->GetPathName(), TEXT("sedan"), FString(TEXT("folder=")) + Folder, TEXT("name=HitchConsole"), TEXT("overwrite=1"),
+			FString(TEXT("hitch=")) + Hitch };
+		Command->Execute(Args, nullptr, *GLog);
+		for (TObjectIterator<UMantleVehicleSource> It; It; ++It)
+		{
+			if (It->GetName() == TEXT("HitchConsole") && It->GetPathName().StartsWith(Folder) && IsValid(*It))
+			{
+				return *It;
+			}
+		}
+		return nullptr;
+	};
+
+	UMantleVehicleSource* Ball = BuildWith(TEXT("ball"));
+	if (!TestNotNull(TEXT("hitch=ball builds the vehicle"), Ball))
+	{
+		return false;
+	}
+	TestTrue(TEXT("hitch=ball gives it a tow ball"), Ball->Tuning.Hitch == EMantleVehicleSourceHitch::Ball);
+	const FVector Default = FMantleVehicleBuilder::DefaultHitchLocation(*Ball, EMantleVehicleHitchKind::Ball);
+	TestTrue(*FString::Printf(TEXT("at the default place (%s, want %s)"), *Ball->Tuning.HitchLocation.ToString(), *Default.ToString()),
+		Ball->Tuning.HitchLocation.Equals(Default, 0.01));
+	TestTrue(TEXT("behind the body, on its centre line"), Default.X < 0.0 && FMath::IsNearlyZero(Default.Y));
+
+	UMantleVehicleSource* Own = BuildWith(TEXT("own"));
+	if (TestNotNull(TEXT("hitch=own builds it again"), Own))
+	{
+		TestTrue(TEXT("hitch=own puts the type's own back"), Own->Tuning.Hitch == EMantleVehicleSourceHitch::Preset);
+	}
 	return true;
 }
 
