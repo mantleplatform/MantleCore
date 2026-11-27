@@ -6,6 +6,7 @@
 #include "HAL/FileManager.h"
 #include "Interfaces/IPluginManager.h"
 #include "MantleChassisSpec.h"
+#include "MantleEngineSounds.h"
 #include "MantleVehicleChassisBuilder.h"
 #include "MantleVehicleSource.h"
 #include "Misc/FileHelper.h"
@@ -123,7 +124,7 @@ namespace MantleVehiclePresetPrivate
 		static const TSet<FString> Known = {
 			TEXT("mass"), TEXT("maxSpeed"), TEXT("centerOfMass"), TEXT("dragCoefficient"), TEXT("frontalArea"),
 			TEXT("engine/maxTorque"), TEXT("engine/maxRPM"), TEXT("engine/idleRPM"), TEXT("engine/torqueCurve"),
-			TEXT("engine/tractionControl"), TEXT("engine/engineBraking"), TEXT("engine/displacement"),
+			TEXT("engine/tractionControl"), TEXT("engine/engineBraking"), TEXT("engine/displacement"), TEXT("engine/sound"),
 			TEXT("engine/drive"), TEXT("engine/peakPower"), TEXT("engine/regenBraking"), TEXT("engine/batteryCapacity"),
 			TEXT("engine/induction"), TEXT("engine/maxBoost"), TEXT("engine/spoolRPM"), TEXT("engine/spoolTime"),
 			TEXT("transmission/gearRatios"), TEXT("transmission/reverseRatio"), TEXT("transmission/finalDrive"),
@@ -656,6 +657,7 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 		T.bTractionControl = Plain.bTractionControl;
 		T.EngineBraking = Plain.EngineBraking;
 		T.EngineDisplacement = Plain.EngineDisplacement;
+		T.EngineSound = Plain.EngineSound;
 		T.ReverseRatio = Plain.ReverseRatio;
 		T.ChangeUpRPM = Plain.ChangeUpRPM;
 		T.ChangeDownRPM = Plain.ChangeDownRPM;
@@ -749,10 +751,28 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 	Reader.Float(TEXT("engine/engineBraking"), T.EngineBraking);
 	// #378: the engine's size, from a motorcycle's engine pick; absent, 0 (not given).
 	Reader.Int(TEXT("engine/displacement"), T.EngineDisplacement);
-	// An electric preset (#445) is a motor: no engine size and no low range (#376 off-road), whatever the vehicle had.
+	// #258: the type's engine sound (absent, None: the type's own); one of Mantle's engine sounds, or the preset is refused like any bad value.
+	{
+		FString Sound;
+		if (Reader.String(TEXT("engine/sound"), Sound))
+		{
+			const FName Id(*Sound);
+			if (FMantleEngineSounds::Car().Contains(Id) || FMantleEngineSounds::Bike().Contains(Id))
+			{
+				T.EngineSound = Id;
+			}
+			else
+			{
+				Reader.Bad(TEXT("engine/sound"));
+			}
+		}
+	}
+	// An electric preset (#445) is a motor: no engine size, no engine sound (#258: it plays its own motor) and no low range (#376 off-road), whatever
+	// the vehicle had.
 	if (T.bElectric)
 	{
 		T.EngineDisplacement = 0;
+		T.EngineSound = NAME_None;
 		T.LowRange = 0.f;
 	}
 	// #444: the preset's engine is the engine, so its induction is applied whole: absent, none and the boost settings' defaults (a turbo car's boost

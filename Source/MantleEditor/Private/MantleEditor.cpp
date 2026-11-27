@@ -44,6 +44,7 @@
 #include "MantleWeaponSpawnPoint.h"
 #include "MantleScriptPoint.h"
 #include "MantleItemSpawnDetails.h"
+#include "MantleVehicleSourceDetails.h"
 #include "MantleItemSpawnPoint.h"
 #include "MantlePlaceSecretsDetails.h"
 #include "MantleTestLocally.h"
@@ -565,6 +566,8 @@ void FMantleEditorModule::StartupModule()
 	FMantleScriptPointDetails::Register();
 	// #235: an Item Spawn's Details panel: its model is a Static Mesh picker.
 	FMantleItemSpawnDetails::Register();
+	// #258: a vehicle asset's Details panel: Engine Sound hidden on a vehicle that has none to pick.
+	FMantleVehicleSourceDetails::Register();
 	// GhzGarage/MantleCore#142: a Mantle Seat's hip marker. GUnrealEd does not exist yet while modules start up.
 	if (GUnrealEd)
 	{
@@ -654,6 +657,7 @@ void FMantleEditorModule::ShutdownModule()
 	SMantlePublishPanel::UnregisterTab();
 	FMantleScriptPointDetails::Unregister();
 	FMantleItemSpawnDetails::Unregister();
+	FMantleVehicleSourceDetails::Unregister();
 	if (GUnrealEd)
 	{
 		GUnrealEd->UnregisterComponentVisualizer(UMantleSeatSpotComponent::StaticClass()->GetFName());

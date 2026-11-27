@@ -451,6 +451,11 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	 *  the driving never does. 0: not given (written only when set). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (EditCondition = "!bElectric", ClampMin = "0", ClampMax = "2500", DisplayName = "Engine Size (cc)"))
 	int32 EngineDisplacement = 0;
+	/** The engine sound (engine.sound, #258): which engine it sounds like, a car's (V8, inline-4, diesel ...) or, on a motorcycle or an ATV, a
+	 *  motorcycle's. A turbo or supercharger is heard on top of it from Induction. None: the vehicle type's own (written only when set). A pedalled
+	 *  vehicle, an electric motor, a trailer, a boat and an aircraft have none to pick. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (EditCondition = "!bElectric", EditConditionHides, GetOptions = "GetEngineSoundOptions", DisplayName = "Engine Sound"))
+	FName EngineSound;
 
 	/** A helicopter's level assist (helicopter rotors' stabilityAssist, #380): the stick asks for a lean, letting go levels the helicopter and a slow
 	 *  drift stops by itself. Off: the stick tilts the rotor and the pilot has to level it. Part of the helicopter; scripts don't change it. */
@@ -1149,4 +1154,12 @@ public:
 	 */
 	UPROPERTY()
 	TArray<uint8> ThumbnailPng;
+
+	/** Whether this vehicle has an engine sound to pick (#258, FMantleEngineSounds::CanPick): wheeled or tracked, combustion, not pedalled. */
+	bool CanPickEngineSound() const;
+
+	/** Tuning.EngineSound's dropdown (#258): None (the type's own sound), then the engine sounds FMantleEngineSounds gives this vehicle, a motorcycle's on
+	 *  two wheels and on an ATV's handlebars. Only None for a vehicle that has none to pick. */
+	UFUNCTION()
+	TArray<FName> GetEngineSoundOptions() const;
 };

@@ -526,6 +526,25 @@ namespace MantleVehicleAssetPrivate
 		}
 	};
 
+	/** engine.sound (#258): an engine type id, any non-empty string (the cook checks it against the vehicle; a sound this client lacks plays the
+	 *  vehicle type's default). Absent: None, the default. */
+	void ReadEngineSound(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Engine, FMantleVehicleDesc& D)
+	{
+		if (!P.Ok() || !Engine->HasField(TEXT("sound")))
+		{
+			return;
+		}
+		// The value's own type, not TryGetStringField: that turns a number into its text.
+		const TSharedPtr<FJsonValue> Value = Engine->TryGetField(TEXT("sound"));
+		const FString Sound = Value.IsValid() && Value->Type == EJson::String ? Value->AsString() : FString();
+		if (Sound.IsEmpty() || Sound.Len() >= NAME_SIZE)
+		{
+			P.Fail(TEXT("/engine/sound"), TEXT("must be an engine sound's id"));
+			return;
+		}
+		D.EngineSound = FName(*Sound);
+	}
+
 	/** transmission.differentials (#376 off-road): front and rear, each a type and, for limitedSlip only, its biasRatio. Absent: none. */
 	void ReadDifferentials(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Transmission, FMantleVehicleDesc& D)
 	{
@@ -2790,7 +2809,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	}
 	if (P.Ok() && Engine.IsValid() && D.bElectric
 		&& P.Keys(Engine, TEXT("/engine"), { TEXT("drive"), TEXT("maxTorque"), TEXT("maxRPM"), TEXT("peakPower"), TEXT("regenBraking"), TEXT("batteryCapacity"),
-			TEXT("tractionControl") }, { TEXT("maxTorque"), TEXT("maxRPM"), TEXT("peakPower") }))
+			TEXT("tractionControl"), TEXT("sound") }, { TEXT("maxTorque"), TEXT("maxRPM"), TEXT("peakPower") }))
 	{
 		P.Number(Engine, TEXT("/engine"), TEXT("maxTorque"), TEXT("engine/maxTorque"), D.MaxTorque);
 		P.Int(Engine, TEXT("/engine"), TEXT("maxRPM"), TEXT("engine/maxRPM"), D.MaxRPM);
@@ -2810,10 +2829,11 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 		{
 			P.Bool(Engine, TEXT("/engine"), TEXT("tractionControl"), D.bTractionControl);
 		}
+		ReadEngineSound(P, Engine, D);
 	}
 	else if (P.Ok() && Engine.IsValid() && !D.bElectric
 		&& P.Keys(Engine, TEXT("/engine"), { TEXT("drive"), TEXT("maxTorque"), TEXT("maxRPM"), TEXT("idleRPM"), TEXT("torqueCurve"), TEXT("tractionControl"),
-			TEXT("engineBraking"), TEXT("displacement"), TEXT("induction"), TEXT("maxBoost"), TEXT("spoolRPM"), TEXT("spoolTime") },
+			TEXT("engineBraking"), TEXT("displacement"), TEXT("induction"), TEXT("maxBoost"), TEXT("spoolRPM"), TEXT("spoolTime"), TEXT("sound") },
 			{ TEXT("maxTorque"), TEXT("maxRPM"), TEXT("idleRPM"), TEXT("torqueCurve") }))
 	{
 		P.Number(Engine, TEXT("/engine"), TEXT("maxTorque"), TEXT("engine/maxTorque"), D.MaxTorque);
@@ -2858,6 +2878,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 		{
 			P.Int(Engine, TEXT("/engine"), TEXT("displacement"), TEXT("engine/displacement"), D.Displacement);
 		}
+		ReadEngineSound(P, Engine, D);
 		const TArray<TSharedPtr<FJsonValue>>* Curve = nullptr;
 		if (P.Ok() && P.Array(Engine->TryGetField(TEXT("torqueCurve")), TEXT("/engine/torqueCurve"), 2, FMantleVehicleLimits::MaxTorqueCurvePoints, Curve))
 		{

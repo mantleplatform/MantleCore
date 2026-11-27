@@ -50,6 +50,7 @@
     "dragCoefficient": 0.28,
     "frontalArea": 1.9,
     "engine": {
+      "sound": "inline6",
       "maxTorque": 250,
       "maxRPM": 7400,
       "idleRPM": 800,

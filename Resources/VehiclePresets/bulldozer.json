@@ -61,6 +61,7 @@
     "dragCoefficient": 1.0,
     "frontalArea": 8,
     "engine": {
+      "sound": "diesel",
       "maxTorque": 1050,
       "maxRPM": 2000,
       "idleRPM": 750,

@@ -677,6 +677,9 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	double SpoolTime = 0.8;
 	/** engine.displacement (#378): the engine's size in cc, as a motorcycle's engine pick sets it; read by sound and scripts, never by the driving. 0: not given. */
 	int32 Displacement = 0;
+	/** engine.sound (#258): the engine sound the creator picked, an engine type id (FMantleEngineSounds). None: the vehicle type's default. Read as
+	 *  any string: the cook checks it, and a sound this client does not have plays the default. */
+	FName EngineSound;
 
 	/** Forward gears, first gear first. */
 	TArray<float> GearRatios;

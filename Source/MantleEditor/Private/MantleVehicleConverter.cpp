@@ -19,6 +19,7 @@
 #include "MantleVehicleChassisDocument.h"
 #include "MantleVehicleShape.h"
 #include "MantleVehicleSource.h"
+#include "MantleEngineSounds.h"
 
 #include "Algo/AllOf.h"
 #include "Algo/AnyOf.h"
@@ -4013,6 +4014,12 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 	{
 		Engine->SetNumberField(TEXT("displacement"), T.EngineDisplacement);
 	}
+	// #258: the engine sound the creator picked, only when set (absent: the vehicle type's own) and the vehicle has one to pick: a pedalled vehicle, an
+	// electric motor, a trailer, a boat or an aircraft leaves it out, and CheckSource says so. The ids are lower case; the cook takes them as written.
+	if (!T.EngineSound.IsNone() && Source.CanPickEngineSound())
+	{
+		Engine->SetStringField(TEXT("sound"), T.EngineSound.ToString().ToLower());
+	}
 	// #444: a turbo or supercharger. Written only with one, all four fields together (a document without them is an engine with none, so a car
 	// without one cooks as before); boost settings without an induction are refused in CheckSource, never dropped here without a word.
 	if (T.Induction != EMantleVehicleSourceInduction::None && !T.bElectric)
@@ -4913,6 +4920,8 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 		{
 			if (T.EngineBraking != Plain.EngineBraking) Unused.Add(TEXT("Engine Braking"));
 			if (T.ReverseRatio != Plain.ReverseRatio) Unused.Add(TEXT("Reverse Ratio"));
+			// #258: an electric motor has no engine sound to pick (it plays its own motor), so the document leaves Engine Sound out.
+			if (T.EngineSound != Plain.EngineSound) Unused.Add(TEXT("Engine Sound"));
 		}
 		if (T.bElectric || T.bCvt)
 		{
@@ -4927,6 +4936,34 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 					T.bElectric ? TEXT("electric (one fixed gear, no engine braking)") : TEXT("a belt drive (it never shifts)"), *FString::Join(Unused, TEXT(", ")),
 					Unused.Num() == 1 ? TEXT("does") : TEXT("do"), Unused.Num() == 1 ? TEXT("is") : TEXT("are")),
 				TEXT("Put them back to their defaults to clear this note, or leave them: they come back if the vehicle is made combustion or geared again.") });
+		}
+	}
+	// #258: the engine sound. On a vehicle that has one to pick, one of the sounds it may have (a motorcycle's on two wheels, either kind on an ATV's
+	// handlebars, else a car's): any other would be refused on upload. On one with none to pick (pedalled, a trailer, a boat, an aircraft), it would do
+	// nothing and is left out, so the creator is told; an electric motor's is in the note above.
+	if (!T.EngineSound.IsNone() && !T.bElectric)
+	{
+		if (Source->CanPickEngineSound())
+		{
+			const bool bHandlebars = Source->DriverSeatKind == EMantleVehicleSeatKind::Motorcycle;
+			if (!FMantleEngineSounds::Fits(T.EngineSound, Source->Wheels.Num(), bHandlebars))
+			{
+				TArray<FName> Ids;
+				FMantleEngineSounds::Options(Source->Wheels.Num(), bHandlebars, Ids);
+				TArray<FString> Names;
+				for (const FName Id : Ids)
+				{
+					Names.Add(Id.ToString());
+				}
+				AddError(FString::Printf(TEXT("has the Engine Sound '%s', which is not one this vehicle can have (%s)."), *T.EngineSound.ToString(),
+					*FString::Join(Names, TEXT(", "))), TEXT("Pick one from the Engine Sound list, or None for the vehicle type's own."));
+			}
+		}
+		else
+		{
+			OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
+				FString::Printf(TEXT("%s has an Engine Sound, but a pedalled vehicle, a trailer, a boat or an aircraft has none to pick, so it does nothing and is left out of the published vehicle."), *Subject),
+				TEXT("Set Engine Sound to None to clear this note.") });
 		}
 	}
 	// A belt drive (ATV follow-on): one box after the belt, the belt's high ratio below its low one, the held rpm above idle and at most the red line.
