@@ -1479,7 +1479,7 @@
         "boat/propulsion/brakeFade": [1, 1000],
         "boat/propulsion/propWalk": [0, 0.2],
         "boat/rudder/location/*": [-1000, 1000],
-        "boat/rudder/area": [0.01, 0.5],
+        "boat/rudder/area": [0.001, 0.5],
         "boat/rudder/maxControlAngle": [0, 45],
         "boat/rudder/stallAngle": [1, 90],
         "boat/angularDamping": [0, 5]

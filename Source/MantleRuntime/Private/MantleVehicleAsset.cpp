@@ -312,7 +312,7 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("boat/propulsion/brakeFade"), 1.0, 1000.0 },
 		{ TEXT("boat/propulsion/propWalk"), 0.0, 0.2 },
 		{ TEXT("boat/rudder/location/*"), -1000.0, 1000.0 },
-		{ TEXT("boat/rudder/area"), 0.01, 0.5 },
+		{ TEXT("boat/rudder/area"), 0.001, 0.5 },
 		{ TEXT("boat/rudder/maxControlAngle"), 0.0, 45.0 },
 		{ TEXT("boat/rudder/stallAngle"), 1.0, 90.0 },
 		{ TEXT("boat/angularDamping"), 0.0, 5.0 },

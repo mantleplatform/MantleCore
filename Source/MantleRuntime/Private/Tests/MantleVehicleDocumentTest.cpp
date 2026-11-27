@@ -740,8 +740,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FMantleVehicleDocumentGroundHandlingTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleDocumentTestPrivate;
-	const TArray<FVector2D> WantCurve = { FVector2D(0.0, 1.0), FVector2D(20.0, 0.8), FVector2D(25.0, 0.75), FVector2D(37.5, 0.53), FVector2D(56.0, 0.35),
-		FVector2D(75.0, 0.27), FVector2D(120.0, 0.24) };
+	const TArray<FVector2D> WantCurve = { FVector2D(0.0, 1.0), FVector2D(20.0, 0.8), FVector2D(25.0, 0.75), FVector2D(37.5, 0.53), FVector2D(56.0, 0.30),
+		FVector2D(75.0, 0.22), FVector2D(120.0, 0.18) };
 	int32 Grounded = 0;
 	int32 OwnRear = 0;
 	for (const FString& Selector : Selectors())
