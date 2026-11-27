@@ -506,7 +506,7 @@ bool FMantleVehiclePresetSwitchTypeTest::RunTest(const FString& Parameters)
 	TArray<FString> Notes;
 	UMantleVehicleSource* Fresh = NewObject<UMantleVehicleSource>(GetTransientPackage());
 	TestTrue(TEXT("the sedan applies to a new vehicle"), FMantleVehiclePresets::ApplyDefaults(*Sedan, *Fresh, Notes));
-	for (const TCHAR* From : { TEXT("motorcycle"), TEXT("tank"), TEXT("electric"), TEXT("atv"), TEXT("bicycle"), TEXT("drift"), TEXT("sports") })
+	for (const TCHAR* From : { TEXT("motorcycle"), TEXT("tank"), TEXT("electric"), TEXT("atv"), TEXT("bicycle"), TEXT("drift"), TEXT("sports"), TEXT("offroad") })
 	{
 		const FMantleVehiclePreset* Before = FMantleVehiclePresets::Find(From);
 		if (!TestNotNull(*FString::Printf(TEXT("the %s preset loads"), From), Before))
