@@ -12,7 +12,7 @@
 
 // engine.sound (#258): the reader takes the engine sound a creator picked as its id (any string: the cook checks it), absent is None (the type's
 // default), and FMantleEngineSounds gives a car a car's engines, a two-wheeler a motorcycle's and a quad with handlebars both, as the cook does.
-namespace MantleVehicleEngineSoundTestPrivate
+namespace MantleVehicleEngineSoundDocTestPrivate
 {
 	/** A four-wheel car's document with this engine block; GearRatios one gear for an electric motor. */
 	bool ReadEngine(const FString& EngineJson, FMantleVehicleDesc& Out, FString& OutError, const TCHAR* GearRatios = TEXT("[3.2,2.1,1.4,1.0]"))
@@ -26,13 +26,13 @@ namespace MantleVehicleEngineSoundTestPrivate
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleVehicleEngineSoundTest,
+	FMantleVehicleEngineSoundDocTest,
 	"Mantle.Vehicle.Document.EngineSound",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
-bool FMantleVehicleEngineSoundTest::RunTest(const FString&)
+bool FMantleVehicleEngineSoundDocTest::RunTest(const FString&)
 {
-	using namespace MantleVehicleEngineSoundTestPrivate;
+	using namespace MantleVehicleEngineSoundDocTestPrivate;
 	const FString Combustion = TEXT("\"maxTorque\":400,\"maxRPM\":6000,\"torqueCurve\":[[0,0.6],[3000,1],[6000,0.8]]");
 	FMantleVehicleDesc D;
 	FString Error;
