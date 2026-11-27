@@ -84,7 +84,7 @@
     },
     "tires": {
       "friction": 1.76,
-      "rearFriction": 1.51
+      "rearFriction": 1.5
     },
     "camera": {
       "armLength": 400,
