@@ -1633,7 +1633,8 @@ void FMantleVehicleBuilder::ApplyEngineSound(FMantleVehicleBuildResult& Built, c
 	}
 	if (!Id.IsNone() && !Source->CanPickEngineSound())
 	{
-		Built.Notes.Add(TEXT("Engine sound: this vehicle has none to pick (pedalled, electric, a trailer or an aircraft), so it plays its own."));
+		// The same words as CheckSource's note (an electric motor's sound is its own motor's).
+		Built.Notes.Add(TEXT("Engine sound: a pedalled vehicle, an electric motor, a trailer or an aircraft has none to pick, so it is left out of this one."));
 		return;
 	}
 	const bool bTwoWheeler = FMantleEngineSounds::IsTwoWheeler(Source->MovementType == EMantleVehicleMovementKind::Wheeled, Source->Wheels.Num());
