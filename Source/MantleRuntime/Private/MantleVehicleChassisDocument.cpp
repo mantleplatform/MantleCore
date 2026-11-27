@@ -1469,9 +1469,38 @@ bool FMantleVehicleChassisDocument::MergeSource(const UMantleVehicleSource& Sour
 	{
 		return false;
 	}
+	// The creator's hitch (#446): the type's own (from the blocks below) unless they chose one, or none. Last, so it replaces the blocks' own.
+	auto MergeHitch = [&Refuse, &Source, &Document]()
+	{
+		const EMantleVehicleSourceHitch Choice = Source.Tuning.Hitch;
+		if (Choice == EMantleVehicleSourceHitch::Preset)
+		{
+			return true;
+		}
+		if (Choice == EMantleVehicleSourceHitch::None)
+		{
+			Document.RemoveField(TEXT("hitch"));
+			return true;
+		}
+		if (Source.MovementType != EMantleVehicleMovementKind::Wheeled && Source.MovementType != EMantleVehicleMovementKind::Tracked)
+		{
+			return Refuse(FString::Printf(TEXT("the vehicle's hitch is only for a wheeled or tracked vehicle; a %s vehicle tows nothing (set Hitch to none or the type's own)"),
+				MovementName(Source.MovementType)));
+		}
+		const FVector& At = Source.Tuning.HitchLocation;
+		if (!FMath::IsFinite(At.X) || !FMath::IsFinite(At.Y) || !FMath::IsFinite(At.Z))
+		{
+			return Refuse(TEXT("the vehicle's hitch location must be finite numbers"));
+		}
+		FMantleVehicleHitchDesc Hitch;
+		Hitch.Kind = Choice == EMantleVehicleSourceHitch::Ball ? EMantleVehicleHitchKind::Ball : EMantleVehicleHitchKind::FifthWheel;
+		Hitch.Location = At;
+		Document.SetObjectField(TEXT("hitch"), HitchJson(Hitch));
+		return true;
+	};
 	if (Source.MovementBlocks.IsEmpty())
 	{
-		return true;
+		return MergeHitch();
 	}
 	TSharedPtr<FJsonObject> Blocks;
 	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Source.MovementBlocks);
@@ -1541,7 +1570,12 @@ bool FMantleVehicleChassisDocument::MergeSource(const UMantleVehicleSource& Sour
 			(*Target)->SetField(ExtraKey, Extra.Value);
 		}
 	}
-	return true;
+	return MergeHitch();
+}
+
+FVector FMantleVehicleChassisDocument::DefaultHitchLocation(const EMantleVehicleHitchKind Kind, const double BodyRearX, const double RearAxleX, const double GroundZ)
+{
+	return Kind == EMantleVehicleHitchKind::Ball ? FVector(BodyRearX - 10.0, 0.0, GroundZ + 50.0) : FVector(RearAxleX + 30.0, 0.0, GroundZ + 119.0);
 }
 
 double FMantleVehicleChassisDocument::HovercraftSlide(const double Grip, const double Own, const double Grippy)

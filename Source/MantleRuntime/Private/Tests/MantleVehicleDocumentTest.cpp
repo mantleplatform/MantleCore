@@ -6,6 +6,7 @@
 #include "MantleChassisSpec.h"
 #include "MantleVehicleAsset.h"
 #include "MantleVehicleChassisBuilder.h"
+#include "MantleVehicleSource.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -2365,6 +2366,128 @@ bool FMantleVehicleDocumentCookedRefusalsTest::RunTest(const FString& Parameters
 			TestTrue(*FString::Printf(TEXT("the refusal names the key (%s)"), *Error), Error.Contains(TEXT("warpDrive")));
 		}
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleDocumentCreatorHitchTest,
+	"Mantle.Vehicle.Document.CreatorHitch",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleDocumentCreatorHitchTest::RunTest(const FString& Parameters)
+{
+	// #446: a creator's hitch (UMantleVehicleSource Tuning.Hitch) goes through MergeSource into the document and reads back as it was set. The type's own
+	// keeps the preset's, none takes it away, a tow ball or fifth wheel goes on any wheeled or tracked vehicle, and a plane, helicopter, hovercraft, boat or
+	// trailer is refused.
+	using namespace MantleVehicleDocumentTestPrivate;
+	struct FMerged
+	{
+		bool bMerged = false;
+		bool bRead = false;
+		FString Error;
+		FMantleVehicleDesc Desc;
+	};
+	auto Merge = [this](const TCHAR* PresetId, const EMantleVehicleSourceHitch Hitch, const FVector& Location)
+	{
+		FMerged Out;
+		FString PresetText;
+		FString DocumentText;
+		FMantleChassisSpec Spec;
+		if (!TestTrue(*FString::Printf(TEXT("%s: the preset makes a document (%s)"), PresetId, *Out.Error),
+				FMantleVehicleChassisBuilder::LoadPresetText(PresetId, PresetText, Out.Error)
+				&& FMantleVehicleChassisBuilder::MakeDocument(PresetText, DocumentText, Out.Error)
+				&& FMantleVehicleChassisBuilder::LoadSpec(PresetId, Spec, Out.Error)))
+		{
+			return Out;
+		}
+		const TSharedPtr<FJsonObject> Document = ParseObject(DocumentText);
+		if (!TestTrue(*FString::Printf(TEXT("%s: the document is JSON"), PresetId), Document.IsValid()))
+		{
+			return Out;
+		}
+		// The source as the vehicle builder leaves it: the type's movement and its blocks, and the creator's hitch.
+		FMantleVehicleDesc Movement;
+		FMantleVehicleChassisDocument::Derive(Spec, Movement);
+		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>();
+		Source->MovementType = Movement.MovementType;
+		Source->MovementBlocks = FMantleVehicleChassisDocument::MovementBlocksJson(Spec);
+		Source->Tuning.Hitch = Hitch;
+		Source->Tuning.HitchLocation = Location;
+		Out.bMerged = FMantleVehicleChassisDocument::MergeSource(*Source, *Document, &Out.Error);
+		if (Out.bMerged)
+		{
+			Out.bRead = ParseDesc(Serialize(Document.ToSharedRef()), Out.Desc, Out.Error);
+		}
+		return Out;
+	};
+	auto Reads = [this](const TCHAR* Label, const FMerged& M)
+	{
+		return TestTrue(*FString::Printf(TEXT("%s: merges and reads (%s)"), Label, *M.Error), M.bMerged && M.bRead);
+	};
+
+	// The type's own: the pickup's tow ball, the semi's fifth wheel, and the sedan's none, as the presets have them.
+	const FMerged PickupOwn = Merge(TEXT("pickup"), EMantleVehicleSourceHitch::Preset, FVector::ZeroVector);
+	if (Reads(TEXT("the pickup's own"), PickupOwn))
+	{
+		TestTrue(TEXT("the pickup keeps its tow ball"), PickupOwn.Desc.bHitch && PickupOwn.Desc.Hitch.Kind == EMantleVehicleHitchKind::Ball);
+		TestTrue(*FString::Printf(TEXT("at the preset's place (%s)"), *PickupOwn.Desc.Hitch.Location.ToString()), PickupOwn.Desc.Hitch.Location.Equals(FVector(-280, 0, 50), 0.5));
+	}
+	const FMerged SemiOwn = Merge(TEXT("semi"), EMantleVehicleSourceHitch::Preset, FVector::ZeroVector);
+	if (Reads(TEXT("the semi's own"), SemiOwn))
+	{
+		TestTrue(TEXT("the semi keeps its fifth wheel"), SemiOwn.Desc.bHitch && SemiOwn.Desc.Hitch.Kind == EMantleVehicleHitchKind::FifthWheel);
+	}
+	const FMerged SedanOwn = Merge(TEXT("sedan"), EMantleVehicleSourceHitch::Preset, FVector::ZeroVector);
+	if (Reads(TEXT("the sedan's own"), SedanOwn))
+	{
+		TestFalse(TEXT("the sedan's own is none"), SedanOwn.Desc.bHitch);
+	}
+
+	// None takes the preset's away.
+	const FMerged PickupNone = Merge(TEXT("pickup"), EMantleVehicleSourceHitch::None, FVector::ZeroVector);
+	if (Reads(TEXT("the pickup with none"), PickupNone))
+	{
+		TestFalse(TEXT("the pickup with none tows nothing"), PickupNone.Desc.bHitch);
+	}
+
+	// A creator's own: a tow ball on a sedan, a fifth wheel on a six-wheeler, a tow ball on a tank (tracked), a tow ball in place of the semi's fifth wheel.
+	struct FOwn
+	{
+		const TCHAR* PresetId;
+		EMantleVehicleSourceHitch Hitch;
+		EMantleVehicleHitchKind Kind;
+		FVector Location;
+	};
+	const FOwn Owns[] = {
+		{ TEXT("sedan"), EMantleVehicleSourceHitch::Ball, EMantleVehicleHitchKind::Ball, FVector(-250.5, 0, 48) },
+		{ TEXT("sixwheeler"), EMantleVehicleSourceHitch::FifthWheel, EMantleVehicleHitchKind::FifthWheel, FVector(-150, 0, 120) },
+		{ TEXT("tank"), EMantleVehicleSourceHitch::Ball, EMantleVehicleHitchKind::Ball, FVector(-360, 0, 50) },
+		{ TEXT("semi"), EMantleVehicleSourceHitch::Ball, EMantleVehicleHitchKind::Ball, FVector(-330, 0, 60) },
+	};
+	for (const FOwn& Own : Owns)
+	{
+		const FString Label = FString::Printf(TEXT("%s with a creator's %s"), Own.PresetId, Own.Kind == EMantleVehicleHitchKind::Ball ? TEXT("tow ball") : TEXT("fifth wheel"));
+		const FMerged M = Merge(Own.PresetId, Own.Hitch, Own.Location);
+		if (Reads(*Label, M))
+		{
+			TestTrue(*FString::Printf(TEXT("%s: has the hitch, of its kind"), *Label), M.Desc.bHitch && M.Desc.Hitch.Kind == Own.Kind);
+			TestTrue(*FString::Printf(TEXT("%s: where it was set (%s)"), *Label, *M.Desc.Hitch.Location.ToString()), M.Desc.Hitch.Location.Equals(Own.Location, 0.01));
+		}
+	}
+
+	// Refused: anything that is not wheeled or tracked, with the reason in words.
+	for (const TCHAR* PresetId : { TEXT("jet"), TEXT("helicopter"), TEXT("hovercraft"), TEXT("boat"), TEXT("utilitytrailer") })
+	{
+		const FMerged M = Merge(PresetId, EMantleVehicleSourceHitch::Ball, FVector(-200, 0, 50));
+		TestFalse(*FString::Printf(TEXT("%s: a creator's tow ball is refused"), PresetId), M.bMerged);
+		TestTrue(*FString::Printf(TEXT("%s: the refusal says why (%s)"), PresetId, *M.Error), M.Error.Contains(TEXT("only for a wheeled or tracked vehicle")));
+	}
+
+	// The builder's default place: a tow ball behind the rear end at a utility trailer's coupler height, a fifth wheel just ahead of the rear axles at a
+	// semi trailer's; the pickup's preset ball and the semi's preset fifth wheel are where the default puts them.
+	TestTrue(TEXT("a default tow ball"), FMantleVehicleChassisDocument::DefaultHitchLocation(EMantleVehicleHitchKind::Ball, -270.0, -155.0, 0.0).Equals(FVector(-280, 0, 50)));
+	TestTrue(TEXT("a default fifth wheel"), FMantleVehicleChassisDocument::DefaultHitchLocation(EMantleVehicleHitchKind::FifthWheel, -300.0, -188.25, 0.0).Equals(FVector(-158.25, 0, 119)));
+	TestTrue(TEXT("the default follows the ground"), FMantleVehicleChassisDocument::DefaultHitchLocation(EMantleVehicleHitchKind::Ball, -200.0, -100.0, -35.0).Equals(FVector(-210, 0, 15)));
 	return true;
 }
 

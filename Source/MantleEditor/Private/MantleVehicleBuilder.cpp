@@ -693,6 +693,13 @@ namespace MantleVehicleBuilderPrivate
 						: Value.Equals(TEXT("rear"), ESearchCase::IgnoreCase) ? EMantleVehicleDrive::Rear
 						: Value.Equals(TEXT("all"), ESearchCase::IgnoreCase) ? EMantleVehicleDrive::All : EMantleVehicleDrive::Type;
 				}
+				else if (Key.Equals(TEXT("hitch"), ESearchCase::IgnoreCase))
+				{
+					// The window's Towing choice (#446): own (the type's), none, ball or fifthWheel, at the default place.
+					Options.Hitch = Value.Equals(TEXT("none"), ESearchCase::IgnoreCase) ? EMantleVehicleSourceHitch::None
+						: Value.Equals(TEXT("ball"), ESearchCase::IgnoreCase) ? EMantleVehicleSourceHitch::Ball
+						: Value.Equals(TEXT("fifthWheel"), ESearchCase::IgnoreCase) ? EMantleVehicleSourceHitch::FifthWheel : EMantleVehicleSourceHitch::Preset;
+				}
 				else if (Key.Equals(TEXT("hideriders"), ESearchCase::IgnoreCase))
 				{
 					// The window's "This model has no inside": the riders are hidden and the doors stay shut (the hood and trunk still open).
@@ -1471,6 +1478,14 @@ bool FMantleVehicleBuilder::FitsOwnWheels(UObject* Model, const FString& PresetI
 
 FMantleVehicleBuildResult FMantleVehicleBuilder::BuildAny(UObject* Model, const FString& PresetId, const FMantleVehicleModelOptions& Options)
 {
+	// The creator's hitch (#446) goes on whichever way the vehicle was built.
+	FMantleVehicleBuildResult Out = BuildAnyRoute(Model, PresetId, Options);
+	ApplyHitch(Out, Options);
+	return Out;
+}
+
+FMantleVehicleBuildResult FMantleVehicleBuilder::BuildAnyRoute(UObject* Model, const FString& PresetId, const FMantleVehicleModelOptions& Options)
+{
 	// A vehicle Blueprint is read first: a Chaos vehicle gives its skeletal body and the wheels and parts set up on it, a Blueprint of static pieces gives one merged mesh.
 	if (UBlueprint* Blueprint = Cast<UBlueprint>(Model))
 	{
@@ -1502,6 +1517,74 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildAny(UObject* Model, const 
 		return Out;
 	}
 	return BuildFromModel(Model, PresetId, Options);
+}
+
+FVector FMantleVehicleBuilder::DefaultHitchLocation(const UMantleVehicleSource& Source, const EMantleVehicleHitchKind Kind)
+{
+	USkeletalMesh* Model = Source.Body.LoadSynchronous();
+	FMantleVehicleModel Read;
+	FString Error;
+	if (!Model || !FMantleVehicleModel::Read(Model, Read, Error))
+	{
+		return FMantleVehicleChassisDocument::DefaultHitchLocation(Kind, -250.0, -150.0, 0.0);
+	}
+	const FBox Bounds = Read.Bounds();
+	// The rear axles: the middle of the wheels that don't steer (a semi's tandem, a car's rear pair, a tank's road wheels); the rearmost wheel when every one steers.
+	double RearSum = 0.0;
+	int32 RearCount = 0;
+	double Rearmost = TNumericLimits<double>::Max();
+	for (const FMantleVehicleSourceWheel& Wheel : Source.Wheels)
+	{
+		const int32 Bone = Read.Bones.IndexOfByPredicate([&Wheel](const FMantleSkinnedMeshBone& Each) { return Each.Name == Wheel.Bone; });
+		if (!Read.BonePositions.IsValidIndex(Bone))
+		{
+			continue;
+		}
+		const double X = Read.BonePositions[Bone].X;
+		Rearmost = FMath::Min(Rearmost, X);
+		if (!Wheel.bSteering)
+		{
+			RearSum += X;
+			++RearCount;
+		}
+	}
+	const double RearAxleX = RearCount > 0 ? RearSum / RearCount : (Rearmost < TNumericLimits<double>::Max() ? Rearmost : Bounds.Min.X + 0.25 * Bounds.GetSize().X);
+	return FMantleVehicleChassisDocument::DefaultHitchLocation(Kind, Bounds.Min.X, RearAxleX, Bounds.Min.Z);
+}
+
+void FMantleVehicleBuilder::ApplyHitch(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options)
+{
+	UMantleVehicleSource* Source = Built.Source;
+	if (!Options.Hitch.IsSet() || !Source || !Built.bOk)
+	{
+		return;
+	}
+	const EMantleVehicleSourceHitch Choice = Options.Hitch.GetValue();
+	const bool bPlaced = Choice == EMantleVehicleSourceHitch::Ball || Choice == EMantleVehicleSourceHitch::FifthWheel;
+	if (bPlaced && Source->MovementType != EMantleVehicleMovementKind::Wheeled && Source->MovementType != EMantleVehicleMovementKind::Tracked)
+	{
+		Built.Notes.Add(FString::Printf(TEXT("Hitch: a %s tows nothing, so it has no hitch."), FMantleVehicleChassisDocument::MovementName(Source->MovementType)));
+		return;
+	}
+	Source->Modify();
+	Source->Tuning.Hitch = Choice;
+	if (bPlaced)
+	{
+		const EMantleVehicleHitchKind Kind = Choice == EMantleVehicleSourceHitch::Ball ? EMantleVehicleHitchKind::Ball : EMantleVehicleHitchKind::FifthWheel;
+		Source->Tuning.HitchLocation = Options.HitchLocation.IsSet() ? Options.HitchLocation.GetValue() : DefaultHitchLocation(*Source, Kind);
+		const FVector& At = Source->Tuning.HitchLocation;
+		Built.Notes.Add(FString::Printf(TEXT("Hitch: a %s at X %.0f, Y %.0f, Z %.0f cm%s. Move it under Towing > Hitch Location in the vehicle asset."),
+			Kind == EMantleVehicleHitchKind::Ball ? TEXT("tow ball") : TEXT("fifth wheel"), At.X, At.Y, At.Z,
+			Options.HitchLocation.IsSet() ? TEXT("") : (Kind == EMantleVehicleHitchKind::Ball ? TEXT(", behind the rear end") : TEXT(", just ahead of the rear axles"))));
+	}
+	else if (Choice == EMantleVehicleSourceHitch::None)
+	{
+		Built.Notes.Add(TEXT("Hitch: none, so it tows nothing."));
+	}
+	if (Built.bSaved)
+	{
+		Built.bSaved = SaveVehicle(*Source, Built.SaveProblem);
+	}
 }
 
 void FMantleVehicleBuilder::LightOwnBody(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options)

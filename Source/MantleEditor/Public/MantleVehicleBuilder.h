@@ -83,6 +83,12 @@ struct FMantleVehicleModelOptions
 	/** The creator's drive choice (#376 off-road follow-on): front, rear or all-wheel drive on the type's axles (FMantleChassisSpec::ApplyDrive). Unset or
 	 *  Type: the type's own. Ignored, with a note, on a type whose drive isn't a choice. */
 	TOptional<EMantleVehicleDrive> Drive;
+	/**
+	 * The creator's hitch (#446, the window's Towing choice): unset or Preset keeps the type's own; None takes it away; a tow ball or a fifth wheel goes at
+	 * HitchLocation or, unset, where DefaultHitchLocation puts it on the built vehicle. A plane, helicopter, hovercraft, boat or trailer gets none, with a note.
+	 */
+	TOptional<EMantleVehicleSourceHitch> Hitch;
+	TOptional<FVector> HitchLocation;
 	/** The chassis to put the model on, already shaped (the window's); unset, the type's own sized to the model (FMantleVehicleChassisSkin::Propose). */
 	TOptional<FMantleChassisSpec> Spec;
 	/** The folder (a long package path) the vehicle is saved under, one subfolder of its name inside; empty for the project's MantleVehicles folder. */
@@ -224,6 +230,8 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 * say what was done, including that pieces which move become one solid piece.
 	 */
 	static FMantleVehicleBuildResult BuildAny(UObject* Model, const FString& PresetId, const FMantleVehicleModelOptions& Options = FMantleVehicleModelOptions());
+	/** BuildAny before the creator's hitch goes on (ApplyHitch): the Blueprint, own-wheels or skin route. */
+	static FMantleVehicleBuildResult BuildAnyRoute(UObject* Model, const FString& PresetId, const FMantleVehicleModelOptions& Options);
 
 	/**
 	 * Chassis from a model (#821 WP5, #793 step 5): the creator's static or skeletal Model worn whole as the skin of PresetId's own chassis. The chassis is the
@@ -321,6 +329,20 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 * (FMantleVehicleChassisSkin::FindHingesOnModel) from Options.Hinges or, unset, the bones' names, and applied (ApplyHinges). Saves the vehicle again when the build saved it.
 	 */
 	static void ApplyOwnHinges(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options);
+
+	/**
+	 * The creator's hitch on a built vehicle (#446): Options.Hitch and Options.HitchLocation into Source's Tuning.Hitch and Tuning.HitchLocation, the place
+	 * DefaultHitchLocation's when none is given. Nothing when Options.Hitch is unset; a note and nothing on a vehicle that is not wheeled or tracked. Saves the
+	 * vehicle again when the build saved it.
+	 */
+	static void ApplyHitch(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options);
+
+	/**
+	 * Where a hitch of Kind goes on Source's body (#446), in the body's space: FMantleVehicleChassisDocument::DefaultHitchLocation with the body's rear end, the
+	 * middle of its unsteered wheels (the rear axles) and its lowest point (the tyres' bottoms) as the ground. A body that can't be read gets a car's
+	 * (behind a 5 m car, on its centre line).
+	 */
+	static FVector DefaultHitchLocation(const UMantleVehicleSource& Source, EMantleVehicleHitchKind Kind);
 
 	/**
 	 * The steering wheel of a model that keeps its own skeleton: its bone, found from the model's bone names (FMantleVehicleChassisSkin::SuggestSteeringWheelBone) when Source's is

@@ -3912,6 +3912,7 @@ const UMantleVehicleSource* FMantleVehicleConverter::MakeExportView(const UMantl
 	T.RearLeftDoorStand = Longer(T.RearLeftDoorStand);
 	Hinge(T.RearRightDoor);
 	T.RearRightDoorStand = Longer(T.RearRightDoorStand);
+	T.HitchLocation = Longer(T.HitchLocation);
 	Seat(T.DriverContacts);
 	Seat(T.PassengerContacts);
 	for (FMantleVehicleSourceBox& Box : T.Collision)
@@ -5010,6 +5011,14 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 		for (int32 Axis = 0; Axis < 3; ++Axis)
 		{
 			VehicleCheckRange(Subject, TEXT("Trunk Stand"), TEXT("trunk/stand/*"), T.TrunkStand[Axis], OutIssues);
+		}
+	}
+	// The creator's hitch (#446): its place within the document's range.
+	if (T.Hitch == EMantleVehicleSourceHitch::Ball || T.Hitch == EMantleVehicleSourceHitch::FifthWheel)
+	{
+		for (int32 Axis = 0; Axis < 3; ++Axis)
+		{
+			VehicleCheckRange(Subject, TEXT("Hitch Location"), TEXT("hitch/location/*"), T.HitchLocation[Axis], OutIssues);
 		}
 	}
 	if (T.bHood)

@@ -335,6 +335,16 @@ private:
 	// Seats and paint.
 	/** "This model has no inside": the driver and passenger are not drawn. Written into the vehicle when it is built, and at once when it is already built. */
 	bool bHideRiders = false;
+	/**
+	 * The creator's hitch (#446): the type's own, none, a tow ball or a fifth wheel, in EMantleVehicleSourceHitch's order. With bHitchPlaced at HitchAt (cm, in the
+	 * vehicle's space), else where the build puts it (FMantleVehicleBuilder::DefaultHitchLocation). Kept when the type changes; a type that tows nothing hides it.
+	 */
+	EMantleVehicleSourceHitch HitchChoice = EMantleVehicleSourceHitch::Preset;
+	TArray<TSharedPtr<FString>> HitchChoices;
+	bool bHitchPlaced = false;
+	FVector HitchAt = FVector(-250.0, 0.0, 50.0);
+	/** Whether the selected type can tow: wheeled or tracked, not a trailer. */
+	bool TypeTows() const;
 	struct FPaintChoice
 	{
 		FString Section;

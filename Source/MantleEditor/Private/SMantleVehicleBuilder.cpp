@@ -1445,6 +1445,98 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeSeatsAndPaintStep()
 			]
 	];
 
+	// Towing (#446): any wheeled or tracked vehicle may have a hitch, the type's own unless the creator changes it.
+	if (TypeTows())
+	{
+		const FMantleChassisSpec& Type = Shape.GetArchetype();
+		const FString OwnWords = !Type.bHitch ? FString(TEXT("none")) : Type.Hitch.Kind == EMantleVehicleHitchKind::Ball ? FString(TEXT("a tow ball")) : FString(TEXT("a fifth wheel"));
+		HitchChoices = { MakeShared<FString>(FString::Printf(TEXT("The type's own (%s)"), *OwnWords)), MakeShared<FString>(TEXT("None")),
+			MakeShared<FString>(TEXT("Tow ball (a small trailer's)")), MakeShared<FString>(TEXT("Fifth wheel (a semi trailer's)")) };
+		const int32 HitchSelected = FMath::Clamp(static_cast<int32>(HitchChoice), 0, HitchChoices.Num() - 1);
+		Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 4)
+		[
+			SNew(STextBlock)
+				.Font(FAppStyle::GetFontStyle("BoldFont"))
+				.Text(LOCTEXT("TowingTitle", "Towing"))
+		];
+		Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 6)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 2.f, 8.f, 2.f)
+			[
+				SNew(SBox).WidthOverride(150.f)
+				[
+					SNew(STextBlock)
+						.Text(LOCTEXT("HitchLabel", "Hitch"))
+						.ToolTipText(LOCTEXT("HitchTip", "What a trailer couples to. A tow ball takes a small trailer (the utility trailer); a fifth wheel takes a semi trailer. Mantle puts a tow ball just behind your vehicle's rear end and a fifth wheel just ahead of its rear wheels, unless you place it yourself."))
+				]
+			]
+			+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
+			[
+				SNew(SComboBox<TSharedPtr<FString>>)
+					.OptionsSource(&HitchChoices)
+					.InitiallySelectedItem(HitchChoices[HitchSelected])
+					.OnGenerateWidget_Lambda([](TSharedPtr<FString> Item) { return SNew(STextBlock).Text(FText::FromString(*Item)); })
+					.OnSelectionChanged_Lambda([this](TSharedPtr<FString> Item, ESelectInfo::Type)
+					{
+						const int32 At = HitchChoices.IndexOfByKey(Item);
+						if (At != INDEX_NONE)
+						{
+							HitchChoice = static_cast<EMantleVehicleSourceHitch>(At);
+						}
+					})
+					[
+						SNew(STextBlock).Text_Lambda([this]
+						{
+							const int32 At = static_cast<int32>(HitchChoice);
+							return HitchChoices.IsValidIndex(At) ? FText::FromString(*HitchChoices[At]) : FText::GetEmpty();
+						})
+					]
+			]
+		];
+		auto HitchIsPlaced = [this] { return HitchChoice == EMantleVehicleSourceHitch::Ball || HitchChoice == EMantleVehicleSourceHitch::FifthWheel; };
+		Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 4)
+		[
+			SNew(SCheckBox)
+				.IsEnabled_Lambda(HitchIsPlaced)
+				.ToolTipText(LOCTEXT("HitchPlaceTip", "Turn this on to set where the hitch is yourself, in centimetres in your vehicle's space: X forward, Y to the right, Z up. A trailer's coupler must reach it: a tow ball about 50 cm and a fifth wheel about 120 cm above the ground. You can also move it later under Towing in the vehicle's settings."))
+				.IsChecked_Lambda([this] { return bHitchPlaced ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+				.OnCheckStateChanged_Lambda([this](ECheckBoxState State) { bHitchPlaced = State == ECheckBoxState::Checked; })
+				[
+					SNew(STextBlock).Text(LOCTEXT("HitchPlace", "I'll place the hitch myself"))
+				]
+		];
+		TSharedRef<SHorizontalBox> Axes = SNew(SHorizontalBox);
+		const TCHAR* AxisNames[] = { TEXT("X"), TEXT("Y"), TEXT("Z") };
+		for (int32 Axis = 0; Axis < 3; ++Axis)
+		{
+			Axes->AddSlot().FillWidth(1.f).VAlign(VAlign_Center).Padding(0.f, 0.f, 8.f, 0.f)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 4.f, 0.f)
+				[
+					SNew(STextBlock).Text(FText::FromString(AxisNames[Axis]))
+				]
+				+ SHorizontalBox::Slot().FillWidth(1.f)
+				[
+					SNew(SSpinBox<float>)
+						.MinValue(-1000.f)
+						.MaxValue(1000.f)
+						.Delta(1.f)
+						.MaxFractionalDigits(1)
+						.IsEnabled_Lambda([this, HitchIsPlaced] { return bHitchPlaced && HitchIsPlaced(); })
+						.Value_Lambda([this, Axis] { return static_cast<float>(HitchAt[Axis]); })
+						.OnValueChanged_Lambda([this, Axis](float Value) { HitchAt[Axis] = Value; })
+						.OnValueCommitted_Lambda([this, Axis](float Value, ETextCommit::Type) { HitchAt[Axis] = Value; })
+				]
+			];
+		}
+		Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 12)
+		[
+			Axes
+		];
+	}
+
 	Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 4)
 	[
 		SNew(STextBlock)
@@ -1714,6 +1806,12 @@ FText SMantleVehicleBuilder::PaintPickLabel(const uint8 Pick)
 	case 4: return LOCTEXT("PickDashboard", "Dashboard");
 	default: return LOCTEXT("PickBody", "Body color");
 	}
+}
+
+bool SMantleVehicleBuilder::TypeTows() const
+{
+	const FMantleChassisSpec& Type = Shape.GetArchetype();
+	return !Type.bTrailer && !Type.Aircraft.bSet && !Type.Helicopter.bSet && !Type.Hovercraft.bSet && !Type.Boat.bSet;
 }
 
 void SMantleVehicleBuilder::SetHideRiders(const bool bOn)
@@ -2093,6 +2191,15 @@ FMantleVehicleModelOptions SMantleVehicleBuilder::MakeBuildOptions() const
 		Options.Hinges = HingeChoice;
 	}
 	Options.HideRiders = bHideRiders;
+	// The Towing choice (#446): the type's own is left unset, so the vehicle keeps it.
+	if (TypeTows() && HitchChoice != EMantleVehicleSourceHitch::Preset)
+	{
+		Options.Hitch = HitchChoice;
+		if (bHitchPlaced && (HitchChoice == EMantleVehicleSourceHitch::Ball || HitchChoice == EMantleVehicleSourceHitch::FifthWheel))
+		{
+			Options.HitchLocation = HitchAt;
+		}
+	}
 	if (bUseSkin)
 	{
 		Options.Spec = Shape.GetShaped();

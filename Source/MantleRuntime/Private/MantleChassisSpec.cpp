@@ -1113,10 +1113,10 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 	{
 		return Refuse(OutError, TEXT("the preset's type trailer and its chassis.trailer go together"));
 	}
-	// One trailer per vehicle (#446): a trailer has no hitch of its own, and only a ground vehicle tows.
-	if (Spec.bHitch && (Spec.bTrailer || Spec.Aircraft.bSet || Spec.Helicopter.bSet || Spec.Hovercraft.bSet))
+	// One trailer per vehicle (#446): a trailer has no hitch of its own, and only a wheeled or tracked vehicle tows.
+	if (Spec.bHitch && (Spec.bTrailer || Spec.Aircraft.bSet || Spec.Helicopter.bSet || Spec.Hovercraft.bSet || Spec.Boat.bSet))
 	{
-		return Refuse(OutError, TEXT("the preset's chassis.hitch is only for a ground vehicle: a trailer, plane, helicopter or hovercraft tows nothing"));
+		return Refuse(OutError, TEXT("the preset's chassis.hitch is only for a wheeled or tracked vehicle: a trailer, plane, helicopter, hovercraft or boat tows nothing"));
 	}
 	// A hovercraft's pads are the four corners of two axles: its definition turns each of the layout's wheels into one, from a car's seat.
 	if (Spec.Type == EMantleChassisType::Hovercraft && (Spec.WheelCount() != 4 || !Spec.bSteeringWheel))

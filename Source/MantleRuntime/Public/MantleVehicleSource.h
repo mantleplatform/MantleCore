@@ -66,6 +66,19 @@ struct MANTLERUNTIME_API FMantleVehicleSourceWheel
 	float RimRadius = 0.f;
 };
 
+/**
+ * A creator's hitch (#446, the document's hitch): what a trailer couples to. The type's own keeps what the vehicle type (its chassis preset) has: a
+ * pickup's, van's, truck's and ATV's tow ball, a semi's fifth wheel, or none. None takes it away; a tow ball or a fifth wheel puts one at Hitch Location.
+ */
+UENUM(BlueprintType)
+enum class EMantleVehicleSourceHitch : uint8
+{
+	Preset UMETA(DisplayName = "The type's own"),
+	None,
+	Ball UMETA(DisplayName = "Tow ball"),
+	FifthWheel UMETA(DisplayName = "Fifth wheel"),
+};
+
 /** A creator's engine induction (#444, engine.induction): none, a turbo or a supercharger. */
 UENUM(BlueprintType)
 enum class EMantleVehicleSourceInduction : uint8
@@ -751,6 +764,22 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Camera", meta = (ClampMin = "0", ClampMax = "1000", Units = "cm"))
 	float CameraHeight = 150.f;
+
+	/**
+	 * Its hitch (#446), what a trailer couples to: the type's own (a pickup's tow ball, a semi's fifth wheel, or none), none, a tow ball (a small
+	 * trailer's) or a fifth wheel (a semi trailer's). Only a wheeled or tracked vehicle tows: a plane, helicopter, hovercraft, boat or trailer has none.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Towing")
+	EMantleVehicleSourceHitch Hitch = EMantleVehicleSourceHitch::Preset;
+
+	/**
+	 * Where the hitch is: the ball's top, or the fifth wheel's top at its kingpin hole, cm in the body's space (X forward, Z up), each within
+	 * -1000 to 1000. The vehicle builder puts it at the rear centre when you choose a kind; a trailer's coupler must reach it, so a tow ball sits
+	 * about 50 cm and a fifth wheel about 120 cm above the ground.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Towing",
+		meta = (EditCondition = "Hitch == EMantleVehicleSourceHitch::Ball || Hitch == EMantleVehicleSourceHitch::FifthWheel"))
+	FVector HitchLocation = FVector::ZeroVector;
 
 	/** The chassis as up to 8 boxes. Empty: one box around the body's geometry that no wheel bone carries. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Collision")

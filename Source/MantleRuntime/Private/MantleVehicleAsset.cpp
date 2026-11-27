@@ -2165,12 +2165,12 @@ namespace MantleVehicleAssetPrivate
 		D.Trailer = MoveTemp(T);
 	}
 
-	/** A towing vehicle's hitch: a wheeled vehicle's only, so a trailer can't tow another (one trailer per vehicle). */
+	/** A towing vehicle's hitch: a wheeled or tracked vehicle's only, so a trailer can't tow another (one trailer per vehicle). */
 	void ReadVehicleHitch(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
 	{
-		if (D.MovementType != EMantleVehicleMovementKind::Wheeled)
+		if (D.MovementType != EMantleVehicleMovementKind::Wheeled && D.MovementType != EMantleVehicleMovementKind::Tracked)
 		{
-			P.Fail(TEXT("/hitch"), TEXT("is only for a wheeled vehicle: a trailer, plane, helicopter or hovercraft tows nothing"));
+			P.Fail(TEXT("/hitch"), TEXT("is only for a wheeled or tracked vehicle: a trailer, plane, helicopter, hovercraft or boat tows nothing"));
 			return;
 		}
 		TSharedPtr<FJsonObject> Block;

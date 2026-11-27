@@ -110,10 +110,18 @@ struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 	 * Merges a source's movement and optional seat firearm aim arcs into a document made from it: its movement type and seat kinds when they are
 	 * not the baseline, enabled arcs on placed seats, and the blocks MovementBlocks holds (top-level flight, helicopter, hover and tracked replace the document's;
 	 * seat, passengerSeat and camera objects add their keys to the document's own, which must already exist). A disabled arc is not written: the seat's arc is
-	 * then worked out from where it sits. False, with the reason in OutError, for invalid arcs or blocks that are not a JSON object or name a key a source may not
-	 * set (movementType, kind, or anything else).
+	 * then worked out from where it sits. Last the creator's hitch (#446, Tuning.Hitch): the type's own leaves the blocks' hitch, none removes it, and a tow
+	 * ball or fifth wheel writes one at Tuning.HitchLocation. False, with the reason in OutError, for invalid arcs, a hitch on a vehicle that is not wheeled or
+	 * tracked, or blocks that are not a JSON object or name a key a source may not set (movementType, kind, or anything else).
 	 */
 	static bool MergeSource(const UMantleVehicleSource& Source, FJsonObject& Document, FString* OutError = nullptr);
+
+	/**
+	 * Where a hitch goes when a creator picks one (#446, the vehicle builder's default; numbers in the body's space): on the centre line, a tow ball
+	 * 10 cm behind the body's rear end (BodyRearX) and 50 cm above the ground (GroundZ), where a receiver hitch's ball sits and a utility trailer's
+	 * coupler is; a fifth wheel 30 cm ahead of the rear axles' middle (RearAxleX) and 119 cm above the ground, where a semi trailer's kingpin plate is.
+	 */
+	static FVector DefaultHitchLocation(EMantleVehicleHitchKind Kind, double BodyRearX, double RearAxleX, double GroundZ);
 
 	/** The strings of the document's enums, as the schema spells them. */
 	static const TCHAR* MovementName(EMantleVehicleMovementKind Movement);
