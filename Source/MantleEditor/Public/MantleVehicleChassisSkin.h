@@ -60,14 +60,6 @@ struct MANTLEEDITOR_API FMantleVehicleModel
 	static bool Read(UObject* Asset, FMantleVehicleModel& Out, FString& OutError);
 
 	/**
-	 * Makes every normal, tangent and UV finite, as the upload's cook requires; Read does it to what it reads. Unreal keeps a mesh's UVs as 16-bit floats unless
-	 * told otherwise, so a source UV past 65504 (a broken export's, often in the millions) is read back as infinite. A bad UV takes a good one from another corner
-	 * of a triangle it is in (the triangle then samples one texel, as near the creator's as the file allows), else 0; a bad normal the area-weighted normal of
-	 * its triangles, else up; a bad tangent one square to its normal. Adds a note to OutNotes per section, in plain words. Returns the vertices changed.
-	 */
-	static int32 CleanNonFinite(FMantleVehicleModel& Model, TArray<FString>& OutNotes);
-
-	/**
 	 * Whether a static mesh is read from its full-detail source and not from its render data (#821). A Nanite mesh's render LOD 0 is its fallback, a much reduced
 	 * stand-in; the source model is what the creator made. True (read the source) when the mesh uses Nanite (bNanite), its source is kept (bSourceAvailable) and its
 	 * triangles fit a vehicle's cap; false otherwise. OutNote, when given, is set to the plain words the build shows for a Nanite mesh either way, and left empty for a
