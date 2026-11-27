@@ -1691,32 +1691,74 @@ interface VehiclesService {
 	getLights(vehicle: Entity, light: string): string;
 	/** The names of the car's liveries, in the order SetLivery counts them: the first name is livery index 0, the next is 1, and so on. A name is what the vehicle's creator called it, or "Livery 1", "Livery 2" and so on for one without a name. The list is empty for a car published with no liveries, for the built-in cars, and for an entity that is not a car. (server only) */
 	getLiveries(vehicle: Entity): (string)[];
+	/** How far the trailer behind the local player's vehicle has swung from straight, in degrees (Vehicles:GetArticulation's: + to the right). For a jackknife warning. nil while the local player is not driving, or tows no trailer. (client only) */
+	getLocalArticulation(): number | undefined;
 	/** Which differentials the local player has locked in the car they drive: "off", "rear", "front" or "frontAndRear". "off" in a car without lockable differentials. nil while the local player is not driving. (client only) */
 	getLocalAxleLock(): string | undefined;
+	/** The usable battery of the electric car the local player drives, in kWh (Vehicles:GetBatteryCapacity's): what a full tank stands for. nil while the local player is not driving, or drives a combustion vehicle. (client only) */
+	getLocalBatteryCapacity(): number | undefined;
+	/** The boost the vehicle the local player drives has left, from 0 to GetLocalMaxBoost (Vehicles:GetBoost's; a script-enabled boost, not a turbo's pressure). nil while the local player is not driving, or while its boost is off (SetBoostEnabled). (client only) */
+	getLocalBoost(): number | undefined;
 	/** The boost of the car the local player is driving, in psi: 0 at idle or off the throttle, up to GetLocalMaxBoostPressure at full throttle once the revs are up (a turbo takes a moment to build it; a supercharger has it at once). Read it every frame to draw a boost gauge. nil while the local player is not driving, or drives a car without a turbo or supercharger. (client only) */
 	getLocalBoostPressure(): number | undefined;
 	/** How fast the local player turns the cranks of the pedalled vehicle (a bicycle) they ride, in rpm (Vehicles:GetCadence's unit): 0 while they freewheel or walk it backwards. nil while the local player is not riding a pedalled vehicle. Works on a client script; read it every frame for a cadence readout. (client only) */
 	getLocalCadence(): number | undefined;
+	/** The cargo in the trailer behind the local player's vehicle, in kg (Vehicles:GetCargoMass of that trailer). nil while the local player is not driving, or tows no trailer. (client only) */
+	getLocalCargoMass(): number | undefined;
+	/** How full the tank of the vehicle the local player drives is, from 0 to 100 (Vehicles:GetChargePercent's): an electric car's battery charge, or a fuel gauge on any other. nil while the local player is not driving, or while its fuel is off. Example: label.Text = math.floor(Vehicles:GetLocalChargePercent() or 0) .. "%" (client only) */
+	getLocalChargePercent(): number | undefined;
 	/** For the vehicle the local player is driving: "coupled" when it tows a trailer, "inRange" when a trailer is in place and the couple key would couple it now, and "none" otherwise, also on foot. There is no built-in prompt: read this every frame to draw your own. (client only) */
 	getLocalCouplingState(): string;
+	/** What turns the wheels of the vehicle the local player drives: "electric" (a motor and a battery) or "combustion" (Vehicles:GetDriveType's). nil while the local player is not driving. (client only) */
+	getLocalDriveType(): string | undefined;
+	/** The engine's revs per minute in the vehicle the local player drives (Vehicles:GetEngineRPM's), or an electric car's motor's (0 at a standstill: a motor has no idle). For a rev counter: read it every frame. nil while the local player is not driving. (client only) */
+	getLocalEngineRPM(): number | undefined;
+	/** The engine size in cc of the vehicle the local player drives, as its creator picked it (Vehicles:GetEngineSize's: a motorcycle's 125 to 1800). nil while the local player is not driving, or the vehicle gives none. (client only) */
+	getLocalEngineSize(): number | undefined;
 	/** GetFlightInfo for the plane or helicopter the local player is flying, for a place that draws its own instruments. Nil while the local player is not flying one. (client only) */
 	getLocalFlightInfo(): { airspeed: number; verticalSpeed: number; altitude: number; heightAboveGround?: number | undefined; throttle: number; inGroundEffect?: boolean | undefined; inVortexRing?: boolean | undefined; angleOfAttack?: number | undefined; stalled?: boolean | undefined; stallWarning?: boolean | undefined; thrust?: number | undefined; afterburner?: boolean | undefined; assists: { level?: boolean | undefined; heightHold?: boolean | undefined; yawHold?: boolean | undefined; stallProtection?: boolean | undefined; coordinatedTurns?: boolean | undefined } } | undefined;
+	/** The fuel in the tank of the vehicle the local player drives, from 0 to GetLocalMaxFuel (Vehicles:GetFuel's); an electric car's battery charge in the same units. nil while the local player is not driving, or while the vehicle's fuel is off (SetFuelEnabled). It moves in steps of 1% of a full tank. (client only) */
+	getLocalFuel(): number | undefined;
 	/** The gear of the car the local player is driving: -1 reverse, 0 neutral (also for the moment a shift goes through neutral), 1 and up forward. Works whether the car shifts itself or the player shifts by hand, so a place can draw its own gear readout. nil while the local player is not driving, or drives an aircraft or a hovercraft (no gearbox). (client only) */
 	getLocalGear(): number | undefined;
+	/** The health of the vehicle the local player drives, from 0 to GetLocalMaxHealth (Vehicles:GetHealth's). nil while the local player is not driving, or while the vehicle's health is off (SetHealthEnabled), so a health bar can hide. (client only) */
+	getLocalHealth(): number | undefined;
+	/** The engine induction of the car the local player drives: "turbo", "supercharger" or "none" (Vehicles:GetInduction's). nil while the local player is not driving. (client only) */
+	getLocalInduction(): string | undefined;
 	/** How far the motorcycle the local player is riding leans now, in degrees (Vehicles:GetLeanAngle's sign: positive right). nil while the local player is not riding a motorcycle. Works on a client script; read it every frame for a lean readout. (client only) */
 	getLocalLeanAngle(): number | undefined;
 	/** Whether the car the local player drives is in low range (its transfer case's low gearing, for crawling and steep climbs). false in a car without a low range, an aircraft or a hovercraft. nil while the local player is not driving. (client only) */
 	getLocalLowRange(): boolean | undefined;
+	/** A full boost of the vehicle the local player drives (Vehicles:GetMaxBoost's). nil while the local player is not driving, or while its boost is off. (client only) */
+	getLocalMaxBoost(): number | undefined;
 	/** The most boost the local player's car makes, in psi (its own, or what a server script set with SetMaxBoostPressure): the top of a boost gauge's scale. nil while the local player is not driving, or drives a car without a turbo or supercharger. (client only) */
 	getLocalMaxBoostPressure(): number | undefined;
+	/** The most cargo the trailer behind the local player's vehicle takes now, in kg (Vehicles:GetMaxCargoMass of that trailer). nil while the local player is not driving, or tows no trailer. (client only) */
+	getLocalMaxCargoMass(): number | undefined;
+	/** A full tank of the vehicle the local player drives (Vehicles:GetMaxFuel's). nil while the local player is not driving, or while its fuel is off. (client only) */
+	getLocalMaxFuel(): number | undefined;
+	/** The most health the vehicle the local player drives can have (Vehicles:GetMaxHealth's): the full mark of a health bar. nil while the local player is not driving, or while the vehicle's health is off. (client only) */
+	getLocalMaxHealth(): number | undefined;
+	/** How far the boat the local player drives is up on plane, from 0 to 1 (Vehicles:GetPlaningShare's). nil while the local player is not driving a boat. (client only) */
+	getLocalPlaningShare(): number | undefined;
+	/** How hard the electric car the local player drives slows itself off the throttle, in g (Vehicles:GetRegenBraking's). nil while the local player is not driving, or drives a combustion vehicle. (client only) */
+	getLocalRegenBraking(): number | undefined;
+	/** How hard the local player pushes the pedals of the bicycle they ride, in watts (Vehicles:GetRiderPower's). nil while the local player is not riding a pedalled vehicle. (client only) */
+	getLocalRiderPower(): number | undefined;
+	/** The power the local player keeps up at full effort on the bicycle they ride, in watts (Vehicles:GetRiderPowerLimit's). nil while the local player is not riding a pedalled vehicle. (client only) */
+	getLocalRiderPowerLimit(): number | undefined;
 	/** The speed of the vehicle the local player is driving, in centimeters per second (Vehicles:GetSpeed's unit; multiply by 0.036 for km/h): its whole velocity, so it is not negative in reverse. nil while the local player is not driving a vehicle. Works on a client script, where Vehicles:GetSpeed does not; read it every frame to draw a speedometer. (client only) */
 	getLocalSpeed(): number | undefined;
 	/** How much sprint the local player has left on the pedalled vehicle (a bicycle) they ride, from 0 to 100 (percent of a full reserve, Vehicles:GetSprintReserve's unit; 0 for a vehicle with no sprint). nil while the local player is not riding a pedalled vehicle. Works on a client script; read it every frame for a sprint bar. (client only) */
 	getLocalSprintReserve(): number | undefined;
+	/** How much of the hull of the boat the local player drives is under the water, from 0 to 1 (Vehicles:GetSubmergedShare's). nil while the local player is not driving a boat. (client only) */
+	getLocalSubmergedShare(): number | undefined;
 	/** The throttle of the aircraft the local player is flying, from 0 to 1; for a helicopter it is the collective. nil while the local player is not flying a plane or a helicopter (a car has no throttle lever; read its speed instead). (client only) */
 	getLocalThrottle(): number | undefined;
 	/** How fast one track of the tank or bulldozer the local player is driving is running, in centimeters per second (Vehicles:GetSpeed's unit): side is "left" or "right". Positive while the belt runs forward and negative while it runs backward; the same numbers as the server's Vehicles:GetTrackSpeed. nil while the local player is not driving a vehicle, or drives one without tracks. Errors if side is not "left" or "right". (client only) */
 	getLocalTrackSpeed(side: string): number | undefined;
+	/** The speed through the water of the boat the local player drives, in centimeters per second along its hull (Vehicles:GetWaterSpeed's: a river's current taken off, negative going astern). nil while the local player is not driving a boat. (client only) */
+	getLocalWaterSpeed(): number | undefined;
 	/** Whether the car is in low range, as its driver set it; false for a car without a low range. Errors if the entity is not a vehicle or no longer exists. (server only) */
 	getLowRange(vehicle: Entity): boolean;
 	/** The most boost the car can store (100 unless you change it). (server only) */
@@ -1743,6 +1785,8 @@ interface VehiclesService {
 	getParked(spawn: Entity): Entity | undefined;
 	/** Where someone stands to open one of the car's parts, where the car is now: position is on the ground beside the part, and yaw (degrees) the way they face it. In front of the hood, behind the trunk, a step out from a door. Use it to check that a player is at the part, or to walk an NPC there. Nil when the entity is not a car or the car does not have that part. (server only) */
 	getPartStandSpot(vehicle: Entity, part: string): { position: Vector3; yaw: number } | undefined;
+	/** How far the boat is up on plane, from 0 to 1: its speed through the water over its planing speed while its hull is in the water, so 1 is Vehicles:IsOnPlane. 0 at rest, going astern, or out of the water (in the air off a wave). nil when the entity is not a boat. (server only) */
+	getPlaningShare(vehicle: Entity): number | undefined;
 	/** How hard an electric car slows itself when its driver lets off the throttle, in g (0.2 is a firm lift-off; 0 coasts). The car's own unless SetRegenBraking changed it. nil on a combustion car. (server only) */
 	getRegenBraking(vehicle: Entity): number | undefined;
 	/** How hard the rider of a pedalled vehicle (a bicycle) pushes now, in watts: 0 while they freewheel, up to GetRiderPowerLimit while they pedal at full effort, and more while they sprint. nil for a vehicle that is not pedalled. Errors if the entity is not a vehicle or no longer exists. (server only) */
@@ -1797,10 +1841,18 @@ interface VehiclesService {
 	isLocalAnchored(): boolean | undefined;
 	/** Whether the vehicle the local player is driving is a boat or a jet ski (true), rather than a car or an aircraft (false). nil while the local player is not driving a vehicle. (client only) */
 	isLocalBoat(): boolean | undefined;
+	/** Whether the vehicle the local player drives is boosting now (Vehicles:IsBoosting's). nil while the local player is not driving, or while its boost is off. (client only) */
+	isLocalBoosting(): boolean | undefined;
+	/** Whether the vehicle the local player is in is destroyed (its health is on and down to 0; Vehicles:IsDestroyed's). nil while the local player is not driving. (client only) */
+	isLocalDestroyed(): boolean | undefined;
+	/** Whether the vehicle the local player drives has run dry (its fuel is on and at 0; Vehicles:IsFuelEmpty's). nil while the local player is not driving. (client only) */
+	isLocalFuelEmpty(): boolean | undefined;
 	/** Whether the vehicle the local player is driving is a helicopter (true), rather than a car or a plane (false); a readout uses it to label GetLocalThrottle "collective" instead of "throttle". nil while the local player is not driving a vehicle. (client only) */
 	isLocalHelicopter(): boolean | undefined;
 	/** Whether the local player shifts gears by hand in the car they drive: their Manual shifting setting is on and the place and the car allow it (SetManualShiftingAllowed). false in an automatic car, an aircraft or a hovercraft. nil while the local player is not driving. (client only) */
 	isLocalManual(): boolean | undefined;
+	/** Whether the boat the local player drives is up on plane (Vehicles:IsOnPlane's). nil while the local player is not driving a boat. (client only) */
+	isLocalOnPlane(): boolean | undefined;
 	/** Whether the local player is holding reverse in the vehicle they drive: true as soon as reverse engages, even at a standstill, so a gear readout (D, N, R) can show R. false in an aircraft, which has no reverse. nil while the local player is not driving a vehicle. (client only) */
 	isLocalReversing(): boolean | undefined;
 	/** Whether the car is locked. A locked car opens only for the last player who drove it: anyone else's vehicle key rattles the door, and holding the key breaks in -- the window on that side breaks, the car unlocks, and it must be hotwired before it starts. The lock stays when the driver gets out, and its driver can also lock and unlock it from the seat (L / D-pad left). Errors if the entity is not a car or no longer exists. (server only) */
