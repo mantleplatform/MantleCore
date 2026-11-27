@@ -171,7 +171,7 @@ public:
 	static FString CookCacheKey(const FString& ToolIdentity, const FString& Kind, const FString& OptionsJson, const FString& AllowFeatures,
 		TConstArrayView<uint8> Input);
 
-	/** The cook tool's part of the key: its full path, size and last write time, so a rebuilt tool misses. Empty (nothing is cached) when it can't be read. */
+	/** The cook tool's part of the key: the SHA-256 of its file, so a rebuilt tool misses wherever it is. Empty (nothing is cached) when it can't be read. */
 	static FString CookToolIdentity(const FString& Tool);
 
 	/** Keeps one successful cook under Key: its output and the tool's result JSON (the result is written last, so a torn write is a miss). */

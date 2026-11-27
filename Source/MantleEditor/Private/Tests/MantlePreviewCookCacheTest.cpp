@@ -91,6 +91,25 @@ bool FMantlePreviewCookCacheKeyTest::RunTest(const FString& Parameters)
 	FFileHelper::SaveStringToFile(TEXT("a rebuilt tool"), *Tool);
 	TestNotEqual(TEXT("a rebuilt tool has another"), FMantlePreviewExport::CookToolIdentity(Tool), Identity);
 	TestTrue(TEXT("no tool: nothing is cached"), FMantlePreviewExport::CookToolIdentity(Dir / TEXT("missing.exe")).IsEmpty());
+	const FString Copy = Dir / TEXT("copy") / TEXT("mantle-cook.exe");
+	IFileManager::Get().MakeDirectory(*FPaths::GetPath(Copy), true);
+	IFileManager::Get().Copy(*Copy, *Tool);
+	TestEqual(TEXT("the same tool copied elsewhere is the same tool"), FMantlePreviewExport::CookToolIdentity(Copy), FMantlePreviewExport::CookToolIdentity(Tool));
+
+	// An export's two lookups: a hit on the same input from the same tool; a miss when the input bytes or the tool change.
+	const FString CacheDir = Folder(TEXT("Lookups"));
+	const TArray<uint8> Cooked = Bytes("cooked texture");
+	const FString Same = FMantlePreviewExport::CookCacheKey(FMantlePreviewExport::CookToolIdentity(Tool), TEXT("texture"), TEXT(""), TEXT(""), Input);
+	FMantlePreviewExport::StoreCookCache(CacheDir, Same, Cooked, ResultFor(Cooked));
+	TArray<uint8> Read;
+	TSharedPtr<FJsonObject> Result;
+	TestTrue(TEXT("the same input from the same tool: a hit"), FMantlePreviewExport::LoadCookCache(CacheDir,
+		FMantlePreviewExport::CookCacheKey(FMantlePreviewExport::CookToolIdentity(Copy), TEXT("texture"), TEXT(""), TEXT(""), Input), Read, Result) && Read == Cooked);
+	TestFalse(TEXT("changed input bytes: a miss"), FMantlePreviewExport::LoadCookCache(CacheDir,
+		FMantlePreviewExport::CookCacheKey(FMantlePreviewExport::CookToolIdentity(Tool), TEXT("texture"), TEXT(""), TEXT(""), Changed), Read, Result));
+	FFileHelper::SaveStringToFile(TEXT("a third build of the tool"), *Tool);
+	TestFalse(TEXT("a changed cook tool: a miss"), FMantlePreviewExport::LoadCookCache(CacheDir,
+		FMantlePreviewExport::CookCacheKey(FMantlePreviewExport::CookToolIdentity(Tool), TEXT("texture"), TEXT(""), TEXT(""), Input), Read, Result));
 	return true;
 }
 

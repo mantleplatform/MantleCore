@@ -1798,13 +1798,13 @@ FString FMantlePreviewExport::CookCacheKey(const FString& ToolIdentity, const FS
 
 FString FMantlePreviewExport::CookToolIdentity(const FString& Tool)
 {
-	const FString Full = FPaths::ConvertRelativePathToFull(Tool);
-	const FFileStatData Stat = IFileManager::Get().GetStatData(*Full);
-	if (Tool.IsEmpty() || !Stat.bIsValid || Stat.bIsDirectory)
+	// The tool's own bytes: a rebuilt tool misses wherever it lives, and the same tool hits wherever it is copied to. Hashed once per export.
+	TArray<uint8> Bytes;
+	if (Tool.IsEmpty() || !FFileHelper::LoadFileToArray(Bytes, *FPaths::ConvertRelativePathToFull(Tool), FILEREAD_Silent) || Bytes.Num() == 0)
 	{
 		return FString();
 	}
-	return FString::Printf(TEXT("%s|%lld|%lld"), *Full, Stat.FileSize, Stat.ModificationTime.GetTicks());
+	return FMantleSha256::AssetHash(Bytes);
 }
 
 bool FMantlePreviewExport::StoreCookCache(const FString& Directory, const FString& Key, const TConstArrayView<uint8> Cooked, const FString& ResultJson)
