@@ -2015,6 +2015,8 @@ bool FMantleVehicleBuilder::PrepareFromModel(UObject* ModelAsset, const FString&
 		Problems.Add(Error);
 		return false;
 	}
+	// What reading it said: a Nanite mesh read from its source or fallback, UVs too large to store made finite (FMantleVehicleModel::CleanNonFinite).
+	Out.Notes.Append(Model.Notes);
 
 	FMantleChassisSpec Archetype;
 	if (!FMantleVehicleChassisBuilder::LoadSpec(PresetId, Archetype, Error))

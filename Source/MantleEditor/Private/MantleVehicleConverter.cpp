@@ -4681,8 +4681,24 @@ bool FMantleVehicleConverter::WriteUpload(const FMantleGlbMesh& Body, const TSha
 	}
 	LODs.Append(LowerLODs.GetData(), LowerLODs.Num());
 	// The upload's bytes, not what the cook stores: shared vertices once, the skin and indices compact (it keeps a heavy car's LODs under the upload size).
-	for (FMantleGlbMesh& LOD : LODs)
+	for (int32 Index = 0; Index < LODs.Num(); ++Index)
 	{
+		FMantleGlbMesh& LOD = LODs[Index];
+		// The cook refuses a normal, tangent or UV that is not a number, after the whole export. Reading a model makes them finite and says where
+		// (FMantleVehicleModel::CleanNonFinite); this catches a body built before that, or any step after it, so the export is never refused for one.
+		const FMantleGlbNonFinite NonFinite = FMantleGlbWriter::SanitizeNonFinite(LOD);
+		if (NonFinite.Positions > 0)
+		{
+			OutError = FString::Printf(TEXT("The body's LOD %d has %d vertex positions that are not numbers. Fix or delete those vertices in a modeling tool, re-import the model and build again."),
+				Index, NonFinite.Positions);
+			return false;
+		}
+		if (NonFinite.Any())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("MANTLE_VEHICLE_NONFINITE LOD %d: set %d texture coordinates, %d normals and %d tangents that were not numbers (build the vehicle again to place them better)"),
+				Index, NonFinite.TexCoords, NonFinite.Normals, NonFinite.Tangents);
+		}
+		// Shared vertices once, after the values are numbers (a NaN never equals itself, so it would keep a vertex apart).
 		FMantleVehicleBodyLODs::Slim(LOD);
 	}
 	return FMantleGlbWriter::WriteLODs(LODs, OutBytes, OutError);
