@@ -7,6 +7,7 @@
 #include "Misc/Paths.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
+#include "Serialization/JsonWriter.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -14,13 +15,45 @@
 // default), and FMantleEngineSounds gives a car or a boat a car's engines, a two-wheeler a motorcycle's and handlebars on more wheels both, as the cook does.
 namespace MantleVehicleEngineSoundDocTestPrivate
 {
-	/** A four-wheel car's document with this engine block; GearRatios one gear for an electric motor. */
-	bool ReadEngine(const FString& EngineJson, FMantleVehicleDesc& Out, FString& OutError, const TCHAR* GearRatios = TEXT("[3.2,2.1,1.4,1.0]"))
+	/** The cook's own complete document (schema/fixtures/vehicle-v1.mvh, a car with no engine.sound) as JSON, as the other document tests read it. */
+	TSharedPtr<FJsonObject> CookedCar(FString& OutError)
 	{
-		const FString Doc = FString::Printf(TEXT("{\"schemaVersion\":1,\"engine\":%s,\"transmission\":{\"gearRatios\":%s,\"finalDrive\":3.5},")
-			TEXT("\"wheels\":[{\"bone\":\"Wheel_FL\",\"steering\":true,\"driven\":false},{\"bone\":\"Wheel_FR\",\"steering\":true,\"driven\":false},")
-			TEXT("{\"bone\":\"Wheel_BL\",\"handbrake\":true},{\"bone\":\"Wheel_BR\",\"handbrake\":true}]}"), *EngineJson, GearRatios);
-		const FTCHARToUTF8 Utf8(*Doc);
+		const FString Path = FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectDir(), TEXT("../schema/fixtures/vehicle-v1.mvh")));
+		TArray<uint8> Bytes;
+		if (!FFileHelper::LoadFileToArray(Bytes, *Path) || Bytes.Num() < 12)
+		{
+			OutError = FString::Printf(TEXT("no cooked vehicle at %s"), *Path);
+			return nullptr;
+		}
+		const uint32 DocumentBytes = *reinterpret_cast<const uint32*>(Bytes.GetData() + 8);
+		FString Json;
+		FFileHelper::BufferToString(Json, Bytes.GetData() + 12, static_cast<int32>(DocumentBytes));
+		TSharedPtr<FJsonObject> Root;
+		if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), Root) || !Root.IsValid())
+		{
+			OutError = TEXT("the cooked vehicle's document is not JSON");
+			return nullptr;
+		}
+		return Root;
+	}
+
+	/** Reads Cooked with its engine.sound set to Sound (removed when null), through the client's reader. */
+	bool ReadWithSound(const TSharedPtr<FJsonObject>& Cooked, const TSharedPtr<FJsonValue>& Sound, FMantleVehicleDesc& Out, FString& OutError)
+	{
+		const TSharedRef<FJsonObject> Doc = MakeShared<FJsonObject>();
+		Doc->Values = Cooked->Values;
+		const TSharedRef<FJsonObject> Engine = MakeShared<FJsonObject>();
+		Engine->Values = Cooked->GetObjectField(TEXT("engine"))->Values;
+		Engine->RemoveField(TEXT("sound"));
+		if (Sound.IsValid())
+		{
+			Engine->SetField(TEXT("sound"), Sound);
+		}
+		Doc->SetObjectField(TEXT("engine"), Engine);
+		FString Text;
+		FJsonSerializer::Serialize(Doc, TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Text));
+		const FTCHARToUTF8 Utf8(*Text);
+		OutError.Reset();
 		return FMantleVehicleAssetReader::ParseDocument(TConstArrayView<uint8>(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length()), Out, OutError);
 	}
 }
@@ -33,24 +66,29 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FMantleVehicleEngineSoundDocTest::RunTest(const FString&)
 {
 	using namespace MantleVehicleEngineSoundDocTestPrivate;
-	const FString Combustion = TEXT("\"maxTorque\":400,\"maxRPM\":6000,\"torqueCurve\":[[0,0.6],[3000,1],[6000,0.8]]");
-	FMantleVehicleDesc D;
 	FString Error;
-	if (TestTrue(*FString::Printf(TEXT("a car with engine.sound reads (%s)"), *Error), ReadEngine(TEXT("{") + Combustion + TEXT(",\"sound\":\"v8\"}"), D, Error)))
+	const TSharedPtr<FJsonObject> Cooked = CookedCar(Error);
+	if (!TestTrue(*FString::Printf(TEXT("the cooked car fixture reads (%s)"), *Error), Cooked.IsValid() && Cooked->HasTypedField<EJson::Object>(TEXT("engine"))))
+	{
+		return false;
+	}
+	FMantleVehicleDesc D;
+	bool bRead = ReadWithSound(Cooked, MakeShared<FJsonValueString>(TEXT("v8")), D, Error);
+	if (TestTrue(*FString::Printf(TEXT("the cooked car with engine.sound v8 reads (%s)"), *Error), bRead))
 	{
 		TestEqual(TEXT("its engine sound"), D.EngineSound, FName(TEXT("v8")));
 	}
-	if (TestTrue(*FString::Printf(TEXT("a car without one reads (%s)"), *Error), ReadEngine(TEXT("{") + Combustion + TEXT("}"), D, Error)))
+	bRead = ReadWithSound(Cooked, nullptr, D, Error);
+	if (TestTrue(*FString::Printf(TEXT("the cooked car without one reads (%s)"), *Error), bRead))
 	{
 		TestTrue(TEXT("and has none: the type's default"), D.EngineSound.IsNone());
 	}
 	// An id this client has no sound for still reads (it plays the default); a non-string is refused at the key.
-	TestTrue(TEXT("an id this client does not know reads"), ReadEngine(TEXT("{") + Combustion + TEXT(",\"sound\":\"jet_fighter\"}"), D, Error));
-	TestFalse(TEXT("a number is refused"), ReadEngine(TEXT("{") + Combustion + TEXT(",\"sound\":8}"), D, Error));
-	TestTrue(*FString::Printf(TEXT("at /engine/sound (%s)"), *Error), Error.Contains(TEXT("/engine/sound")));
-	// An electric motor's block reads the key too (the cook refuses it there, in words that say why).
-	TestTrue(*FString::Printf(TEXT("an electric block with a sound reads (%s)"), *Error),
-		ReadEngine(TEXT("{\"drive\":\"electric\",\"maxTorque\":377,\"maxRPM\":18447,\"peakPower\":213,\"sound\":\"v8\"}"), D, Error, TEXT("[1.0]")));
+	bRead = ReadWithSound(Cooked, MakeShared<FJsonValueString>(TEXT("jet_fighter")), D, Error);
+	TestTrue(*FString::Printf(TEXT("an id this client does not know reads (%s)"), *Error), bRead && D.EngineSound == FName(TEXT("jet_fighter")));
+	bRead = ReadWithSound(Cooked, MakeShared<FJsonValueNumber>(8.0), D, Error);
+	TestFalse(TEXT("a number is refused"), bRead);
+	TestTrue(*FString::Printf(TEXT("... at /engine/sound (%s)"), *Error), Error.Contains(TEXT("/engine/sound")));
 
 	// Which engines a vehicle may pick.
 	TestTrue(TEXT("a wheeled vehicle on two wheels is a two-wheeler"), FMantleEngineSounds::IsTwoWheeler(true, 2));
