@@ -3,7 +3,7 @@
   "id": "jetski",
   "name": "Jet ski",
   "description": "A stand-up-fast sit-down jet ski: it floats on a place's water, gets up on plane, turns sharply on its jet nozzle and leaps waves. Ridden astride, with a passenger behind. It only moves in the water.",
-  "comment": "A vehicle preset (#15): see sedan.json for the format and boat.json for the boat block. movementType boat with type jetski: a jet drive and the motorcycle seat (the rider astride, the hands on a handlebar that turns about its column at chassis.seat.steeringWheel, the handlebar bone). Real reference: the Sea-Doo RXP-X 300 (sea-doo.brp.com 2022-2023 spec pages: 3.32 m long, 1.25 m beam, 354 kg dry, 70 L of fuel, 300 hp; 0-60 mph in 3.6 s and 68.5 mph top in a Boating Magazine test). 400 kg is the dry weight with its fuel. The hull is the body box (332 x 125 cm), its keel the box's bottom along its middle, a deep V (22 degrees): three rows of four water points. Over 7 m/s (planingSpeed 700) it is on plane. The jet pushes 6000 N at rest from its intake under the stern, falling off with the speed through the water (topSpeed tuned on the drive probe to the reference), turns 20 degrees either way on A and D, reverses at half of that on S (its reverse bucket), and off the throttle steers on a small push (OTAS); it pushes only while its intake is in the water, so it flies free off a wave and cannot be driven on land. No rudder. The layout's four wheels are hidden: the document needs a steered and a driven wheel (its reader's rule), and the definition keeps none. engine, transmission, suspension, steering, brakes and tires are the document's and drive nothing (the engine's idle and top rpm are its sound's).",
+  "comment": "A vehicle preset (#15): see sedan.json for the format and boat.json for the boat block. movementType boat with type jetski: a jet drive and the motorcycle seat (the rider astride, the hands on a handlebar that turns about its column at chassis.seat.steeringWheel, the handlebar bone). Real reference: the Sea-Doo RXP-X 300 (sea-doo.brp.com 2022-2023 spec pages: 3.32 m long, 1.25 m beam, 354 kg dry, 70 L of fuel, 300 hp; 0-60 mph in 3.6 s and 68.5 mph top in a Boating Magazine test). 400 kg is the dry weight with its fuel. The hull is the body box (332 x 125 cm), its keel the box's bottom along its middle, a deep V (22 degrees): three rows of four water points. Over 7 m/s (planingSpeed 700) it is on plane. The jet pushes 6000 N at rest from its intake under the stern, falling off with the speed through the water to nothing at 26 m/s, so with the hull's ~700 N of drag on plane it tops out near 23 m/s (83 km/h), a little above the runabout's 20.6 m/s (Joshua's play test: the reference's 30.6 m/s, and the ~40 m/s it really reached, were far too fast), still 1.5 g off the line; it turns 20 degrees either way on A and D, reverses at half of that on S (its reverse bucket), and off the throttle steers on a small push (OTAS) and on its turned nozzle and pump housing in the flow (a rudder of 0.01 m^2 at 4 degrees: weaker than the boat's, about a fifth of its turn with the throttle on); it pushes only while its intake is in the water, so it flies free off a wave and cannot be driven on land. The layout's four wheels are hidden: the document needs a steered and a driven wheel (its reader's rule), and the definition keeps none. engine, transmission, suspension, steering, brakes and tires are the document's and drive nothing (the engine's idle and top rpm are its sound's).",
   "movementType": "boat",
   "publishable": true,
   "type": "jetski",
@@ -48,7 +48,8 @@
     "boat": {
       "hull": { "depth": 45, "deadrise": 22, "points": 4, "dragAlong": 0.004, "dragAcross": 0.6, "heaveDamping": 0.3 },
       "planingSpeed": 700,
-      "drive": { "kind": "jet", "thrust": 6000, "topSpeed": 4500, "reverseShare": 0.5, "vectorAngle": 20, "x": -160, "z": -10 },
+      "drive": { "kind": "jet", "thrust": 6000, "topSpeed": 2600, "reverseShare": 0.5, "vectorAngle": 20, "x": -160, "z": -10 },
+      "rudder": { "x": -160, "z": -10, "area": 0.01, "maxControlAngle": 4 },
       "angularDamping": 0.3
     }
   },
@@ -59,7 +60,7 @@
   },
   "defaults": {
     "mass": 400,
-    "maxSpeed": 3100,
+    "maxSpeed": 2300,
     "dragCoefficient": 0.5,
     "frontalArea": 1.2,
     "engine": {
