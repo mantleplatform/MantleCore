@@ -223,6 +223,11 @@ bool FMantleVehicleTypeMatchTrackedTest::RunTest(const FString& Parameters)
 		{ FName("Body"), FName("Tread"), FName("Wheel_Tread"), FName("Rubber_Tread"), FName("Belts") });
 	TestEqual(TEXT("a sedan with Tread materials and a Belts slot and bone is a road vehicle"), FamilyOf(TreadSedan), EMantleVehicleModelFamily::Road);
 	TestEqual(TEXT("and fits the sedan"), Check::Check(TreadSedan, TEXT("sedan")).Verdict, EMantleVehicleTypeVerdict::Fits);
+	// A car with no wheel bones (a static mesh, or wheels not rigged): tread and belts still don't say tracks without packed wheels beside them.
+	TestEqual(TEXT("a static-mesh car with Tread and Belts slots is no tank"), FamilyOf(MakeModel(FVector(450, 190, 140), {}, { FName("Body"), FName("Tread"), FName("Belts") })),
+		EMantleVehicleModelFamily::Road);
+	TestEqual(TEXT("nor is an unrigged car with a Belts bone"), FamilyOf(MakeModel(FVector(450, 190, 140), { { FName("root"), INDEX_NONE, FVector::ZeroVector },
+		{ FName("Belts"), 0, FVector(0, -40, 90) } }, { FName("Body"), FName("Rubber_Tread") })), EMantleVehicleModelFamily::Road);
 	// A 4-axle tandem trailer, one bone per tire, 124 cm apart on 105 cm tires: packed, but 4 a side with no track names is a trailer, not a tank.
 	TestEqual(TEXT("a 4-axle tandem trailer is a road vehicle"), FamilyOf(Rows(TEXT("Wheel"), 4, 124.0, 52.5)), EMantleVehicleModelFamily::Road);
 
