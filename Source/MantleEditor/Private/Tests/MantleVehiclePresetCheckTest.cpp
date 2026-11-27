@@ -2,6 +2,7 @@
 #include "MantleVehicleConverter.h"
 #include "MantlePlaceValidator.h"
 #include "MantleVehicleAsset.h"
+#include "MantleVehiclePreset.h"
 #include "MantleVehicleSource.h"
 
 #include "Dom/JsonObject.h"
@@ -130,6 +131,39 @@ bool FMantleVehiclePresetEnforceTest::RunTest(const FString& Parameters)
 
 	const FString NoPreset = CheckText(NewSource(TEXT(""), 3000.f));
 	TestFalse(TEXT("with no preset only the absolute limits apply"), NoPreset.Contains(TEXT("Sedan")) || NoPreset.Contains(TEXT("preset")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehiclePresetOwnDefaultsTest,
+	"Mantle.Vehicle.Presets.OwnDefaultsPass",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehiclePresetOwnDefaultsTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehiclePresetCheckTestPrivate;
+	// Every preset's own defaults pass CheckSource's range checks for that preset, every type: a vehicle built from a preset and left
+	// alone is never refused for a number. The jet's drag coefficient 0.6 on its range's top edge was refused once, 0.6 being
+	// 0.6000000238 as the float the tuning stores. CheckSource also says this body-less source has no body; only the range errors count here.
+	TestTrue(TEXT("there are presets to check"), FMantleVehiclePresets::All().Num() >= 2);
+	for (const FMantleVehiclePreset& Preset : FMantleVehiclePresets::All())
+	{
+		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		TArray<FString> Notes;
+		if (!TestTrue(FString::Printf(TEXT("%s applies"), *Preset.Id), FMantleVehiclePresets::ApplyDefaults(Preset, *Source, Notes)))
+		{
+			continue;
+		}
+		Source->Preset = *Preset.Id;
+		TArray<FMantleValidationIssue> Issues;
+		FMantleVehicleConverter::CheckSource(Source, FString(), Issues);
+		for (const FMantleValidationIssue& Issue : Issues)
+		{
+			const FString Text = Issue.ToString();
+			TestFalse(FString::Printf(TEXT("%s's own defaults are inside its ranges: %s"), *Preset.Id, *Text),
+				Text.Contains(TEXT("but a ")) || Text.Contains(TEXT("outside what a vehicle may have")));
+		}
+	}
 	return true;
 }
 

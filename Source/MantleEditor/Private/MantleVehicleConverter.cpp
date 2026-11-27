@@ -317,6 +317,15 @@ namespace MantleVehicleConverterPrivate
 		const FMantleVehiclePreset* Previous;
 	};
 
+	/**
+	 * Value below Lo or above Hi, past float rounding: the tuning stores floats, so a preset value on a range's edge that a float cannot
+	 * hold exactly (the jet's drag coefficient 0.6 is 0.6000000238 as a float) is still on the edge. One part in a million of the bound.
+	 */
+	bool VehicleOutside(double Value, double Lo, double Hi)
+	{
+		return Value < Lo - 1.0e-6 * FMath::Max(1.0, FMath::Abs(Lo)) || Value > Hi + 1.0e-6 * FMath::Max(1.0, FMath::Abs(Hi));
+	}
+
 	/** Holds Value to limits.json's range at Path, and to the preset's narrower one when a preset applies; an error naming What (and the source) when it is outside. */
 	void VehicleCheckRange(const FString& Subject, const FString& What, const FString& Path, double Value, TArray<FMantleValidationIssue>& OutIssues)
 	{
@@ -326,7 +335,7 @@ namespace MantleVehicleConverterPrivate
 		{
 			return;
 		}
-		if (!FMath::IsFinite(Value) || Value < Min || Value > Max)
+		if (!FMath::IsFinite(Value) || VehicleOutside(Value, Min, Max))
 		{
 			OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, FString(),
 				FString::Printf(TEXT("%s: %s is %s, outside what a vehicle may have (%s to %s)."), *Subject, *What,
@@ -335,7 +344,7 @@ namespace MantleVehicleConverterPrivate
 			return;
 		}
 		FVector2D Narrow;
-		if (GVehicleCheckPreset && FMantleVehiclePresets::RangeFor(*GVehicleCheckPreset, Path, Narrow) && (Value < Narrow.X || Value > Narrow.Y))
+		if (GVehicleCheckPreset && FMantleVehiclePresets::RangeFor(*GVehicleCheckPreset, Path, Narrow) && VehicleOutside(Value, Narrow.X, Narrow.Y))
 		{
 			OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, FString(),
 				FString::Printf(TEXT("%s: %s is %s, but a %s allows %s to %s."), *Subject, *What, *VehicleNumberText(Value),
