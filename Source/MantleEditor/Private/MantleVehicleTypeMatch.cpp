@@ -98,6 +98,27 @@ namespace MantleVehicleTypeMatchPrivate
 		return false;
 	}
 
+	/**
+	 * A name only a track's part has (#448): track (not a track rod or bar), sprocket, idler or road wheel. Not tread or belt, which a car's tire material and
+	 * seat belts slot carry too: on a model whose wheels aren't rigged, only these say tracks without packed wheels beside them.
+	 */
+	bool IsStrongTrackName(const FString& Name)
+	{
+		const TArray<FString> Words = NameWords(Name);
+		for (int32 Index = 0; Index < Words.Num(); ++Index)
+		{
+			const FString& Word = Words[Index];
+			const FString After = Index + 1 < Words.Num() ? Words[Index + 1] : FString();
+			if ((IsAnyOf(Word, { TEXT("track"), TEXT("tracks") }) && !IsAnyOf(After, { TEXT("rod"), TEXT("rods"), TEXT("bar"), TEXT("bars") }))
+				|| IsAnyOf(Word, { TEXT("sprocket"), TEXT("sprockets"), TEXT("idler"), TEXT("idlers"), TEXT("roadwheel"), TEXT("roadwheels") })
+				|| (Word == TEXT("road") && IsAnyOf(After, { TEXT("wheel"), TEXT("wheels") })))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	/** The bones whose name passes Test, a chain of them (a wheel with a brake bone under it) counted once at the bone nearest the root. */
 	TArray<int32> TopBones(const FMantleVehicleModel& Model, const TFunctionRef<bool(const FString&)> Test)
 	{
@@ -385,11 +406,13 @@ EMantleVehicleModelFamily FMantleVehicleTypeMatchCheck::FamilyOfModel(const FMan
 	// Tracks (#448), only on real evidence, before the wheels a track runs over would say a road vehicle. A name alone is weak (a car's "Tread" material, a
 	// seat belts slot), and so are packed wheels alone (a tandem trailer's tires sit close), so it takes two signs together:
 	// - bones named like a track's parts (by their own spelling, so a RoadWheel splits into its words) and wheels packed 4 or more a side into two rows;
-	// - a part or material named like a track's and no normal wheel layout (under 3 wheel bones: the tracks are meshes, the wheels aren't rigged);
+	// - a bone or material with a name only a track's part has (track, sprocket, idler, road wheel: not tread or belt, which a car's tire material and
+	//   seat belts carry) and no normal wheel layout (under 3 wheel bones: the tracks are meshes, the wheels aren't rigged, or a static mesh);
 	// - or packed wheels alone when there are 5 or more a side, as on every real tank and crawler (a trailer's tandem has 2 to 4 axles).
 	// Two rows of 3 stay a six-wheeled truck.
 	{
 		TArray<FString> TrackBones;
+		TArray<FString> StrongTrackBones;
 		for (const FMantleSkinnedMeshBone& Bone : Model.Bones)
 		{
 			const FString BoneName = Bone.Name.ToString();
@@ -397,10 +420,14 @@ EMantleVehicleModelFamily FMantleVehicleTypeMatchCheck::FamilyOfModel(const FMan
 			{
 				TrackBones.Add(BoneName);
 			}
+			if (IsStrongTrackName(BoneName))
+			{
+				StrongTrackBones.Add(BoneName);
+			}
 		}
 		const bool bTrackMaterial = Model.Materials.ContainsByPredicate([](const FSkeletalMaterial& Material)
 		{
-			return IsTrackPartName(Material.MaterialSlotName.ToString()) || IsTrackPartName(Material.ImportedMaterialSlotName.ToString());
+			return IsStrongTrackName(Material.MaterialSlotName.ToString()) || IsStrongTrackName(Material.ImportedMaterialSlotName.ToString());
 		});
 		bool bPacked = false;
 		const FBox WheelBounds = Model.Bounds();
@@ -414,14 +441,16 @@ EMantleVehicleModelFamily FMantleVehicleTypeMatchCheck::FamilyOfModel(const FMan
 			bPacked = WheelsPackedLikeTracks(Hubs, WheelBounds.Min.Z, WheelBounds.GetSize());
 		}
 		const bool bNoWheelLayout = Wheels.Num() < 3;
-		const bool bNamedBones = TrackBones.Num() > 0 && (bPacked || bNoWheelLayout);
+		const bool bNamedPacked = TrackBones.Num() > 0 && bPacked;
+		const bool bNamedUnrigged = StrongTrackBones.Num() > 0 && bNoWheelLayout;
+		const bool bNamedBones = bNamedPacked || bNamedUnrigged;
 		const bool bNamedMaterial = bTrackMaterial && bNoWheelLayout;
 		const bool bPackedAlone = bPacked && Wheels.Num() >= 2 * MinRoadWheelsPerSideUnnamed;
 		if (bNamedBones || bNamedMaterial || bPackedAlone)
 		{
 			if (bNamedBones)
 			{
-				OutEvidence.Add(FString::Printf(TEXT("parts named like a track's (%s)"), *TrackBones[0]));
+				OutEvidence.Add(FString::Printf(TEXT("parts named like a track's (%s)"), *(bNamedPacked ? TrackBones[0] : StrongTrackBones[0])));
 			}
 			if (bNamedMaterial)
 			{
