@@ -643,6 +643,40 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 
 	// Read into a copy so a value of the wrong kind leaves the vehicle as it was.
 	FMantleVehicleSourceTuning T = Source.Tuning;
+	// A preset is a whole vehicle type: every setting a preset may leave out starts from its default, so nothing of the type before stays behind
+	// (a motorcycle's engine size or a tank's rolling resistance on a sedan). The keys every preset carries are read over it below; the settings no
+	// preset holds (the seats, doors, center of mass and helicopter assists) are the vehicle's own and stay.
+	{
+		const FMantleVehicleSourceTuning Plain;
+		T.IdleRPM = Plain.IdleRPM;
+		T.TorqueCurve = Plain.TorqueCurve;
+		T.PeakPower = Plain.PeakPower;
+		T.RegenBraking = Plain.RegenBraking;
+		T.BatteryCapacity = Plain.BatteryCapacity;
+		T.bTractionControl = Plain.bTractionControl;
+		T.EngineBraking = Plain.EngineBraking;
+		T.EngineDisplacement = Plain.EngineDisplacement;
+		T.ReverseRatio = Plain.ReverseRatio;
+		T.ChangeUpRPM = Plain.ChangeUpRPM;
+		T.ChangeDownRPM = Plain.ChangeDownRPM;
+		T.ShiftTime = Plain.ShiftTime;
+		T.CvtLowRatio = Plain.CvtLowRatio;
+		T.CvtHighRatio = Plain.CvtHighRatio;
+		T.CvtShiftRPM = Plain.CvtShiftRPM;
+		T.FrontDifferentialBias = Plain.FrontDifferentialBias;
+		T.RearDifferentialBias = Plain.RearDifferentialBias;
+		T.SteeringSpeedCurve = Plain.SteeringSpeedCurve;
+		T.bABS = Plain.bABS;
+		T.BrakeFrontShare = Plain.BrakeFrontShare;
+		T.bTireRearFriction = Plain.bTireRearFriction;
+		T.TireRearFriction = Plain.TireRearFriction;
+		T.TireRollingResistance = Plain.TireRollingResistance;
+		T.PedalRiderPower = Plain.PedalRiderPower;
+		T.PedalSprintPower = Plain.PedalSprintPower;
+		T.PedalSprintReserve = Plain.PedalSprintReserve;
+		T.PedalMaxCadence = Plain.PedalMaxCadence;
+		T.PedalCadence = Plain.PedalCadence;
+	}
 	FDefaultsReader Reader;
 	Reader.Root = Preset.Defaults;
 
@@ -679,7 +713,7 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 	Reader.Float(TEXT("transmission/finalDrive"), T.FinalDrive);
 	Reader.Int(TEXT("transmission/changeUpRPM"), T.ChangeUpRPM);
 	Reader.Int(TEXT("transmission/changeDownRPM"), T.ChangeDownRPM);
-	// #376: each gear change's time, part of the car; absent, the tuning keeps its own (0.5 s).
+	// #376: each gear change's time, part of the car; absent, the default (0.5 s).
 	Reader.Float(TEXT("transmission/shiftTime"), T.ShiftTime);
 	// ATV follow-on: a belt drive. A preset sets it whole: one without a belt makes the vehicle geared again.
 	T.bCvt = Reader.Find(TEXT("transmission/cvt/lowRatio")).IsValid();
@@ -708,12 +742,12 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 
 	Reader.Float(TEXT("brakes/brakeTorque"), T.BrakeTorque);
 	Reader.Float(TEXT("brakes/handbrakeTorque"), T.HandbrakeTorque);
-	// #376: the driver aids and brake balance, part of the car; absent, the tuning keeps its own (ABS and traction control on, 0.65, none).
+	// #376: the driver aids and brake balance, part of the car; absent, the defaults (ABS and traction control on, 0.65, none).
 	Reader.Bool(TEXT("brakes/abs"), T.bABS);
 	Reader.Float(TEXT("brakes/frontShare"), T.BrakeFrontShare);
 	Reader.Bool(TEXT("engine/tractionControl"), T.bTractionControl);
 	Reader.Float(TEXT("engine/engineBraking"), T.EngineBraking);
-	// #378: the engine's size, from a motorcycle's engine pick; absent, the tuning keeps its own (0, not given).
+	// #378: the engine's size, from a motorcycle's engine pick; absent, 0 (not given).
 	Reader.Int(TEXT("engine/displacement"), T.EngineDisplacement);
 	// An electric preset (#445) is a motor: no engine size and no low range (#376 off-road), whatever the vehicle had.
 	if (T.bElectric)
@@ -746,9 +780,9 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 	{
 		T.bTireRearFriction = true;
 	}
-	// #447, #448: how much every wheel loses to rolling; absent, the tuning keeps its own (a car tire's 0.012).
+	// #447, #448: how much every wheel loses to rolling; absent, a car tire's 0.012.
 	Reader.Float(TEXT("tires/rollingResistance"), T.TireRollingResistance);
-	// #447: a pedalled preset (the Bicycle): any pedal number makes the vehicle pedalled; an absent one keeps the tuning's own.
+	// #447: a pedalled preset (the Bicycle): any pedal number makes the vehicle pedalled; an absent one is its default.
 	bool bAnyPedal = false;
 	bAnyPedal |= Reader.Float(TEXT("pedal/riderPower"), T.PedalRiderPower);
 	bAnyPedal |= Reader.Float(TEXT("pedal/sprintPower"), T.PedalSprintPower);

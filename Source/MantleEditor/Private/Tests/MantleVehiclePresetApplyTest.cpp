@@ -489,4 +489,96 @@ bool FMantleVehiclePresetRollingResistanceTest::RunTest(const FString& Parameter
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehiclePresetSwitchTypeTest,
+	"Mantle.Vehicle.Presets.SwitchTypeStartsClean",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehiclePresetSwitchTypeTest::RunTest(const FString& Parameters)
+{
+	// Plugin Manager's review of Core #292: switching type kept the old type's settings that the new preset leaves out (a motorcycle's engine
+	// size 599 or a tank's rolling resistance 0.04 on a sedan). A type switched to from another is the same as that type picked on a new vehicle.
+	const FMantleVehiclePreset* Sedan = FMantleVehiclePresets::Find(TEXT("sedan"));
+	if (!TestNotNull(TEXT("the sedan preset loads"), Sedan))
+	{
+		return false;
+	}
+	TArray<FString> Notes;
+	UMantleVehicleSource* Fresh = NewObject<UMantleVehicleSource>(GetTransientPackage());
+	TestTrue(TEXT("the sedan applies to a new vehicle"), FMantleVehiclePresets::ApplyDefaults(*Sedan, *Fresh, Notes));
+	for (const TCHAR* From : { TEXT("motorcycle"), TEXT("tank"), TEXT("electric"), TEXT("atv"), TEXT("bicycle"), TEXT("drift"), TEXT("sports") })
+	{
+		const FMantleVehiclePreset* Before = FMantleVehiclePresets::Find(From);
+		if (!TestNotNull(*FString::Printf(TEXT("the %s preset loads"), From), Before))
+		{
+			continue;
+		}
+		UMantleVehicleSource* Switched = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		TestTrue(*FString::Printf(TEXT("the %s applies"), From), FMantleVehiclePresets::ApplyDefaults(*Before, *Switched, Notes));
+		TestTrue(*FString::Printf(TEXT("then the sedan applies over the %s"), From), FMantleVehiclePresets::ApplyDefaults(*Sedan, *Switched, Notes));
+		TestTrue(*FString::Printf(TEXT("%s -> sedan is the sedan's own settings, nothing of the %s left"), From, From),
+			FMantleVehicleSourceTuning::StaticStruct()->CompareScriptStruct(&Switched->Tuning, &Fresh->Tuning, PPF_None));
+		const FMantleVehicleSourceTuning& T = Switched->Tuning;
+		TestEqual(*FString::Printf(TEXT("%s -> sedan: no engine size"), From), T.EngineDisplacement, Fresh->Tuning.EngineDisplacement);
+		TestEqual(*FString::Printf(TEXT("%s -> sedan: a car tire's rolling resistance"), From), T.TireRollingResistance, Fresh->Tuning.TireRollingResistance);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleUnusedSettingsNoteTest,
+	"Mantle.Vehicle.Presets.UnusedSettingsNote",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleUnusedSettingsNoteTest::RunTest(const FString& Parameters)
+{
+	// Plugin Manager's review of Core #292: an electric car leaves engine braking, reverse ratio, shift points and shift time out of its document,
+	// and a belt drive its shift points and shift time. Changed by hand, the creator is told (a warning: the vehicle still publishes).
+	auto NoteOf = [](const UMantleVehicleSource* Source)
+	{
+		TArray<FMantleValidationIssue> Issues;
+		FMantleVehicleConverter::CheckSource(Source, FString(), Issues);
+		const FMantleValidationIssue* Note = Issues.FindByPredicate([](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Severity == EMantleIssueSeverity::Warning && Issue.Problem.Contains(TEXT("left out of the published vehicle"));
+		});
+		return Note ? Note->Problem : FString();
+	};
+	TArray<FString> Notes;
+	for (const TCHAR* Id : { TEXT("electric"), TEXT("atv") })
+	{
+		const FMantleVehiclePreset* Preset = FMantleVehiclePresets::Find(Id);
+		if (!TestNotNull(*FString::Printf(TEXT("the %s preset loads"), Id), Preset))
+		{
+			continue;
+		}
+		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		TestTrue(*FString::Printf(TEXT("the %s applies"), Id), FMantleVehiclePresets::ApplyDefaults(*Preset, *Source, Notes));
+		TestEqual(*FString::Printf(TEXT("the %s preset as picked has no note"), Id), NoteOf(Source), FString());
+		Source->Tuning.ShiftTime = 0.2f;
+		Source->Tuning.ChangeUpRPM = 5000;
+		const FString Note = NoteOf(Source);
+		TestTrue(*FString::Printf(TEXT("%s: changed shift settings are noted (%s)"), Id, *Note), Note.Contains(TEXT("Shift Time")) && Note.Contains(TEXT("Change Up RPM")));
+	}
+	if (const FMantleVehiclePreset* Electric = FMantleVehiclePresets::Find(TEXT("electric")))
+	{
+		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		FMantleVehiclePresets::ApplyDefaults(*Electric, *Source, Notes);
+		Source->Tuning.EngineBraking = 0.4f;
+		Source->Tuning.ReverseRatio = 3.5f;
+		const FString Note = NoteOf(Source);
+		TestTrue(*FString::Printf(TEXT("electric: engine braking and reverse ratio are noted (%s)"), *Note), Note.Contains(TEXT("Engine Braking")) && Note.Contains(TEXT("Reverse Ratio")));
+	}
+	// A geared combustion car uses them all: no note.
+	if (const FMantleVehiclePreset* Sedan = FMantleVehiclePresets::Find(TEXT("sedan")))
+	{
+		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		FMantleVehiclePresets::ApplyDefaults(*Sedan, *Source, Notes);
+		Source->Tuning.ShiftTime = 0.2f;
+		Source->Tuning.EngineBraking = 0.4f;
+		TestEqual(TEXT("a geared car's shift and engine braking settings get no note"), NoteOf(Source), FString());
+	}
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

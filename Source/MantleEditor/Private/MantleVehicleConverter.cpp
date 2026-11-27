@@ -4879,6 +4879,31 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 		VehicleCheckRange(Subject, FString::Printf(TEXT("Gear Ratios %d"), Gear), TEXT("transmission/gearRatios/*"), T.GearRatios[Gear], OutIssues);
 	}
 	VehicleCheckRange(Subject, TEXT("Final Drive"), TEXT("transmission/finalDrive"), T.FinalDrive, OutIssues);
+	// #445 / belt drive: settings an electric car or a belt drive never uses are left out of the document. Changed from their defaults, they would
+	// do nothing without a word, so the creator is told (a type picked from a preset starts them at their defaults, so this is a hand change).
+	{
+		const FMantleVehicleSourceTuning Plain;
+		TArray<FString> Unused;
+		if (T.bElectric)
+		{
+			if (T.EngineBraking != Plain.EngineBraking) Unused.Add(TEXT("Engine Braking"));
+			if (T.ReverseRatio != Plain.ReverseRatio) Unused.Add(TEXT("Reverse Ratio"));
+		}
+		if (T.bElectric || T.bCvt)
+		{
+			if (T.ChangeUpRPM != Plain.ChangeUpRPM) Unused.Add(TEXT("Change Up RPM"));
+			if (T.ChangeDownRPM != Plain.ChangeDownRPM) Unused.Add(TEXT("Change Down RPM"));
+			if (T.ShiftTime != Plain.ShiftTime) Unused.Add(TEXT("Shift Time"));
+		}
+		if (Unused.Num() > 0)
+		{
+			OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
+				FString::Printf(TEXT("%s is %s, so its %s %s nothing and %s left out of the published vehicle."), *Subject,
+					T.bElectric ? TEXT("electric (one fixed gear, no engine braking)") : TEXT("a belt drive (it never shifts)"), *FString::Join(Unused, TEXT(", ")),
+					Unused.Num() == 1 ? TEXT("does") : TEXT("do"), Unused.Num() == 1 ? TEXT("is") : TEXT("are")),
+				TEXT("Put them back to their defaults to clear this note, or leave them: they come back if the vehicle is made combustion or geared again.") });
+		}
+	}
 	// A belt drive (ATV follow-on): one box after the belt, the belt's high ratio below its low one, the held rpm above idle and at most the red line.
 	// It never shifts, so it has no shift points or shift time to check.
 	if (T.bCvt && !T.bElectric)
