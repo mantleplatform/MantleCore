@@ -1270,8 +1270,11 @@ TArray<FVector2D> FMantleVehicleChassisDocument::GroundSteeringSpeedCurve()
 	// #376 step 5, from the drive probe's steering sweeps: at each speed, 1.3x the road-wheel angle that gives a car its peak lateral g, as a share of
 	// its lock, taking the most any ground preset needs (the limousine and six-wheeler: long, with less lock). DA_SportsCar's line is kept to 25 mph,
 	// so parking and town turns are unchanged (at 20 km/h every preset still wants more than its full lock).
-	return { FVector2D(0.0, 1.0), FVector2D(20.0, 0.8), FVector2D(25.0, 0.75), FVector2D(37.5, 0.53), FVector2D(56.0, 0.35), FVector2D(75.0, 0.27),
-		FVector2D(120.0, 0.24) };
+	// Joshua's play test (2026-11-27): from 56 mph the lock is brought down to about 1.1-1.5x the peak-grip angle (0.35/0.27/0.24 -> 0.30/0.22/0.18),
+	// so a held key sits near the grip peak instead of scrubbing the front tyres past it. 37.5 mph keeps 0.53, so the curve still flattens as it
+	// falls (0.0176, 0.0124, 0.0042, 0.0009 per mph).
+	return { FVector2D(0.0, 1.0), FVector2D(20.0, 0.8), FVector2D(25.0, 0.75), FVector2D(37.5, 0.53), FVector2D(56.0, 0.30), FVector2D(75.0, 0.22),
+		FVector2D(120.0, 0.18) };
 }
 
 TArray<FVector2D> FMantleVehicleChassisDocument::TwoWheelerSteeringSpeedCurve()

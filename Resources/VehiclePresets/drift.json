@@ -83,8 +83,8 @@
       "frontShare": 0.75
     },
     "tires": {
-      "friction": 1.47,
-      "rearFriction": 1.26
+      "friction": 1.76,
+      "rearFriction": 1.51
     },
     "camera": {
       "armLength": 400,
