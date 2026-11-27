@@ -3,7 +3,7 @@
   "id": "utilitytrailer",
   "name": "Utility trailer",
   "description": "A small open trailer on two axles that a pickup, SUV or truck tows on a ball hitch: a flat deck with a tongue at the front and a jockey stand it rests on while uncoupled. It has no engine or seat; scripts load its cargo.",
-  "comment": "A vehicle preset (#446); see sedan.json for the format, and semitrailer.json for what movementType trailer builds and why the document still carries an engine, a gearbox, steer and drive flags and a seat. A 7 x 14 ft tandem-axle utility trailer on a 2 in ball (two 3500 lb axles, 7000 lb GVWR): a single-axle trailer can't be made, since the layout needs two axles. Empty 900 kg, cargo.maxLoad 2250 kg (7000 lb less the trailer), the axles 89 cm (35 in) apart, 225/75R15 trailer tyres (radius 35 cm) on a 180 cm track, the deck 427 x 213 cm and 60 cm deep on a 50 cm floor (estimates from dealer listings). Model space keeps its origin under the middle of the wheelbase, the axles' middle, so the deck's middle is 40 cm ahead of it (body.x) and the ball's socket, at the end of a 120 cm tongue, at x 373.5 and 48 cm up. The empty centre of mass at x 60 puts 16 percent on the ball; a load centred on the deck puts 40 / 373.5 = 10.7 percent of its own weight there, and the loaded trailer 12 percent, inside the usual 10-15. The jockey stand is a small box under the tongue whose bottom is on the ground. Brakes: about 1 g on the loaded trailer's 2770 kg on its wheels, 2765 x 9.8 x 0.35 m / 4 = 2400 Nm a wheel, the parking brake the same, ABS on as the semi-trailer's. Springs and damping are the semi's drive axles' per kg of the empty trailer's coupled weight on a wheel (84 percent of 900 kg over 4 wheels), grip the semi's. The camera and the seat are the document's and nobody uses them.",
+  "comment": "A vehicle preset (#446); see sedan.json for the format, and semitrailer.json for what movementType trailer builds and why the document still carries an engine, a gearbox, steer and drive flags and a seat. A 7 x 14 ft tandem-axle utility trailer on a 2 in ball (two 3500 lb axles, 7000 lb GVWR): a single-axle trailer can't be made, since the layout needs two axles. Empty 900 kg, cargo.maxLoad 2250 kg (7000 lb less the trailer), the axles 89 cm (35 in) apart, 225/75R15 trailer tyres (radius 35 cm) on a 180 cm track, the deck 427 x 213 cm and 60 cm deep on a 50 cm floor (estimates from dealer listings). Model space keeps its origin under the middle of the wheelbase, the axles' middle, so the deck's middle is 40 cm ahead of it (body.x) and the ball's socket, at the end of a 120 cm tongue, at x 373.5 and 48 cm up. The empty centre of mass at x 60 puts 16 percent on the ball; a load centred on the deck puts 40 / 373.5 = 10.7 percent of its own weight there, and the loaded trailer 12 percent, inside the usual 10-15. The jockey stand is a small box under the tongue whose bottom is on the ground. Brakes: about 1 g on the loaded trailer's 2770 kg on its wheels, 2765 x 9.8 x 0.35 m / 4 = 2400 Nm a wheel, the parking brake the same, ABS on as the semi-trailer's. Springs are sized for the rating, as a real one's leaf springs are (the lead's call after probe window 5, where springs sized for the empty trailer took 600 kg onto its 10 cm bump stops): window 5 measured at least 11 cm of drop for the 5240 N that 600 kg puts on the axles at springRate 62, at most 7.7 N/cm of the axles' stiffness per unit of springRate, so springRate 400 holds the full 2250 kg (19.7 kN on the axles, 89 percent of it) to about 6.4 cm of its 10 cm travel, 600 kg to about 1.7 cm and the empty trailer to about 2.4 cm. Damping is the old 0.203 x sqrt(400 / 62) = 0.52, the same damping ratio on the empty trailer (no hopping); empty it rides stiff, about 3.2 Hz against the old 1.25, as an empty leaf-sprung trailer does. Its ranges reach the doubled size's springs (x 4) and damping. Grip is the semi's. The camera and the seat are the document's and nobody uses them.",
   "movementType": "trailer",
   "publishable": true,
   "type": "trailer",
@@ -69,9 +69,9 @@
     "suspension": {
       "maxRaise": 10,
       "maxDrop": 22,
-      "springRate": 62,
+      "springRate": 400,
       "springPreload": 30,
-      "damping": 0.203
+      "damping": 0.52
     },
     "steering": {
       "maxAngle": 35,
@@ -97,8 +97,8 @@
     "dragCoefficient": [0.1, 1],
     "suspension/maxRaise": [5, 40],
     "suspension/maxDrop": [5, 40],
-    "suspension/springRate": [20, 500],
-    "suspension/damping": [0.05, 1],
+    "suspension/springRate": [20, 1600],
+    "suspension/damping": [0.05, 2],
     "brakes/brakeTorque": [500, 6000],
     "brakes/handbrakeTorque": [500, 6000],
     "tires/friction": [0.8, 5],
