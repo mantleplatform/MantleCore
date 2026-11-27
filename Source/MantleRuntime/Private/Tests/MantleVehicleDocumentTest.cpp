@@ -777,21 +777,21 @@ bool FMantleVehicleDocumentGroundHandlingTest::RunTest(const FString& Parameters
 			continue;
 		}
 		++Grounded;
-		// The preset's one friction is the middle: the front gets 6/7 of it, the rear 8/7 (3.0 and 4.0 of a 3.5), and nothing else is touched. A preset
+		// The preset's one friction is the middle: the front gets 0.95 of it, the rear 1.05 (FrontTireGripShare, RearTireGripShare), and nothing else is touched. A preset
 		// that sets its own rear grip (the drift car) keeps it, times the friction over the preset's own, so its resized car keeps the balance.
 		const double Friction = (Spec.Derived.IsSet() ? Spec.Derived.GetValue() : Spec.Archetype).TireFriction;
 		const TSharedPtr<FJsonObject>* PresetTires = nullptr;
 		double PresetRear = 0.0;
 		const bool bOwnRear = Spec.Defaults->TryGetObjectField(TEXT("tires"), PresetTires) && (*PresetTires)->TryGetNumberField(TEXT("rearFriction"), PresetRear);
-		const double WantRear = bOwnRear ? PresetRear * Friction / Spec.Archetype.TireFriction : Friction * 8.0 / 7.0;
+		const double WantRear = bOwnRear ? PresetRear * Friction / Spec.Archetype.TireFriction : Friction * FMantleVehicleChassisDocument::RearTireGripShare;
 		OwnRear += bOwnRear ? 1 : 0;
-		TestTrue(*FString::Printf(TEXT("%s: the front grips 6/7 of the preset's friction (%g of %g)"), *Selector, D.TireFriction, Friction), FMath::IsNearlyEqual(D.TireFriction, Friction * 6.0 / 7.0, 1.0e-9));
-		TestTrue(*FString::Printf(TEXT("%s: the rear grips %s (%g, want %g)"), *Selector, bOwnRear ? TEXT("the preset's own, scaled with the friction") : TEXT("8/7 of it"), D.TireRearFriction, WantRear),
+		TestTrue(*FString::Printf(TEXT("%s: the front grips 0.95 of the preset's friction (%g of %g)"), *Selector, D.TireFriction, Friction), FMath::IsNearlyEqual(D.TireFriction, Friction * FMantleVehicleChassisDocument::FrontTireGripShare, 1.0e-9));
+		TestTrue(*FString::Printf(TEXT("%s: the rear grips %s (%g, want %g)"), *Selector, bOwnRear ? TEXT("the preset's own, scaled with the friction") : TEXT("1.05 of it"), D.TireRearFriction, WantRear),
 			D.bTireRearFriction && FMath::IsNearlyEqual(D.TireRearFriction, WantRear, 1.0e-9));
 		if (bOwnRear)
 		{
-			TestTrue(*FString::Printf(TEXT("%s: its rear grips no more than its front, less than the cars' 8/7"), *Selector),
-				D.TireRearFriction <= D.TireFriction + 1.0e-9 && D.TireRearFriction < Friction * 8.0 / 7.0);
+			TestTrue(*FString::Printf(TEXT("%s: its rear grips no more than its front, less than the cars' 1.05"), *Selector),
+				D.TireRearFriction <= D.TireFriction + 1.0e-9 && D.TireRearFriction < Friction * FMantleVehicleChassisDocument::RearTireGripShare);
 		}
 		if (TestEqual(*FString::Printf(TEXT("%s: the steering curve has every point"), *Selector), D.SteeringSpeedCurve.Num(), WantCurve.Num()))
 		{

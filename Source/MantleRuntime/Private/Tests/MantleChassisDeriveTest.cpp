@@ -4,6 +4,7 @@
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "MantleChassisSpec.h"
+#include "MantleVehicleChassisDocument.h"
 #include "MantleVehicleChassisBuilder.h"
 #include "Misc/AutomationTest.h"
 #include "Serialization/JsonReader.h"
@@ -172,12 +173,12 @@ namespace MantleChassisDeriveTestPrivate
 			Number(Json, TEXT("engine"), TEXT("engineBraking"), H.EngineBraking);
 			// An electric motor's peak power (#445) is only in an electric document.
 			Number(Json, TEXT("engine"), TEXT("peakPower"), H.PeakPower);
-			// A ground car's document holds its preset's one friction as the front's (6/7 of it) and the rear's (8/7, or the preset's own rearFriction scaled), so the front gives it back.
+			// A ground car's document holds its preset's one friction as the front's (FrontTireGripShare of it) and the rear's (RearTireGripShare, or the preset's own rearFriction scaled), so the front gives it back.
 			const TSharedPtr<FJsonObject>* Tires = nullptr;
 			double RearFriction = 0.0;
 			if (Json->TryGetObjectField(TEXT("tires"), Tires) && Tires && Tires->IsValid() && (*Tires)->TryGetNumberField(TEXT("rearFriction"), RearFriction))
 			{
-				H.TireFriction = FMath::RoundToDouble(H.TireFriction * 7.0 / 6.0 * 1.0e9) / 1.0e9;
+				H.TireFriction = FMath::RoundToDouble(H.TireFriction / FMantleVehicleChassisDocument::FrontTireGripShare * 1.0e9) / 1.0e9;
 			}
 			Out = H;
 		}

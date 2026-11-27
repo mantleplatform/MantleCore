@@ -4,6 +4,7 @@
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "MantleChassisDerive.h"
+#include "MantleVehicleChassisDocument.h"
 #include "MantleVehicleChassisBuilder.h"
 #include "Misc/AutomationTest.h"
 #include "Serialization/JsonReader.h"
@@ -767,8 +768,8 @@ namespace MantleChassisSpecTestPrivate
 		{
 			Doc->RemoveField(Key);
 		}
-		// A ground car's handling baked in: the steering's speed curve goes, and the tires' friction is the preset's again (the front's is 6/7 of it; the rear's,
-		// 8/7 of it or the preset's own rear grip, is Mantle.Vehicle.Document.GroundHandlingIsBakedIn's to check).
+		// A ground car's handling baked in: the steering's speed curve goes, and the tires' friction is the preset's again (the front's is 0.95 of it; the rear's,
+		// 1.05 of it or the preset's own rear grip, is Mantle.Vehicle.Document.GroundHandlingIsBakedIn's to check).
 		const TSharedPtr<FJsonObject>* Steering = nullptr;
 		if (Doc->TryGetObjectField(TEXT("steering"), Steering) && Steering && Steering->IsValid())
 		{
@@ -779,7 +780,7 @@ namespace MantleChassisSpecTestPrivate
 		if (Doc->TryGetObjectField(TEXT("tires"), Tires) && Tires && Tires->IsValid() && (*Tires)->HasField(TEXT("rearFriction"))
 			&& (*Tires)->TryGetNumberField(TEXT("friction"), FrontFriction))
 		{
-			(*Tires)->SetNumberField(TEXT("friction"), FMath::RoundToDouble(FrontFriction * 7.0 / 6.0 * 1.0e6) / 1.0e6);
+			(*Tires)->SetNumberField(TEXT("friction"), FMath::RoundToDouble(FrontFriction / FMantleVehicleChassisDocument::FrontTireGripShare * 1.0e6) / 1.0e6);
 			(*Tires)->RemoveField(TEXT("rearFriction"));
 		}
 		const TPair<const TCHAR*, const TCHAR*> Extras[] = {

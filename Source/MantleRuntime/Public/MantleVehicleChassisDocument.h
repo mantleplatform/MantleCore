@@ -49,11 +49,14 @@ struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 	/** A quad rider (#376 step 9d) steps off this far beyond the quad's half-width (body or wheels, whichever is wider), cm. */
 	static constexpr double QuadExitClearance = 50.0;
 	/**
-	 * A car's (a ground chassis on more than two wheels) tire grip per axle, as shares of its preset's one friction: the steered front's and the rest's, 3.0 and 4.0
-	 * of a 3.5, the built-in sports car's balance. The front's is written as tires.friction and the rear's as tires.rearFriction. A bike's tires keep their own.
+	 * A car's (a ground chassis on more than two wheels) tire grip per axle, as shares of its preset's one friction: the steered front's and the rest's. The front's
+	 * is written as tires.friction and the rear's as tires.rearFriction. A bike's tires keep their own. Joshua's play test (build 9, 2026-11-27): 0.95 and 1.05,
+	 * from the built-in sports car's 6/7 and 8/7. Each axle tops out at its own grip (the tyre force is linear in load), so 6/7 against 8/7 had every car's
+	 * front give up at 75% of what its rear held: the car pushed wide and the rear's extra third went unused. The speed curve now holds a key at speed near the
+	 * grip peak, and the front still lets go first (0.95 under 1.05), so a held key still runs wide rather than spinning.
 	 */
-	static constexpr double FrontTireGripShare = 6.0 / 7.0;
-	static constexpr double RearTireGripShare = 8.0 / 7.0;
+	static constexpr double FrontTireGripShare = 0.95;
+	static constexpr double RearTireGripShare = 1.05;
 
 	/**
 	 * The movement part of Spec's chassis, in InOutDesc: MovementType, the block of its type, the seat kinds, the exit distance, the rider, the camera boom. The
