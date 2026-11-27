@@ -5,14 +5,31 @@
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleSource.h"
 #include "MantlePlaceValidator.h"
+#include "SMantleVehicleBuilder.h"
 
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Misc/AutomationTest.h"
 #include "UObject/Package.h"
 #include "UObject/UObjectGlobals.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
+
+/** The window's Towing state, set the way its picker and checkbox set it, and what Build would send. */
+struct FMantleVehicleBuilderHitchAccess
+{
+	static void PickType(SMantleVehicleBuilder& Panel, const TCHAR* Id, const TCHAR* Name) { Panel.PickPreset(Id, FText::FromString(Name)); }
+	static void Pick(SMantleVehicleBuilder& Panel, const EMantleVehicleSourceHitch Choice, const bool bPlaced = false, const FVector& At = FVector::ZeroVector)
+	{
+		Panel.HitchChoice = Choice;
+		Panel.bHitchPlaced = bPlaced;
+		Panel.HitchAt = At;
+	}
+	static EMantleVehicleSourceHitch Choice(const SMantleVehicleBuilder& Panel) { return Panel.HitchChoice; }
+	static bool Placed(const SMantleVehicleBuilder& Panel) { return Panel.bHitchPlaced; }
+	static FMantleVehicleModelOptions Options(const SMantleVehicleBuilder& Panel) { return Panel.MakeBuildOptions(); }
+};
 
 // A creator's hitch (#446): the vehicle builder's Towing choice goes into the vehicle's settings (FMantleVehicleBuilder::ApplyHitch), at the place the
 // creator gave or the builder's default, and from there into the document the vehicle publishes (FMantleVehicleConverter::MakeDocument). A vehicle that
@@ -137,6 +154,73 @@ bool FMantleVehicleBuilderHitchTest::RunTest(const FString& Parameters)
 		FMantleVehicleChassisDocument::DefaultHitchLocation(EMantleVehicleHitchKind::Ball, -240.0, -140.0, -30.0).Equals(FVector(-250.0, 0.0, 20.0)));
 	TestTrue(TEXT("a default fifth wheel is 30 cm ahead of the rear axles, centred, 119 cm up"),
 		FMantleVehicleChassisDocument::DefaultHitchLocation(EMantleVehicleHitchKind::FifthWheel, -300.0, -190.0, 0.0).Equals(FVector(-160.0, 0.0, 119.0)));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleBuilderHitchUndoTest,
+	"Mantle.Vehicle.Builder.HitchUndoAndTypeChange",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleBuilderHitchUndoTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleBuilderHitchTestPrivate;
+	using Access = FMantleVehicleBuilderHitchAccess;
+
+	// The type's own undoes an earlier pick (Plugin Manager's review of Core #292): a pickup built with a fifth wheel, then built again on the type's
+	// own, has the type's own again, not the fifth wheel.
+	FMantleVehicleBuildResult Pickup = MakeBuilt(EMantleVehicleMovementKind::Wheeled);
+	FMantleVehicleBuilder::ApplyHitch(Pickup, WithHitch(EMantleVehicleSourceHitch::FifthWheel));
+	TestTrue(TEXT("built with a fifth wheel"), Pickup.Source->Tuning.Hitch == EMantleVehicleSourceHitch::FifthWheel);
+	FMantleVehicleModelOptions Own;
+	FMantleVehicleBuilder::HitchOptions(Own, true, EMantleVehicleSourceHitch::Preset, false, FVector::ZeroVector);
+	TestTrue(TEXT("the type's own is sent, not left out"), Own.Hitch.IsSet() && Own.Hitch.GetValue() == EMantleVehicleSourceHitch::Preset && !Own.HitchLocation.IsSet());
+	FMantleVehicleBuilder::ApplyHitch(Pickup, Own);
+	TestTrue(TEXT("built again on the type's own, it has the type's own"), Pickup.Source->Tuning.Hitch == EMantleVehicleSourceHitch::Preset);
+	TestTrue(TEXT("and the note says so"), Pickup.Notes.Contains(TEXT("Hitch: back to the type's own.")));
+	// Its document then carries the type's hitch from the movement blocks, not the fifth wheel: with no blocks here, no hitch at all.
+	{
+		FString Error;
+		const TSharedRef<FJsonObject> Document = FMantleVehicleConverter::MakeDocument(*Pickup.Source, TMap<FString, FString>(), &Error);
+		TestFalse(TEXT("the fifth wheel is gone from the document"), Document->HasField(TEXT("hitch")));
+	}
+
+	// A type that tows nothing is built with its own, whatever was picked for another type: no "tows nothing" it can't fix from the window.
+	FMantleVehicleModelOptions Stale;
+	FMantleVehicleBuilder::HitchOptions(Stale, false, EMantleVehicleSourceHitch::Ball, true, FVector(-200.0, 0.0, 50.0));
+	TestTrue(TEXT("a plane is sent the type's own, with no place"), Stale.Hitch.IsSet() && Stale.Hitch.GetValue() == EMantleVehicleSourceHitch::Preset && !Stale.HitchLocation.IsSet());
+	FMantleVehicleBuildResult Plane = MakeBuilt(EMantleVehicleMovementKind::Plane);
+	FMantleVehicleBuilder::ApplyHitch(Plane, Stale);
+	TestTrue(TEXT("the plane has the type's own"), Plane.Source->Tuning.Hitch == EMantleVehicleSourceHitch::Preset);
+	TestFalse(TEXT("and no tows-nothing note"), Plane.Notes.ContainsByPredicate([](const FString& Note) { return Note.Contains(TEXT("tows nothing")); }));
+
+	// A placed pick sends its place; an unplaced one doesn't.
+	FMantleVehicleModelOptions Placed;
+	FMantleVehicleBuilder::HitchOptions(Placed, true, EMantleVehicleSourceHitch::Ball, true, FVector(-260.0, 0.0, 48.0));
+	TestTrue(TEXT("a placed tow ball sends its place"), Placed.HitchLocation.IsSet() && Placed.HitchLocation.GetValue().Equals(FVector(-260.0, 0.0, 48.0)));
+
+	// The window: a new type starts on its own hitch, and Build sends what the window shows.
+	if (!FSlateApplication::IsInitialized())
+	{
+		AddWarning(TEXT("SKIPPED, not passed: there is no Slate application in this runner, so the window's type change is not checked."));
+		return true;
+	}
+	TSharedRef<SMantleVehicleBuilder> Panel = SNew(SMantleVehicleBuilder);
+	Access::PickType(*Panel, TEXT("pickup"), TEXT("Pickup / SUV"));
+	Access::Pick(*Panel, EMantleVehicleSourceHitch::FifthWheel, true, FVector(-150.0, 0.0, 119.0));
+	FMantleVehicleModelOptions Picked = Access::Options(*Panel);
+	TestTrue(TEXT("the pickup's fifth wheel is sent"), Picked.Hitch.IsSet() && Picked.Hitch.GetValue() == EMantleVehicleSourceHitch::FifthWheel && Picked.HitchLocation.IsSet());
+	Access::Pick(*Panel, EMantleVehicleSourceHitch::Preset);
+	FMantleVehicleModelOptions Back = Access::Options(*Panel);
+	TestTrue(TEXT("back to the type's own, the type's own is sent"), Back.Hitch.IsSet() && Back.Hitch.GetValue() == EMantleVehicleSourceHitch::Preset);
+	Access::Pick(*Panel, EMantleVehicleSourceHitch::Ball, true, FVector(-280.0, 0.0, 50.0));
+	Access::PickType(*Panel, TEXT("plane"), TEXT("Plane"));
+	TestTrue(TEXT("a new type starts on its own hitch"), Access::Choice(*Panel) == EMantleVehicleSourceHitch::Preset && !Access::Placed(*Panel));
+	FMantleVehicleModelOptions PlaneOptions = Access::Options(*Panel);
+	TestTrue(TEXT("and the plane is built with its own"), PlaneOptions.Hitch.IsSet() && PlaneOptions.Hitch.GetValue() == EMantleVehicleSourceHitch::Preset
+		&& !PlaneOptions.HitchLocation.IsSet());
+	Access::PickType(*Panel, TEXT("sedan"), TEXT("Sedan"));
+	TestTrue(TEXT("a wheeled type after it starts on its own too"), Access::Choice(*Panel) == EMantleVehicleSourceHitch::Preset);
 	return true;
 }
 

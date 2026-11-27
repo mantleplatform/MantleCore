@@ -338,6 +338,13 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	static void ApplyHitch(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options);
 
 	/**
+	 * The window's Towing choice as build options (#446). Always sets Options.Hitch, so the type's own (Preset) undoes an earlier pick on a vehicle built
+	 * again; a type that tows nothing (bTypeTows false) always gets Preset, whatever was picked. HitchLocation only for a tow ball or fifth wheel the
+	 * creator placed (bPlaced). Pure.
+	 */
+	static void HitchOptions(FMantleVehicleModelOptions& Options, bool bTypeTows, EMantleVehicleSourceHitch Choice, bool bPlaced, const FVector& At);
+
+	/**
 	 * Where a hitch of Kind goes on Source's body (#446), in the body's space: FMantleVehicleChassisDocument::DefaultHitchLocation with the body's rear end, the
 	 * middle of its unsteered wheels (the rear axles) and its lowest point (the tyres' bottoms) as the ground. A body that can't be read gets a car's
 	 * (behind a 5 m car, on its centre line).

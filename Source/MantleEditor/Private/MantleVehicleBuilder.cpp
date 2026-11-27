@@ -1552,6 +1552,18 @@ FVector FMantleVehicleBuilder::DefaultHitchLocation(const UMantleVehicleSource& 
 	return FMantleVehicleChassisDocument::DefaultHitchLocation(Kind, Bounds.Min.X, RearAxleX, Bounds.Min.Z);
 }
 
+void FMantleVehicleBuilder::HitchOptions(FMantleVehicleModelOptions& Options, const bool bTypeTows, const EMantleVehicleSourceHitch Choice, const bool bPlaced,
+	const FVector& At)
+{
+	const EMantleVehicleSourceHitch Sent = bTypeTows ? Choice : EMantleVehicleSourceHitch::Preset;
+	Options.Hitch = Sent;
+	Options.HitchLocation.Reset();
+	if (bPlaced && (Sent == EMantleVehicleSourceHitch::Ball || Sent == EMantleVehicleSourceHitch::FifthWheel))
+	{
+		Options.HitchLocation = At;
+	}
+}
+
 void FMantleVehicleBuilder::ApplyHitch(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options)
 {
 	UMantleVehicleSource* Source = Built.Source;
@@ -1560,6 +1572,11 @@ void FMantleVehicleBuilder::ApplyHitch(FMantleVehicleBuildResult& Built, const F
 		return;
 	}
 	const EMantleVehicleSourceHitch Choice = Options.Hitch.GetValue();
+	// The type's own on a vehicle that already has it: nothing to change or save. On one built before with a pick of its own, it puts the type's back.
+	if (Choice == EMantleVehicleSourceHitch::Preset && Source->Tuning.Hitch == EMantleVehicleSourceHitch::Preset)
+	{
+		return;
+	}
 	const bool bPlaced = Choice == EMantleVehicleSourceHitch::Ball || Choice == EMantleVehicleSourceHitch::FifthWheel;
 	if (bPlaced && Source->MovementType != EMantleVehicleMovementKind::Wheeled && Source->MovementType != EMantleVehicleMovementKind::Tracked)
 	{
@@ -1580,6 +1597,10 @@ void FMantleVehicleBuilder::ApplyHitch(FMantleVehicleBuildResult& Built, const F
 	else if (Choice == EMantleVehicleSourceHitch::None)
 	{
 		Built.Notes.Add(TEXT("Hitch: none, so it tows nothing."));
+	}
+	else
+	{
+		Built.Notes.Add(TEXT("Hitch: back to the type's own."));
 	}
 	if (Built.bSaved)
 	{

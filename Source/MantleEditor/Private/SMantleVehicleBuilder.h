@@ -51,6 +51,8 @@ class SMantleVehicleBuilder : public SCompoundWidget
 	friend struct FMantleVehicleBuilderShotAccess;
 	/** The tests of the Liveries step: its images, names and the one the car starts in. */
 	friend struct FMantleVehicleBuilderLiveryAccess;
+	/** The tests of the Towing choice (#446): what Build sends, and that a new type starts on its own hitch. */
+	friend struct FMantleVehicleBuilderHitchAccess;
 
 public:
 	SLATE_BEGIN_ARGS(SMantleVehicleBuilder) {}
@@ -337,7 +339,8 @@ private:
 	bool bHideRiders = false;
 	/**
 	 * The creator's hitch (#446): the type's own, none, a tow ball or a fifth wheel, in EMantleVehicleSourceHitch's order. With bHitchPlaced at HitchAt (cm, in the
-	 * vehicle's space), else where the build puts it (FMantleVehicleBuilder::DefaultHitchLocation). Kept when the type changes; a type that tows nothing hides it.
+	 * vehicle's space), else where the build puts it (FMantleVehicleBuilder::DefaultHitchLocation). A new type starts on its own (PickPreset), so a pick
+	 * made for another type never follows it; a type that tows nothing hides the choice and always builds with its own.
 	 */
 	EMantleVehicleSourceHitch HitchChoice = EMantleVehicleSourceHitch::Preset;
 	TArray<TSharedPtr<FString>> HitchChoices;

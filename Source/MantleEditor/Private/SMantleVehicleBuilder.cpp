@@ -537,6 +537,9 @@ void SMantleVehicleBuilder::PickPreset(const FString& PresetId, const FText& Nam
 	TypeProblem = FText::GetEmpty();
 	SelectedPresetId = Selector;
 	SelectedPresetName = Name;
+	// A new type starts on its own hitch (#446): a tow ball or fifth wheel picked for the last type, or its place, doesn't follow it.
+	HitchChoice = EMantleVehicleSourceHitch::Preset;
+	bHitchPlaced = false;
 	// A plane, helicopter, hovercraft or tracked vehicle is sized by one Size held to the preset's own fit range.
 	const FMantleVehiclePreset* Picked = FMantleVehiclePresets::Find(Selector);
 	Shape.Start(Loaded, Picked ? Picked->FitMinScale : 0.0, Picked ? Picked->FitMaxScale : 0.0);
@@ -2191,15 +2194,9 @@ FMantleVehicleModelOptions SMantleVehicleBuilder::MakeBuildOptions() const
 		Options.Hinges = HingeChoice;
 	}
 	Options.HideRiders = bHideRiders;
-	// The Towing choice (#446): the type's own is left unset, so the vehicle keeps it.
-	if (TypeTows() && HitchChoice != EMantleVehicleSourceHitch::Preset)
-	{
-		Options.Hitch = HitchChoice;
-		if (bHitchPlaced && (HitchChoice == EMantleVehicleSourceHitch::Ball || HitchChoice == EMantleVehicleSourceHitch::FifthWheel))
-		{
-			Options.HitchLocation = HitchAt;
-		}
-	}
+	// The Towing choice (#446), always sent: the type's own then undoes an earlier pick when the same vehicle is built again, and a type that tows
+	// nothing is built with its own whatever was picked before (FMantleVehicleBuilder::HitchOptions).
+	FMantleVehicleBuilder::HitchOptions(Options, TypeTows(), HitchChoice, bHitchPlaced, HitchAt);
 	if (bUseSkin)
 	{
 		Options.Spec = Shape.GetShaped();
