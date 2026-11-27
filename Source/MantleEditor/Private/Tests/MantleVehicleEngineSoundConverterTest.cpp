@@ -12,7 +12,8 @@
 
 // engine.sound (#258): a preset's engine sound is read in (absent: None, the type's own) and an unknown one refuses the preset; the converter writes
 // the creator's pick into the engine block only when the vehicle has one to pick, keeps it through the rebuilds, refuses one the vehicle can't have
-// as a creator-visible error, and notes one that does nothing (an electric motor's, a plane's); the dropdown offers what the vehicle can have.
+// as a creator-visible error, and notes one that does nothing (an electric motor's, a plane's); a boat or a jet ski picks one too; the dropdown offers
+// what the vehicle can have.
 
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleVehicleEngineSoundConverterTestPrivate
@@ -69,7 +70,8 @@ bool FMantleVehicleEngineSoundConverterTest::RunTest(const FString& Parameters)
 	// The shipped presets' sounds are read in; an electric motor and a bicycle have none. One source goes through every preset in turn, so a type
 	// switch leaves no sound of the type before behind.
 	const TPair<const TCHAR*, const TCHAR*> Shipped[] = { { TEXT("sedan"), TEXT("inline4") }, { TEXT("motorcycle"), TEXT("bike_inline4") },
-		{ TEXT("atv"), TEXT("inline3") }, { TEXT("truck"), TEXT("diesel") }, { TEXT("electric"), TEXT("None") }, { TEXT("bicycle"), TEXT("None") } };
+		{ TEXT("atv"), TEXT("inline3") }, { TEXT("truck"), TEXT("diesel") }, { TEXT("boat"), TEXT("v8") }, { TEXT("jetski"), TEXT("inline3") },
+		{ TEXT("electric"), TEXT("None") }, { TEXT("bicycle"), TEXT("None") } };
 	UMantleVehicleSource* Switched = NewObject<UMantleVehicleSource>(GetTransientPackage());
 	for (const TPair<const TCHAR*, const TCHAR*>& Pair : Shipped)
 	{
@@ -138,6 +140,19 @@ bool FMantleVehicleEngineSoundConverterTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("None first"), CarOptions.Num() > 0 && CarOptions[0].IsNone());
 	SetWheels(*Bike, 2);
 	TestEqual(TEXT("a motorcycle's list: None and a motorcycle's sounds"), Bike->GetEngineSoundOptions().Num(), 1 + FMantleEngineSounds::Bike().Num());
+
+	// A boat plays its drive's engine (car sounds); a jet ski's handlebars take a motorcycle's too.
+	UMantleVehicleSource* Boat = NewObject<UMantleVehicleSource>(GetTransientPackage());
+	SetWheels(*Boat, 4);
+	Boat->MovementType = EMantleVehicleMovementKind::Boat;
+	Boat->Tuning.EngineSound = TEXT("v8");
+	TestEqual(TEXT("a boat's V8 is written"), DocumentSound(*Boat), FString(TEXT("v8")));
+	TestNull(TEXT("and is no error"), FindIssue(Boat, EMantleIssueSeverity::Error, TEXT("Engine Sound"), Issues));
+	TestNull(TEXT("nor a note"), FindIssue(Boat, EMantleIssueSeverity::Warning, TEXT("Engine Sound"), Issues));
+	Boat->Tuning.EngineSound = TEXT("bike_vtwin");
+	TestNotNull(TEXT("a motorcycle's sound on a boat is an error"), FindIssue(Boat, EMantleIssueSeverity::Error, TEXT("Engine Sound 'bike_vtwin'"), Issues));
+	Boat->DriverSeatKind = EMantleVehicleSeatKind::Motorcycle;
+	TestNull(TEXT("but not on a jet ski's handlebars"), FindIssue(Boat, EMantleIssueSeverity::Error, TEXT("Engine Sound"), Issues));
 
 	// Electric: no sound written and a note (it plays its own motor), not an error; a plane the same.
 	UMantleVehicleSource* Electric = NewObject<UMantleVehicleSource>(GetTransientPackage());

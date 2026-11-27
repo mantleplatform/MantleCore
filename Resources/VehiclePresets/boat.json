@@ -57,6 +57,7 @@
     "dragCoefficient": 0.5,
     "frontalArea": 2.5,
     "engine": {
+      "sound": "v8",
       "maxTorque": 300,
       "maxRPM": 6000,
       "idleRPM": 700,

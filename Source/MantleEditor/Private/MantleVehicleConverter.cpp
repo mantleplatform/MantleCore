@@ -4015,7 +4015,7 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 		Engine->SetNumberField(TEXT("displacement"), T.EngineDisplacement);
 	}
 	// #258: the engine sound the creator picked, only when set (absent: the vehicle type's own) and the vehicle has one to pick: a pedalled vehicle, an
-	// electric motor, a trailer, a boat or an aircraft leaves it out, and CheckSource says so. The ids are lower case; the cook takes them as written.
+	// electric motor, a trailer or an aircraft leaves it out, and CheckSource says so. The ids are lower case; the cook takes them as written.
 	if (!T.EngineSound.IsNone() && Source.CanPickEngineSound())
 	{
 		Engine->SetStringField(TEXT("sound"), T.EngineSound.ToString().ToLower());
@@ -4938,18 +4938,19 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 				TEXT("Put them back to their defaults to clear this note, or leave them: they come back if the vehicle is made combustion or geared again.") });
 		}
 	}
-	// #258: the engine sound. On a vehicle that has one to pick, one of the sounds it may have (a motorcycle's on two wheels, either kind on an ATV's
-	// handlebars, else a car's): any other would be refused on upload. On one with none to pick (pedalled, a trailer, a boat, an aircraft), it would do
-	// nothing and is left out, so the creator is told; an electric motor's is in the note above.
+	// #258: the engine sound. On a vehicle that has one to pick, one of the sounds it may have (FMantleEngineSounds: a motorcycle's on two wheels,
+	// either kind on handlebars on more wheels, an ATV's or a jet ski's, else a car's): any other would be refused on upload. On one with none to pick
+	// (pedalled, a trailer, an aircraft), it would do nothing and is left out, so the creator is told; an electric motor's is in the note above.
 	if (!T.EngineSound.IsNone() && !T.bElectric)
 	{
 		if (Source->CanPickEngineSound())
 		{
+			const bool bTwoWheeler = FMantleEngineSounds::IsTwoWheeler(Source->MovementType == EMantleVehicleMovementKind::Wheeled, Source->Wheels.Num());
 			const bool bHandlebars = Source->DriverSeatKind == EMantleVehicleSeatKind::Motorcycle;
-			if (!FMantleEngineSounds::Fits(T.EngineSound, Source->Wheels.Num(), bHandlebars))
+			if (!FMantleEngineSounds::Fits(T.EngineSound, bTwoWheeler, bHandlebars))
 			{
 				TArray<FName> Ids;
-				FMantleEngineSounds::Options(Source->Wheels.Num(), bHandlebars, Ids);
+				FMantleEngineSounds::Options(bTwoWheeler, bHandlebars, Ids);
 				TArray<FString> Names;
 				for (const FName Id : Ids)
 				{
@@ -4962,7 +4963,7 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 		else
 		{
 			OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
-				FString::Printf(TEXT("%s has an Engine Sound, but a pedalled vehicle, a trailer, a boat or an aircraft has none to pick, so it does nothing and is left out of the published vehicle."), *Subject),
+				FString::Printf(TEXT("%s has an Engine Sound, but a pedalled vehicle, a trailer or an aircraft has none to pick, so it does nothing and is left out of the published vehicle."), *Subject),
 				TEXT("Set Engine Sound to None to clear this note.") });
 		}
 	}

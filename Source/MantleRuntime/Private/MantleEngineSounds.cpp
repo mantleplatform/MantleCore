@@ -14,22 +14,20 @@ const TArray<FName>& FMantleEngineSounds::Bike()
 	return Ids;
 }
 
-void FMantleEngineSounds::Options(const int32 WheelCount, const bool bHandlebars, TArray<FName>& OutIds)
+void FMantleEngineSounds::Options(const bool bTwoWheeler, const bool bHandlebars, TArray<FName>& OutIds)
 {
 	OutIds.Reset();
-	if (WheelCount != 2)
+	if (TakesCar(bTwoWheeler))
 	{
 		OutIds.Append(Car());
 	}
-	if (WheelCount == 2 || bHandlebars)
+	if (TakesBike(bTwoWheeler, bHandlebars))
 	{
 		OutIds.Append(Bike());
 	}
 }
 
-bool FMantleEngineSounds::Fits(const FName Id, const int32 WheelCount, const bool bHandlebars)
+bool FMantleEngineSounds::Fits(const FName Id, const bool bTwoWheeler, const bool bHandlebars)
 {
-	TArray<FName> Ids;
-	Options(WheelCount, bHandlebars, Ids);
-	return Ids.Contains(Id);
+	return (TakesCar(bTwoWheeler) && Car().Contains(Id)) || (TakesBike(bTwoWheeler, bHandlebars) && Bike().Contains(Id));
 }

@@ -11,7 +11,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 // engine.sound (#258): the reader takes the engine sound a creator picked as its id (any string: the cook checks it), absent is None (the type's
-// default), and FMantleEngineSounds gives a car a car's engines, a two-wheeler a motorcycle's and a quad with handlebars both, as the cook does.
+// default), and FMantleEngineSounds gives a car or a boat a car's engines, a two-wheeler a motorcycle's and handlebars on more wheels both, as the cook does.
 namespace MantleVehicleEngineSoundDocTestPrivate
 {
 	/** A four-wheel car's document with this engine block; GearRatios one gear for an electric motor. */
@@ -53,17 +53,22 @@ bool FMantleVehicleEngineSoundDocTest::RunTest(const FString&)
 		ReadEngine(TEXT("{\"drive\":\"electric\",\"maxTorque\":377,\"maxRPM\":18447,\"peakPower\":213,\"sound\":\"v8\"}"), D, Error, TEXT("[1.0]")));
 
 	// Which engines a vehicle may pick.
+	TestTrue(TEXT("a wheeled vehicle on two wheels is a two-wheeler"), FMantleEngineSounds::IsTwoWheeler(true, 2));
+	TestFalse(TEXT("a car is not"), FMantleEngineSounds::IsTwoWheeler(true, 4));
+	TestFalse(TEXT("nor is anything not wheeled"), FMantleEngineSounds::IsTwoWheeler(false, 2));
 	TArray<FName> Ids;
-	FMantleEngineSounds::Options(4, false, Ids);
-	TestEqual(TEXT("a car: a car's engines"), Ids, FMantleEngineSounds::Car());
-	FMantleEngineSounds::Options(2, true, Ids);
+	FMantleEngineSounds::Options(/*bTwoWheeler*/ false, /*bHandlebars*/ false, Ids);
+	TestEqual(TEXT("a car or a boat: a car's engines"), Ids, FMantleEngineSounds::Car());
+	FMantleEngineSounds::Options(true, true, Ids);
 	TestEqual(TEXT("a motorcycle: a motorcycle's"), Ids, FMantleEngineSounds::Bike());
-	FMantleEngineSounds::Options(4, true, Ids);
-	TestEqual(TEXT("an ATV: both"), Ids.Num(), FMantleEngineSounds::Car().Num() + FMantleEngineSounds::Bike().Num());
-	TestTrue(TEXT("an ATV takes inline3"), FMantleEngineSounds::Fits(TEXT("inline3"), 4, true));
-	TestTrue(TEXT("an ATV takes bike_inline4"), FMantleEngineSounds::Fits(TEXT("bike_inline4"), 4, true));
-	TestFalse(TEXT("a car does not take bike_vtwin"), FMantleEngineSounds::Fits(TEXT("bike_vtwin"), 4, false));
-	TestFalse(TEXT("a motorcycle does not take v8"), FMantleEngineSounds::Fits(TEXT("v8"), 2, true));
+	FMantleEngineSounds::Options(false, true, Ids);
+	TestEqual(TEXT("an ATV or a jet ski: both"), Ids.Num(), FMantleEngineSounds::Car().Num() + FMantleEngineSounds::Bike().Num());
+	TestTrue(TEXT("an ATV takes inline3"), FMantleEngineSounds::Fits(TEXT("inline3"), false, true));
+	TestTrue(TEXT("an ATV takes bike_inline4"), FMantleEngineSounds::Fits(TEXT("bike_inline4"), false, true));
+	TestFalse(TEXT("a car does not take bike_vtwin"), FMantleEngineSounds::Fits(TEXT("bike_vtwin"), false, false));
+	TestFalse(TEXT("a motorcycle does not take v8"), FMantleEngineSounds::Fits(TEXT("v8"), true, true));
+	TestFalse(TEXT("an unknown id fits nothing"), FMantleEngineSounds::Fits(TEXT("jet_fighter"), false, true));
+	TestTrue(TEXT("a boat picks one"), FMantleEngineSounds::CanPick(true, false, false));
 	TestFalse(TEXT("a pedalled vehicle picks none"), FMantleEngineSounds::CanPick(true, true, false));
 	TestFalse(TEXT("an electric motor picks none"), FMantleEngineSounds::CanPick(true, false, true));
 	TestFalse(TEXT("a plane picks none"), FMantleEngineSounds::CanPick(false, false, false));
