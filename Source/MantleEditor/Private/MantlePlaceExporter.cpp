@@ -3246,7 +3246,8 @@ EMantleSurface FMantlePlaceExporter::MatchSurface(const UPhysicalMaterial* Mater
 	// The game's own by path, or by name, since a creator project has none of the game's: the surface's own asset
 	// name (PM_MantleSurface_Concrete, or a preset's PM_MantleMetal), or the surface's name with or without "PM_" in
 	// front (Concrete, PM_Concrete), in any case. Unlike physics.material there is no guess from other words or
-	// values, since a surface only picks effects and a wrong guess would show the wrong ones everywhere.
+	// values: a surface picks the effects (footsteps, impacts) and how well car tires grip on it (grass and ice
+	// slide, an untagged mesh grips as Default), so a wrong guess would show wrong effects and drive wrong everywhere.
 	const FString Path = Material->GetPathName();
 	const FString Name = Material->GetName();
 	FString Bare = Name;
