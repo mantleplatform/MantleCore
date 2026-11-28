@@ -69,7 +69,7 @@ bool FMantleVehicleEngineSoundConverterTest::RunTest(const FString& Parameters)
 
 	// The shipped presets' sounds are read in; an electric motor and a bicycle have none. One source goes through every preset in turn, so a type
 	// switch leaves no sound of the type before behind.
-	const TPair<const TCHAR*, const TCHAR*> Shipped[] = { { TEXT("sedan"), TEXT("inline4") }, { TEXT("motorcycle"), TEXT("bike_inline4") },
+	const TPair<const TCHAR*, const TCHAR*> Shipped[] = { { TEXT("sedan"), TEXT("racing") }, { TEXT("motorcycle"), TEXT("bike_inline4") },
 		{ TEXT("atv"), TEXT("inline3") }, { TEXT("truck"), TEXT("diesel") }, { TEXT("boat"), TEXT("v8") }, { TEXT("jetski"), TEXT("inline3") },
 		{ TEXT("electric"), TEXT("None") }, { TEXT("bicycle"), TEXT("None") } };
 	UMantleVehicleSource* Switched = NewObject<UMantleVehicleSource>(GetTransientPackage());
