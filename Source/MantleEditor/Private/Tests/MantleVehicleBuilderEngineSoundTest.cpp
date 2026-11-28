@@ -86,13 +86,14 @@ bool FMantleVehicleBuilderEngineSoundTest::RunTest(const FString& Parameters)
 		const FName Own = FMantleVehicleBuilder::PresetEngineSound(*Type);
 		TestTrue(*FString::Printf(TEXT("%s: its own sound (%s) is one of them, or it has none"), List.Key, *Own.ToString()), Own.IsNone() || Ids.Contains(Own));
 	}
-	TestEqual(TEXT("A sedan's own sound"), FMantleVehicleBuilder::PresetEngineSound(*FMantleVehiclePresets::Find(TEXT("sedan"))), FName(TEXT("inline4")));
+	TestEqual(TEXT("A sedan's own sound"), FMantleVehicleBuilder::PresetEngineSound(*FMantleVehiclePresets::Find(TEXT("sedan"))), FName(TEXT("racing")));
 	TestEqual(TEXT("A jet's own sound"), FMantleVehicleBuilder::PresetEngineSound(*FMantleVehiclePresets::Find(TEXT("jet"))), FName(TEXT("aircraft_fighter")));
 	TestEqual(TEXT("A hovercraft's own sound"), FMantleVehicleBuilder::PresetEngineSound(*FMantleVehiclePresets::Find(TEXT("hovercraft"))), FName(TEXT("hovercraft")));
 
 	// Names in plain words.
 	TestEqual(TEXT("v8"), FMantleVehicleBuilder::EngineSoundName(TEXT("v8")), FString(TEXT("V8")));
 	TestEqual(TEXT("inline4"), FMantleVehicleBuilder::EngineSoundName(TEXT("inline4")), FString(TEXT("Inline-4")));
+	TestEqual(TEXT("racing"), FMantleVehicleBuilder::EngineSoundName(TEXT("racing")), FString(TEXT("Racing")));
 	TestEqual(TEXT("flat6"), FMantleVehicleBuilder::EngineSoundName(TEXT("flat6")), FString(TEXT("Flat-6")));
 	TestEqual(TEXT("diesel"), FMantleVehicleBuilder::EngineSoundName(TEXT("diesel")), FString(TEXT("Diesel")));
 	TestEqual(TEXT("bike_vtwin"), FMantleVehicleBuilder::EngineSoundName(TEXT("bike_vtwin")), FString(TEXT("Motorcycle V-twin")));
@@ -137,8 +138,8 @@ bool FMantleVehicleBuilderEngineSoundTest::RunTest(const FString& Parameters)
 	FAccess::PickType(*Panel, TEXT("sedan"), TEXT("Sedan"));
 	TestEqual(TEXT("Sedan: a car's sounds"), FAccess::Ids(*Panel).Num(), CarCount);
 	TestEqual(TEXT("... each with a name"), FAccess::Shown(*Panel), CarCount);
-	TestEqual(TEXT("... starting on its own (Inline-4)"), FAccess::Current(*Panel), FName(TEXT("inline4")));
-	TestTrue(TEXT("... which Build sends"), FAccess::Options(*Panel).EngineSound == TOptional<FName>(FName(TEXT("inline4"))));
+	TestEqual(TEXT("... starting on its own (Racing)"), FAccess::Current(*Panel), FName(TEXT("racing")));
+	TestTrue(TEXT("... which Build sends"), FAccess::Options(*Panel).EngineSound == TOptional<FName>(FName(TEXT("racing"))));
 	FAccess::PickSound(*Panel, TEXT("v8"));
 	TestTrue(TEXT("Picked V8: Build sends V8"), FAccess::Options(*Panel).EngineSound == TOptional<FName>(FName(TEXT("v8"))));
 

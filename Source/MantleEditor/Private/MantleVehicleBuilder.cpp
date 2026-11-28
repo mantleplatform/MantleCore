@@ -1689,7 +1689,7 @@ FString FMantleVehicleBuilder::EngineSoundName(const FName Id)
 	static const TMap<FString, FString> Words = { { TEXT("standard"), TEXT("Standard") }, { TEXT("rotary"), TEXT("Rotary") }, { TEXT("diesel"), TEXT("Diesel") },
 		{ TEXT("vtwin"), TEXT("V-twin") }, { TEXT("highrev"), TEXT("high-rev") }, { TEXT("aircraft_airliner"), TEXT("Airliner") },
 		{ TEXT("aircraft_fighter"), TEXT("Fighter jet") }, { TEXT("aircraft_transport"), TEXT("Transport plane") }, { TEXT("helicopter"), TEXT("Helicopter") },
-		{ TEXT("hovercraft"), TEXT("Hovercraft") } };
+		{ TEXT("hovercraft"), TEXT("Hovercraft") }, { TEXT("racing"), TEXT("Racing") } };
 	FString Text = Id.ToString().ToLower();
 	const bool bBike = Text.RemoveFromStart(TEXT("bike_"));
 	if (const FString* Word = Words.Find(Text))

@@ -15,7 +15,7 @@
  */
 struct MANTLERUNTIME_API FMantleEngineSounds
 {
-	/** A car's engine sounds: standard, rotary, inline3 ... w16, diesel. */
+	/** A car's engine sounds: standard, rotary, inline3 ... w16, diesel, racing. */
 	static const TArray<FName>& Car();
 	/** A motorcycle's engine sounds: bike_vtwin, bike_inline3, bike_inline4, bike_highrev. */
 	static const TArray<FName>& Bike();
