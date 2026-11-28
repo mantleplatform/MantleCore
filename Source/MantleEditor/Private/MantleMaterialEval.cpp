@@ -129,9 +129,9 @@ struct FMantleEmissiveEval::FImpl
 	TMap<const UMaterialExpression*, TSharedPtr<MantleMaterialEvalPrivate::FImage32>> Samples;
 	TSet<int32> UVSets;
 
-	/** Walks the graph once: every node known, parameters and textures read. False with Why (and Unsupported set) at the first node it cannot evaluate. */
+	/** Walks the graph once: every node known, parameters and textures read. False with Why (and OutUnsupported set) at the first node it cannot evaluate. */
 	bool Visit(const FExpressionInput* Input, const UMaterialInterface* Material, const TArray<FName>& SwitchedOn, TSet<const UMaterialExpression*>& Seen,
-		TMap<UTexture*, TSharedPtr<MantleMaterialEvalPrivate::FImage32>>* Images, FString& Why, FString& Unsupported, const int32 Depth)
+		TMap<UTexture*, TSharedPtr<MantleMaterialEvalPrivate::FImage32>>* Images, FString& Why, FString& OutUnsupported, const int32 Depth)
 	{
 		using namespace MantleMaterialEvalPrivate;
 		if (!Input || !Input->Expression)
@@ -196,7 +196,7 @@ struct FMantleEmissiveEval::FImpl
 		{
 			if (Sample->TextureObject.Expression)
 			{
-				Unsupported = TEXT("a texture sample fed by a texture object");
+				OutUnsupported = TEXT("a texture sample fed by a texture object");
 				Why = TEXT("its emissive samples a texture passed in as an object");
 				return false;
 			}
@@ -228,7 +228,7 @@ struct FMantleEmissiveEval::FImpl
 				}
 				Samples.Add(Node, Image);
 			}
-			return Visit(&Sample->Coordinates, Material, SwitchedOn, Seen, Images, Why, Unsupported, Depth + 1);
+			return Visit(&Sample->Coordinates, Material, SwitchedOn, Seen, Images, Why, OutUnsupported, Depth + 1);
 		}
 		const bool bKnown = Node->IsA<UMaterialExpressionReroute>() || Node->IsA<UMaterialExpressionMultiply>() || Node->IsA<UMaterialExpressionAdd>()
 			|| Node->IsA<UMaterialExpressionSubtract>() || Node->IsA<UMaterialExpressionDivide>() || Node->IsA<UMaterialExpressionMax>() || Node->IsA<UMaterialExpressionMin>()
@@ -238,8 +238,8 @@ struct FMantleEmissiveEval::FImpl
 		UMaterialExpression* Mutable = const_cast<UMaterialExpression*>(Node);
 		if (!bKnown)
 		{
-			Unsupported = Node->GetClass()->GetName();
-			Why = FString::Printf(TEXT("its emissive uses a %s node, which Mantle does not work out"), *Unsupported);
+			OutUnsupported = Node->GetClass()->GetName();
+			Why = FString::Printf(TEXT("its emissive uses a %s node, which Mantle does not work out"), *OutUnsupported);
 			if (Images)
 			{
 				return false;
@@ -247,13 +247,13 @@ struct FMantleEmissiveEval::FImpl
 			// Only looking (ReadsUV): on through it, so a second UV set read behind it is still seen and the caller can say why it was not worked out.
 			for (FExpressionInputIterator It{ Mutable }; It; ++It)
 			{
-				Visit(It.Input, Material, SwitchedOn, Seen, Images, Why, Unsupported, Depth + 1);
+				Visit(It.Input, Material, SwitchedOn, Seen, Images, Why, OutUnsupported, Depth + 1);
 			}
 			return true;
 		}
 		for (FExpressionInputIterator It{ Mutable }; It; ++It)
 		{
-			if (!Visit(It.Input, Material, SwitchedOn, Seen, Images, Why, Unsupported, Depth + 1))
+			if (!Visit(It.Input, Material, SwitchedOn, Seen, Images, Why, OutUnsupported, Depth + 1))
 			{
 				return false;
 			}
