@@ -66,6 +66,28 @@ struct MANTLERUNTIME_API FMantleVehicleSourceWheel
 	float RimRadius = 0.f;
 };
 
+/**
+ * A creator's hitch (#446, the document's hitch): what a trailer couples to. The type's own keeps what the vehicle type (its chassis preset) has: a
+ * pickup's, van's, truck's and ATV's tow ball, a semi's fifth wheel, or none. None takes it away; a tow ball or a fifth wheel puts one at Hitch Location.
+ */
+UENUM(BlueprintType)
+enum class EMantleVehicleSourceHitch : uint8
+{
+	Preset UMETA(DisplayName = "The type's own"),
+	None,
+	Ball UMETA(DisplayName = "Tow ball"),
+	FifthWheel UMETA(DisplayName = "Fifth wheel"),
+};
+
+/** A creator's engine induction (#444, engine.induction): none, a turbo or a supercharger. */
+UENUM(BlueprintType)
+enum class EMantleVehicleSourceInduction : uint8
+{
+	None,
+	Turbo,
+	Supercharger
+};
+
 /** A paint layer beyond the primary (the document's paint.layers): a second paint color, the rims, the interior's trim or the dashboard. */
 UENUM(BlueprintType)
 enum class EMantleVehicleSourcePaintLayer : uint8
@@ -348,9 +370,10 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chassis", meta = (ClampMin = "50", ClampMax = "20000", Units = "kg"))
 	float Mass = 1500.f;
 
-	/** Top speed, cm/s. */
+	/** The speed the car is limited to, in cm/s: it can't drive faster than this (its drive fades out just below it). A preset sets its real
+	 *  car's; with none, 12000 (432 km/h), past any car's reach, so a car made without a preset isn't limited. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chassis", meta = (ClampMin = "100", ClampMax = "12000"))
-	float MaxSpeed = 4000.f;
+	float MaxSpeed = 12000.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chassis")
 	bool bOverrideCenterOfMass = false;
@@ -366,36 +389,153 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chassis", meta = (ClampMin = "0", ClampMax = "20"))
 	float FrontalArea = 2.2f;
 
+	/** An electric motor (engine.drive "electric", #445) instead of a combustion engine: full pull from a standstill up to Peak Power / Max Torque,
+	 *  then constant power to Max RPM; no idle or torque curve; one gear (the first Gear Ratio, no shift points); lift-off regenerative braking and a
+	 *  battery that a script-enabled fuel tank stands for. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine")
+	bool bElectric = false;
+
+	/** Nm at the curve's peak; an electric motor's peak torque. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "10", ClampMax = "5000"))
 	float MaxTorque = 400.f;
 
+	/** The engine's redline; an electric motor's top speed. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "1000", ClampMax = "20000"))
 	int32 MaxRPM = 6000;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "300", ClampMax = "5000"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "300", ClampMax = "5000", EditCondition = "!bElectric"))
 	int32 IdleRPM = 900;
 
 	/** (rpm, fraction of Max Torque) points, rpm rising, 2 to 16. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (EditCondition = "!bElectric"))
 	TArray<FVector2D> TorqueCurve = { FVector2D(0.0, 0.6), FVector2D(3000.0, 1.0), FVector2D(6000.0, 0.8) };
+
+	/** kW: an electric motor's peak power (engine.peakPower). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "10", ClampMax = "1500", EditCondition = "bElectric"))
+	float PeakPower = 200.f;
+
+	/** g: how hard an electric car slows its driven wheels with the throttle released (engine.regenBraking), fading out below 15 km/h. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "0", ClampMax = "0.3", EditCondition = "bElectric"))
+	float RegenBraking = 0.15f;
+
+	/** kWh: an electric car's usable battery (engine.batteryCapacity). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "1", ClampMax = "200", EditCondition = "bElectric"))
+	float BatteryCapacity = 60.f;
+
+	/** Traction control (engine.tractionControl): a driven wheel never pushes harder than its tyre's grip, so it does not spin up under power. Part of the car; scripts don't change it. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine")
+	bool bTractionControl = true;
+
+	/** Engine braking with the throttle released (engine.engineBraking): brake torque, Nm, per engine RPM on each driven wheel. 0: none. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "0", ClampMax = "5", EditCondition = "!bElectric"))
+	float EngineBraking = 0.f;
+
+	/** A turbo or a supercharger (engine.induction). With one, Max Torque and the Torque Curve are the engine at full boost (its spec sheet's numbers);
+	 *  below full boost it makes less. A turbo's boost builds with the revs and takes Spool Time to arrive; a supercharger's follows the revs at once. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (EditCondition = "!bElectric"))
+	EMantleVehicleSourceInduction Induction = EMantleVehicleSourceInduction::None;
+
+	/** psi of boost at full throttle from Spool RPM up (engine.maxBoost): the boost the torque curve was measured at. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "0", ClampMax = "40", EditCondition = "Induction != EMantleVehicleSourceInduction::None"))
+	float MaxBoost = 10.f;
+
+	/** rpm full boost arrives at (engine.spoolRPM), above idle and at most Max RPM; the boost builds from idle up to it. For a turbo engine, the start of
+	 *  its published torque plateau. 0: 40% of Max RPM. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "0", ClampMax = "20000", EditCondition = "Induction != EMantleVehicleSourceInduction::None"))
+	int32 SpoolRPM = 0;
+
+	/** Seconds a turbo takes from no boost to full boost with the revs already above Spool RPM: its lag (engine.spoolTime). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (ClampMin = "0.1", ClampMax = "3", EditCondition = "Induction == EMantleVehicleSourceInduction::Turbo"))
+	float SpoolTime = 0.8f;
+	/** The engine's size in cc (engine.displacement, #378), as the vehicle builder's engine pick sets it on a motorcycle. Sound and scripts read it;
+	 *  the driving never does. 0: not given (written only when set). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (EditCondition = "!bElectric", ClampMin = "0", ClampMax = "2500", DisplayName = "Engine Size (cc)"))
+	int32 EngineDisplacement = 0;
+	/** The engine sound (engine.sound, #258): which engine it sounds like, a car's (V8, inline-4, diesel ...) or, on a motorcycle, an ATV or a jet
+	 *  ski, a motorcycle's, or on a plane, a helicopter or a hovercraft an aircraft's (airliner, fighter, transport, helicopter, hovercraft). A turbo or
+	 *  supercharger is heard on top of it from Induction. None: the vehicle type's own (written only when set). A pedalled vehicle, an electric motor
+	 *  and a trailer have none to pick. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Engine", meta = (EditCondition = "!bElectric", EditConditionHides, GetOptions = "GetEngineSoundOptions", DisplayName = "Engine Sound"))
+	FName EngineSound;
+
+	/** A helicopter's level assist (helicopter rotors' stabilityAssist, #380): the stick asks for a lean, letting go levels the helicopter and a slow
+	 *  drift stops by itself. Off: the stick tilts the rotor and the pilot has to level it. Part of the helicopter; scripts don't change it. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Helicopter", meta = (DisplayName = "Level assist"))
+	bool bHelicopterLevelAssist = true;
+
+	/** A helicopter's height hold (helicopter.heightHold, #380): W and S ask for a climb or a descent and letting go holds the height. Off: W and S move
+	 *  the collective lever, which stays where it is left, and sinking straight down too fast drops it into its own downwash. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Helicopter", meta = (DisplayName = "Height hold"))
+	bool bHelicopterHeightHold = true;
+
+	/** A helicopter's yaw assist (helicopter.yawHold, #380): the pedals turn it at a steady rate and changing power never swings the nose. Off: the pedals
+	 *  push the tail and pulling power swings the nose. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Helicopter", meta = (DisplayName = "Yaw assist"))
+	bool bHelicopterYawHold = true;
 
 	/** Forward gears, first gear first, 1 to 8. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission")
 	TArray<float> GearRatios = { 3.2f, 2.1f, 1.4f, 1.0f };
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0.1", ClampMax = "10"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0.1", ClampMax = "10", EditCondition = "!bElectric"))
 	float ReverseRatio = 3.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0.1", ClampMax = "10"))
 	float FinalDrive = 3.5f;
 
 	/** 0: 85% of Max RPM. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0", ClampMax = "20000"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0", ClampMax = "20000", EditCondition = "!bElectric && !bCvt"))
 	int32 ChangeUpRPM = 0;
 
 	/** 0: 40% of Max RPM. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0", ClampMax = "20000"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0", ClampMax = "20000", EditCondition = "!bElectric && !bCvt"))
 	int32 ChangeDownRPM = 0;
+
+	/** Seconds each gear change takes (transmission.shiftTime), with no drive while it shifts. 0.5 is Epic's default. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0.05", ClampMax = "2", EditCondition = "!bElectric && !bCvt"))
+	float ShiftTime = 0.5f;
+
+	/**
+	 * A belt drive (transmission.cvt, as on ATVs and scooters): the engine holds Belt Held RPM at full throttle while the belt slides from its low ratio
+	 * to its high one, and it never shifts. Gear Ratios then has one entry, the box after the belt (times Final Drive); Change Up/Down RPM and Shift Time
+	 * aren't used. Combustion engines only.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (EditCondition = "!bElectric", DisplayName = "Belt Drive (CVT)"))
+	bool bCvt = false;
+
+	/** The belt's ratio pulling away (the most pull). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "1.5", ClampMax = "6", EditCondition = "bCvt && !bElectric", DisplayName = "Belt Low Ratio"))
+	float CvtLowRatio = 3.1f;
+
+	/** The belt's ratio at speed, below the low one. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0.3", ClampMax = "1.5", EditCondition = "bCvt && !bElectric", DisplayName = "Belt High Ratio"))
+	float CvtHighRatio = 0.75f;
+
+	/** The rpm the engine holds at full throttle while the belt shifts (usually its power peak). Above idle, at most Max RPM. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "1000", ClampMax = "20000", EditCondition = "bCvt && !bElectric", DisplayName = "Belt Held RPM"))
+	int32 CvtShiftRPM = 6500;
+	/** A transfer case's low range (transmission.lowRange, #376 off-road): this ratio times the final drive while the driver has low range in (G, or
+	 *  Back + D-pad Up). 0: none. Not on an electric car. The Jeep Wrangler Rubicon's is 4.0. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission", meta = (ClampMin = "0", ClampMax = "6", EditCondition = "!bElectric"))
+	float LowRange = 0.f;
+
+	/** The front axle's differential (transmission.differentials.front, #376 off-road). None: Mantle's equal split. Selectable: open until the driver
+	 *  locks it (K, or Back + D-pad Right). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission")
+	EMantleVehicleDifferential FrontDifferential = EMantleVehicleDifferential::None;
+
+	/** A limited-slip front differential's torque bias ratio (an Eaton Truetrac's is up to 3.5). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission",
+		meta = (ClampMin = "1.5", ClampMax = "10", EditCondition = "FrontDifferential == EMantleVehicleDifferential::LimitedSlip"))
+	float FrontDifferentialBias = 3.5f;
+
+	/** Every other axle's differential (transmission.differentials.rear). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission")
+	EMantleVehicleDifferential RearDifferential = EMantleVehicleDifferential::None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transmission",
+		meta = (ClampMin = "1.5", ClampMax = "10", EditCondition = "RearDifferential == EMantleVehicleDifferential::LimitedSlip"))
+	float RearDifferentialBias = 3.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Suspension", meta = (ClampMin = "0", ClampMax = "50", Units = "cm"))
 	float SuspensionMaxRaise = 10.f;
@@ -406,10 +546,12 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Suspension", meta = (ClampMin = "1", ClampMax = "5000"))
 	float SpringRate = 250.f;
 
+	/** Kept in the format but has no effect: the physics engine ignores spring preload. Each wheel's spring follows the weight it carries instead. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Suspension", meta = (ClampMin = "0", ClampMax = "5000"))
 	float SpringPreload = 50.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Suspension", meta = (ClampMin = "0", ClampMax = "1"))
+	/** The dampers' strength, an absolute (a heavy vehicle needs more than a light one for the same damping ratio): 0-5 (#376 step 9). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Suspension", meta = (ClampMin = "0", ClampMax = "5"))
 	float SpringDamping = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Steering", meta = (ClampMin = "5", ClampMax = "70", Units = "deg"))
@@ -431,6 +573,14 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Brakes", meta = (ClampMin = "0", ClampMax = "20000"))
 	float HandbrakeTorque = 3000.f;
 
+	/** Anti-lock brakes (brakes.abs): a braked wheel holds at its tyre's grip instead of locking. The handbrake still locks its wheels. Part of the car; scripts don't change it. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Brakes", meta = (DisplayName = "ABS"))
+	bool bABS = true;
+
+	/** Brake balance (brakes.frontShare): the share of the total brake torque (Brake Torque x the wheel count) on the steered wheels; the rest is on the others. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Brakes", meta = (ClampMin = "0", ClampMax = "1"))
+	float BrakeFrontShare = 0.65f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tires", meta = (ClampMin = "0.1", ClampMax = "5"))
 	float TireFriction = 2.f;
 
@@ -440,6 +590,29 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tires", meta = (EditCondition = "bTireRearFriction", ClampMin = "0.1", ClampMax = "10"))
 	float TireRearFriction = 2.f;
+
+	/** How much every wheel loses to rolling (tires.rollingResistance, #448, shared with #447): a car tyre's 0.012, which its absence means; a track's road wheels 0.04. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tires", meta = (ClampMin = "0.002", ClampMax = "0.05"))
+	float TireRollingResistance = 0.012f;
+
+	/** #447: the rider pedals it (the document's pedal block, set by a pedalled preset such as the Bicycle): the rider is its engine. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pedal", meta = (DisplayName = "Pedalled"))
+	bool bPedal = false;
+	/** W the rider holds at full effort (a fit rider ~250). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pedal", meta = (EditCondition = "bPedal", ClampMin = "50", ClampMax = "600", DisplayName = "Rider Power (W)"))
+	float PedalRiderPower = 250.f;
+	/** W while sprinting, standing on the pedals (at least the rider power). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pedal", meta = (EditCondition = "bPedal", ClampMin = "100", ClampMax = "2500", DisplayName = "Sprint Power (W)"))
+	float PedalSprintPower = 900.f;
+	/** kJ of effort above the rider power a full sprint holds; 0: no sprint. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pedal", meta = (EditCondition = "bPedal", ClampMin = "0", ClampMax = "60", DisplayName = "Sprint Reserve (kJ)"))
+	float PedalSprintReserve = 15.f;
+	/** rpm where the rider's push runs out. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pedal", meta = (EditCondition = "bPedal", ClampMin = "60", ClampMax = "300", DisplayName = "Max Cadence (rpm)"))
+	float PedalMaxCadence = 200.f;
+	/** rpm the gears shift to hold (at least 20 under the max cadence). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pedal", meta = (EditCondition = "bPedal", ClampMin = "40", ClampMax = "150", DisplayName = "Cadence (rpm)"))
+	float PedalCadence = 85.f;
 
 	/** For a model with no inside: the driver isn't drawn while driving, so only the vehicle shows. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Seat", meta = (DisplayName = "Hide the driver"))
@@ -597,6 +770,22 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Camera", meta = (ClampMin = "0", ClampMax = "1000", Units = "cm"))
 	float CameraHeight = 150.f;
+
+	/**
+	 * Its hitch (#446), what a trailer couples to: the type's own (a pickup's tow ball, a semi's fifth wheel, or none), none, a tow ball (a small
+	 * trailer's) or a fifth wheel (a semi trailer's). Only a wheeled or tracked vehicle tows: a plane, helicopter, hovercraft, boat or trailer has none.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Towing")
+	EMantleVehicleSourceHitch Hitch = EMantleVehicleSourceHitch::Preset;
+
+	/**
+	 * Where the hitch is: the ball's top, or the fifth wheel's top at its kingpin hole, cm in the body's space (X forward, Z up), each within
+	 * -1000 to 1000. The vehicle builder puts it at the rear centre when you choose a kind; a trailer's coupler must reach it, so a tow ball sits
+	 * about 50 cm and a fifth wheel about 120 cm above the ground.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Towing",
+		meta = (EditCondition = "Hitch == EMantleVehicleSourceHitch::Ball || Hitch == EMantleVehicleSourceHitch::FifthWheel"))
+	FVector HitchLocation = FVector::ZeroVector;
 
 	/** The chassis as up to 8 boxes. Empty: one box around the body's geometry that no wheel bone carries. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Collision")
@@ -887,11 +1076,25 @@ public:
 	FName Preset;
 
 	/**
+	 * The engine picked inside the preset (#378: a motorcycle's "125", "300", "600", "1000" or "1800"), whose numbers the vehicle started from.
+	 * None for a type without engines. Picking another engine in the vehicle builder starts again from that engine's numbers.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vehicle")
+	FName PresetEngine;
+
+	/**
 	 * The uniform size applied to the whole vehicle on export so the Mantle character fits it. The vehicle builder proposes it
 	 * from the preset; the creator may change it. 1 is as modeled.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vehicle", meta = (ClampMin = 0.25, ClampMax = 4.0, DisplayName = "Size"))
 	float FitScale = 1.f;
+
+	/**
+	 * Which axles a vehicle built from a type drives (#376 off-road follow-on): the type's own, or front, rear or all-wheel drive. The builder writes
+	 * the wheels' Driven from it on every build, so a rebuild keeps it; a type where the drive isn't a choice (bikes, aircraft, hovercraft) ignores it.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vehicle")
+	EMantleVehicleDrive Drive = EMantleVehicleDrive::Type;
 
 	/** 2 to 8 wheels, each on a bone of the body. At least one steers and one is driven. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vehicle")
@@ -924,7 +1127,8 @@ public:
 	TArray<FMantleVehicleSourcePart> Parts;
 
 	/**
-	 * Which simulation builds it: wheeled for a car, truck, six-wheeler or motorcycle, plane for a plane or jet, helicopter, or hover. Anything but
+	 * Which simulation builds it: wheeled for a car, truck, six-wheeler or motorcycle, plane for a plane or jet, helicopter, hover, or boat (a boat or a jet
+	 * ski). Anything but
 	 * wheeled also needs its block in MovementBlocks. Written into the document as movementType (FMantleVehicleChassisDocument::MergeSource).
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement")
@@ -938,7 +1142,7 @@ public:
 	EMantleVehicleSeatKind PassengerSeatKind = EMantleVehicleSeatKind::Car;
 
 	/**
-	 * The movement numbers a document carries, as the JSON object text they have in it: a top-level flight, helicopter or hover block,
+	 * The movement numbers a document carries, as the JSON object text they have in it: a top-level flight, helicopter, hover or boat block,
 	 * and seat (exitSideDistance, rider) and camera (boomLocation) with only those keys. Flat numbers in the body's space at the reference pose, never a
 	 * preset id. FMantleVehicleChassisDocument::MovementBlocksJson makes it from a chassis spec; empty for a wheeled vehicle with no rider fit.
 	 */
@@ -951,4 +1155,15 @@ public:
 	 */
 	UPROPERTY()
 	TArray<uint8> ThumbnailPng;
+
+	/** Whether this vehicle has an engine sound to pick (#258, FMantleEngineSounds::CanPick): wheeled, tracked or a boat, combustion, not pedalled; or a
+	 *  plane, a helicopter or a hovercraft. */
+	bool CanPickEngineSound() const;
+	/** A plane, a helicopter or a hovercraft: it takes an aircraft's engine sounds only (FMantleEngineSounds::TakesAircraft). */
+	bool IsFlier() const;
+
+	/** Tuning.EngineSound's dropdown (#258): None (the type's own sound), then the engine sounds FMantleEngineSounds gives this vehicle, a motorcycle's on
+	 *  two wheels and on an ATV's handlebars, an aircraft's on a flier. Only None for a vehicle that has none to pick. */
+	UFUNCTION()
+	TArray<FName> GetEngineSoundOptions() const;
 };

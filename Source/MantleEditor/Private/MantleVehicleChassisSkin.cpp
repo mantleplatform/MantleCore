@@ -495,12 +495,19 @@ namespace MantleVehicleChassisSkinPrivate
 			FString Side;
 			if (Rest.Split(TEXT("_"), &Axle, &Side))
 			{
-				return FText::FromString(FString::Printf(TEXT("%s wheel, axle %s"), Side == TEXT("l") ? TEXT("Left") : TEXT("Right"), *Axle));
+				// A tracked vehicle's axles are its road-wheel pairs, counted from the front along each track.
+				return FText::FromString(Spec.Tracked.bSet
+					? FString::Printf(TEXT("%s road wheel %s (from the front)"), Side == TEXT("l") ? TEXT("Left") : TEXT("Right"), *Axle)
+					: FString::Printf(TEXT("%s wheel, axle %s"), Side == TEXT("l") ? TEXT("Left") : TEXT("Right"), *Axle));
 			}
 		}
 		if (Bone.StartsWith(TEXT("fork")))
 		{
 			return FText::FromString(TEXT("Front fork (turns when you steer)"));
+		}
+		if (Bone == TEXT("handlebar"))
+		{
+			return FText::FromString(TEXT("Handlebar (turns when you steer)"));
 		}
 		if (Bone == TEXT("aileron_l"))
 		{
@@ -548,7 +555,7 @@ namespace MantleVehicleChassisSkinPrivate
 		case EMantleVehiclePartKind::Wheel:
 			return FText::FromString(TEXT("Spins as the vehicle rolls."));
 		case EMantleVehiclePartKind::Fork:
-			return FText::FromString(TEXT("Turns the front wheel with the steering."));
+			return FText::FromString(TEXT("Turns with the steering."));
 		case EMantleVehiclePartKind::Spinner:
 			return FText::FromString(TEXT("Spins while the vehicle has a driver."));
 		default:
@@ -730,7 +737,179 @@ bool FMantleVehicleModel::Read(UObject* Asset, FMantleVehicleModel& Out, FString
 		OutError = FString::Printf(TEXT("%s has no geometry to read."), *Asset->GetName());
 		return false;
 	}
+	CleanNonFinite(Out, Out.Notes);
 	return true;
+}
+
+int32 FMantleVehicleModel::CleanNonFinite(FMantleVehicleModel& Model, TArray<FString>& OutNotes)
+{
+	FMantleSkinnedMeshLOD& LOD = Model.LOD;
+	const int32 NumVertices = LOD.Positions.Num();
+	const int32 NumIndices = LOD.Indices.Num() - LOD.Indices.Num() % 3;
+	const auto Finite2 = [](const FVector2f& V) { return FMath::IsFinite(V.X) && FMath::IsFinite(V.Y); };
+	const auto Finite3 = [](const FVector3f& V) { return FMath::IsFinite(V.X) && FMath::IsFinite(V.Y) && FMath::IsFinite(V.Z); };
+	TBitArray<> BadUV(false, NumVertices);
+	TBitArray<> BadNormal(false, NumVertices);
+
+	// Each UV channel: a bad UV takes a good one from another corner of a triangle it is in; a pass can give the next one, so a few passes reach a fan of them.
+	TArray<TArray<FVector2f>*> Channels = { &LOD.UVs };
+	for (TArray<FVector2f>& Extra : Model.ExtraUVs)
+	{
+		Channels.Add(&Extra);
+	}
+	for (TArray<FVector2f>* Channel : Channels)
+	{
+		if (Channel->Num() != NumVertices)
+		{
+			continue;
+		}
+		TBitArray<> Bad(false, NumVertices);
+		int32 Left = 0;
+		for (int32 Vertex = 0; Vertex < NumVertices; ++Vertex)
+		{
+			if (!Finite2((*Channel)[Vertex]))
+			{
+				Bad[Vertex] = true;
+				BadUV[Vertex] = true;
+				++Left;
+			}
+		}
+		for (int32 Pass = 0; Pass < 4 && Left > 0; ++Pass)
+		{
+			for (int32 At = 0; At < NumIndices; At += 3)
+			{
+				for (int32 Corner = 0; Corner < 3; ++Corner)
+				{
+					const uint32 Vertex = LOD.Indices[At + Corner];
+					if (Vertex >= static_cast<uint32>(NumVertices) || !Bad[Vertex])
+					{
+						continue;
+					}
+					for (int32 Other = 1; Other < 3; ++Other)
+					{
+						const uint32 From = LOD.Indices[At + (Corner + Other) % 3];
+						if (From < static_cast<uint32>(NumVertices) && !Bad[From])
+						{
+							(*Channel)[Vertex] = (*Channel)[From];
+							Bad[Vertex] = false;
+							--Left;
+							break;
+						}
+					}
+				}
+			}
+		}
+		for (int32 Vertex = 0; Vertex < NumVertices && Left > 0; ++Vertex)
+		{
+			if (Bad[Vertex])
+			{
+				(*Channel)[Vertex] = FVector2f::ZeroVector;
+				--Left;
+			}
+		}
+	}
+
+	// Normals: the area-weighted normal of the vertex's triangles (a zero-area one adds nothing).
+	if (LOD.Normals.Num() == NumVertices)
+	{
+		TArray<FVector3f> Sum;
+		for (int32 Vertex = 0; Vertex < NumVertices; ++Vertex)
+		{
+			if (!Finite3(LOD.Normals[Vertex]))
+			{
+				BadNormal[Vertex] = true;
+			}
+		}
+		if (BadNormal.Contains(true))
+		{
+			Sum.Init(FVector3f::ZeroVector, NumVertices);
+			for (int32 At = 0; At < NumIndices; At += 3)
+			{
+				const uint32 A = LOD.Indices[At], B = LOD.Indices[At + 1], C = LOD.Indices[At + 2];
+				if (A >= static_cast<uint32>(NumVertices) || B >= static_cast<uint32>(NumVertices) || C >= static_cast<uint32>(NumVertices))
+				{
+					continue;
+				}
+				const FVector3f Face = FVector3f::CrossProduct(LOD.Positions[B] - LOD.Positions[A], LOD.Positions[C] - LOD.Positions[A]);
+				if (Finite3(Face))
+				{
+					Sum[A] += Face;
+					Sum[B] += Face;
+					Sum[C] += Face;
+				}
+			}
+			for (int32 Vertex = 0; Vertex < NumVertices; ++Vertex)
+			{
+				if (BadNormal[Vertex])
+				{
+					const FVector3f Normal = Sum[Vertex].GetSafeNormal();
+					LOD.Normals[Vertex] = Normal.IsZero() ? FVector3f::UpVector : Normal;
+				}
+			}
+		}
+	}
+	// Tangents: one square to the (now good) normal.
+	int32 BadTangents = 0;
+	if (LOD.Tangents.Num() == NumVertices)
+	{
+		for (int32 Vertex = 0; Vertex < NumVertices; ++Vertex)
+		{
+			const FVector4f& T = LOD.Tangents[Vertex];
+			if (FMath::IsFinite(T.X) && FMath::IsFinite(T.Y) && FMath::IsFinite(T.Z) && FMath::IsFinite(T.W))
+			{
+				continue;
+			}
+			const FVector3f Normal = LOD.Normals.IsValidIndex(Vertex) ? LOD.Normals[Vertex] : FVector3f::UpVector;
+			const FVector3f Axis = FMath::Abs(Normal.X) < 0.9f ? FVector3f(1.0f, 0.0f, 0.0f) : FVector3f(0.0f, 1.0f, 0.0f);
+			const FVector3f Tangent = (Axis - Normal * FVector3f::DotProduct(Axis, Normal)).GetSafeNormal();
+			LOD.Tangents[Vertex] = FVector4f(Tangent.IsZero() ? Axis : Tangent, 1.0f);
+			++BadTangents;
+		}
+	}
+
+	// The notes, per section (the vertices its triangles use), in plain words.
+	int32 Changed = 0;
+	for (int32 Vertex = 0; Vertex < NumVertices; ++Vertex)
+	{
+		Changed += (BadUV[Vertex] || BadNormal[Vertex]) ? 1 : 0;
+	}
+	if (Changed == 0)
+	{
+		if (BadTangents > 0)
+		{
+			OutNotes.Add(FString::Printf(TEXT("%d of %s's vertices had a tangent that was not a number; Mantle set new ones."), BadTangents, *Model.Name));
+		}
+		return BadTangents;
+	}
+	for (const FMantleSkinnedMeshSection& Section : LOD.Sections)
+	{
+		TSet<uint32> UVs, Normals;
+		for (int32 At = Section.FirstIndex; At < Section.FirstIndex + Section.IndexCount && At < NumIndices; ++At)
+		{
+			const uint32 Vertex = LOD.Indices[At];
+			if (Vertex < static_cast<uint32>(NumVertices))
+			{
+				if (BadUV[Vertex]) UVs.Add(Vertex);
+				if (BadNormal[Vertex]) Normals.Add(Vertex);
+			}
+		}
+		if (UVs.Num() == 0 && Normals.Num() == 0)
+		{
+			continue;
+		}
+		const FString Name = !Section.MaterialName.IsNone() ? Section.MaterialName.ToString()
+			: Model.Materials.IsValidIndex(Section.MaterialIndex) ? Model.Materials[Section.MaterialIndex].MaterialSlotName.ToString() : FString::FromInt(Section.MaterialIndex);
+		if (UVs.Num() > 0)
+		{
+			OutNotes.Add(FString::Printf(TEXT("%d vertices of %s's '%s' had texture coordinates too large to store (a broken UV in the source file, often in the millions), so they read as infinite. Mantle gave each the UV of a corner beside it; fix that section's UVs in the source file to keep its texture exact there."),
+				UVs.Num(), *Model.Name, *Name));
+		}
+		if (Normals.Num() > 0)
+		{
+			OutNotes.Add(FString::Printf(TEXT("%d vertices of %s's '%s' had a normal that was not a number; Mantle set each from the triangles around it."), Normals.Num(), *Model.Name, *Name));
+		}
+	}
+	return Changed + BadTangents;
 }
 
 FString FMantleVehicleModel::Describe() const
@@ -778,15 +957,17 @@ TArray<FMantleVehiclePartSlot> FMantleVehicleChassisSkin::PartSlots(const FMantl
 		Slot.ChassisBone = Chassis.Bones[Bone].Name;
 		if (Name.StartsWith(TEXT("wheel_")))
 		{
-			// A helicopter's skids and a hovercraft's pads are the chassis's, never drawn, so there is no wheel to assign.
+			// A helicopter's skids and a hovercraft's pads are the chassis's, never drawn, so there is no wheel to assign. A tracked vehicle's road wheels are drawn:
+			// each is a wheel slot.
 			if (bHiddenWheels)
 			{
 				continue;
 			}
 			Slot.Kind = EMantleVehiclePartKind::Wheel;
 		}
-		else if (Name.StartsWith(TEXT("fork")))
+		else if (Name.StartsWith(TEXT("fork")) || Name == FMantleVehicleChassisBuilder::HandlebarBoneName().ToString())
 		{
+			// A bike's fork, or a quad's handlebar (#376 step 9d): it turns with the steering and its part stays where the model has it.
 			Slot.Kind = EMantleVehiclePartKind::Fork;
 		}
 		else if (Name.StartsWith(TEXT("aileron")) || Name == TEXT("elevator") || Name == TEXT("rudder"))
@@ -891,8 +1072,13 @@ FMantleVehicleModelMap FMantleVehicleChassisSkin::SuggestMap(const TConstArrayVi
 		Pair(SlotByName(TEXT("rudder")), nullptr, nullptr, Bones([](const FString& Name) { return Has(Name, TEXT("rudder")); }), TArray<int32>());
 		Pair(nullptr, SlotByName(TEXT("aileron_l")), SlotByName(TEXT("aileron_r")), Bones([](const FString& Name) { return Has(Name, TEXT("aileron")); }), TArray<int32>());
 
+		// A quad's handlebar (#376 step 9d): a bone called a handlebar, or a steering bar.
+		Pair(SlotByName(TEXT("handlebar")), nullptr, nullptr, Bones([](const FString& Name)
+			{ return Has(Name, TEXT("handlebar")) || Has(Name, TEXT("handle_bar")) || (Has(Name, TEXT("steer")) && Has(Name, TEXT("bar"))); }), TArray<int32>());
+
 		// A front fork: a bone called a fork, or the front suspension.
-		if (const FMantleVehiclePartSlot* Fork = Slots.FindByPredicate([](const FMantleVehiclePartSlot& Slot) { return Slot.Kind == EMantleVehiclePartKind::Fork; }))
+		if (const FMantleVehiclePartSlot* Fork = Slots.FindByPredicate([](const FMantleVehiclePartSlot& Slot)
+			{ return Slot.Kind == EMantleVehiclePartKind::Fork && Slot.ChassisBone.ToString().StartsWith(TEXT("fork")); }))
 		{
 			const TArray<int32> Forks = Bones([](const FString& Name) { return Has(Name, TEXT("fork")) || (Has(Name, TEXT("susp")) && (Name.EndsWith(TEXT("_f")) || Has(Name, TEXT("front")))); });
 			if (Forks.Num() == 1)
@@ -1275,7 +1461,7 @@ FMantleVehicleModelPlacement FMantleVehicleChassisSkin::FitPlacement(const FMant
 	}
 	else if (WheelFloor < TNumericLimits<double>::Max() && FMantleVehicleShape::UsesSize(Spec))
 	{
-		// A plane with its wheels assigned stands on them.
+		// A plane, or a tracked vehicle, with its wheels assigned stands on them.
 		Floor = WheelFloor;
 	}
 	Placement.Offset = FVector(GrayCenter.X - Center.X, GrayCenter.Y - Center.Y, -Floor);
@@ -1954,15 +2140,23 @@ FMantleVehicleSkinnedHinge FMantleVehicleChassisSkin::HingeFor(const EMantleVehi
 	{
 		// The trunk turns about its front edge, at the top; someone behind the car opens it. A tailgate whose bone sits at one side edge, not at its top (a Jeep's
 		// swing-out gate with the spare wheel), turns on an upright axis through the bone instead, swinging out away from the car's middle as a door does: hinged on
-		// the -Y side it turns about +Z, on the +Y side about -Z.
+		// the -Y side it turns about +Z, on the +Y side about -Z. An upright tailgate (taller than it is deep) whose bone sits at its bottom edge, not at a side or
+		// its top (a pickup's drop-down gate, the FiveM F-150's), turns about -Y through the bone, so its top swings back and down, out of the bed. A flat lid keeps the lift
+		// whatever its bone's height: its few cm of height put any bone near its bottom.
 		const FVector Size = Box.GetSize();
 		const bool bAtMinY = BonePosition && BoneAtEdge(BonePosition->Y, Box.Min.Y, Size.Y);
 		const bool bAtMaxY = BonePosition && BoneAtEdge(BonePosition->Y, Box.Max.Y, Size.Y);
 		const bool bAtTop = BonePosition && BoneAtEdge(BonePosition->Z, Box.Max.Z, Size.Z);
+		const bool bAtBottom = BonePosition && Size.Z > Size.X && BoneAtEdge(BonePosition->Z, Box.Min.Z, Size.Z);
 		if ((bAtMinY != bAtMaxY) && !bAtTop)
 		{
 			Out.Pivot = *BonePosition;
 			Out.Axis = FVector(0.0, 0.0, bAtMinY ? 1.0 : -1.0);
+		}
+		else if (bAtBottom && !bAtTop)
+		{
+			Out.Pivot = *BonePosition;
+			Out.Axis = FVector(0.0, -1.0, 0.0);
 		}
 		else
 		{

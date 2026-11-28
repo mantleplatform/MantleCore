@@ -19,6 +19,7 @@
 #include "MantleVehicleChassisDocument.h"
 #include "MantleVehicleShape.h"
 #include "MantleVehicleSource.h"
+#include "MantleEngineSounds.h"
 
 #include "Algo/AllOf.h"
 #include "Algo/AnyOf.h"
@@ -53,6 +54,8 @@
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "ReferenceSkeleton.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
 #include "Sound/SoundBase.h"
 #include "UObject/Package.h"
 
@@ -91,6 +94,26 @@ namespace MantleVehicleConverterPrivate
 			Out[Joint] = Parent >= 0 && Parent < Joint ? Mesh.Joints[Joint].Local * Out[Parent] : Mesh.Joints[Joint].Local;
 		}
 		return Out;
+	}
+
+	/**
+	 * A tracked vehicle's tracks as its Movement Blocks hold them (#448): the tracked block's numbers, each absent one the document's default. False when the
+	 * blocks do not read or have no tracked block with the tracks' width (which a document must give).
+	 */
+	bool VehicleTrackedBlock(const UMantleVehicleSource& Source, FMantleVehicleTrackedDesc& Out)
+	{
+		Out = FMantleVehicleTrackedDesc();
+		TSharedPtr<FJsonObject> Blocks;
+		const TSharedPtr<FJsonObject>* Tracked = nullptr;
+		if (Source.MovementBlocks.IsEmpty() || !FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Source.MovementBlocks), Blocks) || !Blocks.IsValid()
+			|| !Blocks->TryGetObjectField(TEXT("tracked"), Tracked) || !Tracked || !Tracked->IsValid())
+		{
+			return false;
+		}
+		(*Tracked)->TryGetNumberField(TEXT("pivotTrackSpeed"), Out.PivotTrackSpeed);
+		(*Tracked)->TryGetNumberField(TEXT("lateralShare"), Out.LateralShare);
+		(*Tracked)->TryGetNumberField(TEXT("padPitch"), Out.PadPitch);
+		return (*Tracked)->TryGetNumberField(TEXT("trackWidth"), Out.TrackWidth);
 	}
 
 	/** 0.3 as "0.3": rounded to 4 decimals, trailing zeros dropped, so the same vehicle always writes the same bytes. */
@@ -295,6 +318,15 @@ namespace MantleVehicleConverterPrivate
 		const FMantleVehiclePreset* Previous;
 	};
 
+	/**
+	 * Value below Lo or above Hi, past float rounding: the tuning stores floats, so a preset value on a range's edge that a float cannot
+	 * hold exactly (the jet's drag coefficient 0.6 is 0.6000000238 as a float) is still on the edge. One part in a million of the bound.
+	 */
+	bool VehicleOutside(double Value, double Lo, double Hi)
+	{
+		return Value < Lo - 1.0e-6 * FMath::Max(1.0, FMath::Abs(Lo)) || Value > Hi + 1.0e-6 * FMath::Max(1.0, FMath::Abs(Hi));
+	}
+
 	/** Holds Value to limits.json's range at Path, and to the preset's narrower one when a preset applies; an error naming What (and the source) when it is outside. */
 	void VehicleCheckRange(const FString& Subject, const FString& What, const FString& Path, double Value, TArray<FMantleValidationIssue>& OutIssues)
 	{
@@ -304,7 +336,7 @@ namespace MantleVehicleConverterPrivate
 		{
 			return;
 		}
-		if (!FMath::IsFinite(Value) || Value < Min || Value > Max)
+		if (!FMath::IsFinite(Value) || VehicleOutside(Value, Min, Max))
 		{
 			OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, FString(),
 				FString::Printf(TEXT("%s: %s is %s, outside what a vehicle may have (%s to %s)."), *Subject, *What,
@@ -313,7 +345,7 @@ namespace MantleVehicleConverterPrivate
 			return;
 		}
 		FVector2D Narrow;
-		if (GVehicleCheckPreset && FMantleVehiclePresets::RangeFor(*GVehicleCheckPreset, Path, Narrow) && (Value < Narrow.X || Value > Narrow.Y))
+		if (GVehicleCheckPreset && FMantleVehiclePresets::RangeFor(*GVehicleCheckPreset, Path, Narrow) && VehicleOutside(Value, Narrow.X, Narrow.Y))
 		{
 			OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, FString(),
 				FString::Printf(TEXT("%s: %s is %s, but a %s allows %s to %s."), *Subject, *What, *VehicleNumberText(Value),
@@ -1434,12 +1466,16 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 
 	FString WheelsHow;
 	const TArray<FMantleVehicleWheelBone> Wheels = FindWheelBones(Skeleton, Around.WheelSetups, &WheelsHow);
-	if (Wheels.Num() < FMantleVehicleLimits::MinWheels || Wheels.Num() > FMantleVehicleLimits::MaxWheels)
+	// A tracked vehicle's wheels are its road wheels (#448): 3 to 10 on each side, none of them steered, so it has more than a car and no front to steer with.
+	const bool bTracked = Source.MovementType == EMantleVehicleMovementKind::Tracked;
+	const int32 MinWheelCount = bTracked ? 2 * FMantleVehicleLimits::MinTrackRoadWheelsPerSide : FMantleVehicleLimits::MinWheels;
+	const int32 MaxWheelCount = bTracked ? FMantleVehicleLimits::MaxTrackedWheels : FMantleVehicleLimits::MaxWheels;
+	if (Wheels.Num() < MinWheelCount || Wheels.Num() > MaxWheelCount)
 	{
 		Result.Problems.Add(FString::Printf(TEXT("%s has %d wheels (%s), but a vehicle has %d to %d. Name each wheel so its name contains \"wheel\" and its corner, such as Wheel_FL, Wheel_FR, Wheel_BL and Wheel_BR (_ML/_MR for a middle axle), FLWheel or wheel_front_l and wheel_rear_r, and re-import it."),
-			*Name, Wheels.Num(), *VehicleBoneList(Wheels), FMantleVehicleLimits::MinWheels, FMantleVehicleLimits::MaxWheels));
+			*Name, Wheels.Num(), *VehicleBoneList(Wheels), MinWheelCount, MaxWheelCount));
 	}
-	else if (!Wheels.ContainsByPredicate([](const FMantleVehicleWheelBone& Wheel) { return Wheel.Axle == 0; }))
+	else if (!bTracked && !Wheels.ContainsByPredicate([](const FMantleVehicleWheelBone& Wheel) { return Wheel.Axle == 0; }))
 	{
 		Result.Problems.Add(FString::Printf(TEXT("%s has no front wheels to steer with (the wheels found: %s). Name the front wheels so their names end in _FL and _FR, and re-import it."),
 			*Name, *VehicleBoneList(Wheels)));
@@ -1558,6 +1594,13 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 			Entry.bSteering = Wheel.Axle == 0;
 			Entry.bDriven = Wheel.Axle > 0 || !bHasBack;
 			Entry.bHandbrake = LastAxle > 0 && Wheel.Axle == LastAxle;
+		}
+		if (bTracked)
+		{
+			// A road wheel: never steered, driven by its belt and locked with its track by the handbrake, whatever was set before.
+			Entry.bSteering = false;
+			Entry.bDriven = true;
+			Entry.bHandbrake = true;
 		}
 		Entry.Bone = Wheel.Bone;
 		NewWheels.Add(Entry);
@@ -3879,6 +3922,7 @@ const UMantleVehicleSource* FMantleVehicleConverter::MakeExportView(const UMantl
 	T.RearLeftDoorStand = Longer(T.RearLeftDoorStand);
 	Hinge(T.RearRightDoor);
 	T.RearRightDoorStand = Longer(T.RearRightDoorStand);
+	T.HitchLocation = Longer(T.HitchLocation);
 	Seat(T.DriverContacts);
 	Seat(T.PassengerContacts);
 	for (FMantleVehicleSourceBox& Box : T.Collision)
@@ -3902,6 +3946,11 @@ const UMantleVehicleSource* FMantleVehicleConverter::MakeExportView(const UMantl
 		Part.Transform = Placed;
 	}
 	return View;
+}
+
+int32 FMantleVehicleConverter::SpoolRPMFor(const FMantleVehicleSourceTuning& Tuning)
+{
+	return Tuning.SpoolRPM > 0 ? Tuning.SpoolRPM : FMath::RoundToInt(Tuning.MaxRPM * 0.4f);
 }
 
 TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehicleSource& Authored, const TMap<FString, FString>& SectionMaterialIds, FString* OutError)
@@ -3929,16 +3978,57 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 	Doc->SetField(TEXT("frontalArea"), VehicleNumber(T.FrontalArea));
 
 	TSharedRef<FJsonObject> Engine = MakeShared<FJsonObject>();
-	Engine->SetField(TEXT("maxTorque"), VehicleNumber(T.MaxTorque));
-	Engine->SetField(TEXT("maxRPM"), VehicleInteger(T.MaxRPM));
-	Engine->SetField(TEXT("idleRPM"), VehicleInteger(T.IdleRPM));
-	TArray<TSharedPtr<FJsonValue>> Curve;
-	for (const FVector2D& Point : T.TorqueCurve)
+	if (T.bElectric)
 	{
-		TArray<TSharedPtr<FJsonValue>> Pair = { VehicleNumber(Point.X), VehicleNumber(Point.Y) };
-		Curve.Add(MakeShared<FJsonValueArray>(Pair));
+		// An electric motor (#445): its peak torque, top speed, peak power, regen and battery; no idle, torque curve or engine braking.
+		Engine->SetStringField(TEXT("drive"), TEXT("electric"));
+		Engine->SetField(TEXT("maxTorque"), VehicleNumber(T.MaxTorque));
+		Engine->SetField(TEXT("maxRPM"), VehicleInteger(T.MaxRPM));
+		Engine->SetField(TEXT("peakPower"), VehicleNumber(T.PeakPower));
+		Engine->SetField(TEXT("regenBraking"), VehicleNumber(T.RegenBraking));
+		Engine->SetField(TEXT("batteryCapacity"), VehicleNumber(T.BatteryCapacity));
+		Engine->SetBoolField(TEXT("tractionControl"), T.bTractionControl);
 	}
-	Engine->SetArrayField(TEXT("torqueCurve"), Curve);
+	else
+	{
+		Engine->SetField(TEXT("maxTorque"), VehicleNumber(T.MaxTorque));
+		Engine->SetField(TEXT("maxRPM"), VehicleInteger(T.MaxRPM));
+		Engine->SetField(TEXT("idleRPM"), VehicleInteger(T.IdleRPM));
+		TArray<TSharedPtr<FJsonValue>> Curve;
+		for (const FVector2D& Point : T.TorqueCurve)
+		{
+			TArray<TSharedPtr<FJsonValue>> Pair = { VehicleNumber(Point.X), VehicleNumber(Point.Y) };
+			Curve.Add(MakeShared<FJsonValueArray>(Pair));
+		}
+		Engine->SetArrayField(TEXT("torqueCurve"), Curve);
+		// The driver aids (#376), part of the car: traction control always written, so the creator's document says it; engine braking only when the car
+		// has some (absent: none).
+		Engine->SetBoolField(TEXT("tractionControl"), T.bTractionControl);
+		if (T.EngineBraking > 0.f)
+		{
+			Engine->SetField(TEXT("engineBraking"), VehicleNumber(T.EngineBraking));
+		}
+	}
+	// #378: the engine's size, only when the vehicle has one (a motorcycle's engine pick); sound and scripts read it. Never on a motor (#445).
+	if (T.EngineDisplacement > 0 && !T.bElectric)
+	{
+		Engine->SetNumberField(TEXT("displacement"), T.EngineDisplacement);
+	}
+	// #258: the engine sound the creator picked, only when set (absent: the vehicle type's own) and the vehicle has one to pick: a pedalled vehicle, an
+	// electric motor or a trailer leaves it out, and CheckSource says so. The ids are lower case; the cook takes them as written.
+	if (!T.EngineSound.IsNone() && Source.CanPickEngineSound())
+	{
+		Engine->SetStringField(TEXT("sound"), T.EngineSound.ToString().ToLower());
+	}
+	// #444: a turbo or supercharger. Written only with one, all four fields together (a document without them is an engine with none, so a car
+	// without one cooks as before); boost settings without an induction are refused in CheckSource, never dropped here without a word.
+	if (T.Induction != EMantleVehicleSourceInduction::None && !T.bElectric)
+	{
+		Engine->SetStringField(TEXT("induction"), T.Induction == EMantleVehicleSourceInduction::Turbo ? TEXT("turbo") : TEXT("supercharger"));
+		Engine->SetField(TEXT("maxBoost"), VehicleNumber(T.MaxBoost));
+		Engine->SetField(TEXT("spoolRPM"), VehicleInteger(FMantleVehicleConverter::SpoolRPMFor(T)));
+		Engine->SetField(TEXT("spoolTime"), VehicleNumber(T.SpoolTime));
+	}
 	Doc->SetObjectField(TEXT("engine"), Engine);
 
 	TSharedRef<FJsonObject> Transmission = MakeShared<FJsonObject>();
@@ -3946,17 +4036,69 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 	for (const float Ratio : T.GearRatios)
 	{
 		Gears.Add(VehicleNumber(Ratio));
+		// An electric car (#445) has one fixed reduction, and a belt drive one box after the belt: its first ratio, nothing else.
+		if (T.bElectric || T.bCvt) break;
 	}
 	Transmission->SetArrayField(TEXT("gearRatios"), Gears);
-	Transmission->SetField(TEXT("reverseRatio"), VehicleNumber(T.ReverseRatio));
-	Transmission->SetField(TEXT("finalDrive"), VehicleNumber(T.FinalDrive));
-	if (T.ChangeUpRPM > 0)
+	if (T.bElectric)
 	{
-		Transmission->SetField(TEXT("changeUpRPM"), VehicleInteger(T.ChangeUpRPM));
+		// It reverses through the same ratio and never shifts (#445): only the final drive.
+		Transmission->SetField(TEXT("finalDrive"), VehicleNumber(T.FinalDrive));
 	}
-	if (T.ChangeDownRPM > 0)
+	else if (T.bCvt)
 	{
-		Transmission->SetField(TEXT("changeDownRPM"), VehicleInteger(T.ChangeDownRPM));
+		// A belt drive (ATV follow-on): reverse and the final drive, and the belt. It never shifts: no change points or shift time.
+		Transmission->SetField(TEXT("reverseRatio"), VehicleNumber(T.ReverseRatio));
+		Transmission->SetField(TEXT("finalDrive"), VehicleNumber(T.FinalDrive));
+		// A transfer case's low range behind the belt (#376 off-road; the ATV's), only when it has one.
+		if (T.LowRange > 0.f)
+		{
+			Transmission->SetField(TEXT("lowRange"), VehicleNumber(T.LowRange));
+		}
+		TSharedRef<FJsonObject> Belt = MakeShared<FJsonObject>();
+		Belt->SetField(TEXT("lowRatio"), VehicleNumber(T.CvtLowRatio));
+		Belt->SetField(TEXT("highRatio"), VehicleNumber(T.CvtHighRatio));
+		Belt->SetField(TEXT("shiftRPM"), VehicleInteger(T.CvtShiftRPM));
+		Transmission->SetObjectField(TEXT("cvt"), Belt);
+	}
+	else
+	{
+		Transmission->SetField(TEXT("reverseRatio"), VehicleNumber(T.ReverseRatio));
+		Transmission->SetField(TEXT("finalDrive"), VehicleNumber(T.FinalDrive));
+		if (T.ChangeUpRPM > 0)
+		{
+			Transmission->SetField(TEXT("changeUpRPM"), VehicleInteger(T.ChangeUpRPM));
+		}
+		if (T.ChangeDownRPM > 0)
+		{
+			Transmission->SetField(TEXT("changeDownRPM"), VehicleInteger(T.ChangeDownRPM));
+		}
+		// Each gear change's time (#376), part of the car: always written, so the creator's document says it (absent, the game takes 0.5 s).
+		Transmission->SetField(TEXT("shiftTime"), VehicleNumber(T.ShiftTime));
+		// A transfer case's low range (#376 off-road), only when it has one (never on an electric car).
+		if (T.LowRange > 0.f)
+		{
+			Transmission->SetField(TEXT("lowRange"), VehicleNumber(T.LowRange));
+		}
+	}
+	// The axles' differentials (#376 off-road), only those set: none keeps Mantle's equal split.
+	if (T.FrontDifferential != EMantleVehicleDifferential::None || T.RearDifferential != EMantleVehicleDifferential::None)
+	{
+		TSharedRef<FJsonObject> Differentials = MakeShared<FJsonObject>();
+		const auto Side = [&Differentials](const TCHAR* Name, const EMantleVehicleDifferential Type, const float Bias)
+		{
+			if (Type == EMantleVehicleDifferential::None) return;
+			TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+			Entry->SetStringField(TEXT("type"), MantleDifferentialName(Type));
+			if (Type == EMantleVehicleDifferential::LimitedSlip)
+			{
+				Entry->SetField(TEXT("biasRatio"), VehicleNumber(Bias));
+			}
+			Differentials->SetObjectField(Name, Entry);
+		};
+		Side(TEXT("front"), T.FrontDifferential, T.FrontDifferentialBias);
+		Side(TEXT("rear"), T.RearDifferential, T.RearDifferentialBias);
+		Transmission->SetObjectField(TEXT("differentials"), Differentials);
 	}
 	Doc->SetObjectField(TEXT("transmission"), Transmission);
 
@@ -3987,6 +4129,9 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 	TSharedRef<FJsonObject> Brakes = MakeShared<FJsonObject>();
 	Brakes->SetField(TEXT("brakeTorque"), VehicleNumber(T.BrakeTorque));
 	Brakes->SetField(TEXT("handbrakeTorque"), VehicleNumber(T.HandbrakeTorque));
+	// ABS and the brake balance (#376), part of the car.
+	Brakes->SetBoolField(TEXT("abs"), T.bABS);
+	Brakes->SetField(TEXT("frontShare"), VehicleNumber(T.BrakeFrontShare));
 	Doc->SetObjectField(TEXT("brakes"), Brakes);
 
 	TSharedRef<FJsonObject> Tires = MakeShared<FJsonObject>();
@@ -3995,16 +4140,36 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 	{
 		Tires->SetField(TEXT("rearFriction"), VehicleNumber(T.TireRearFriction));
 	}
+	// Rolling resistance (#447, #448): only when it is not what its absence means (a car tire's), so a car's document is what it was before the key.
+	if (!FMath::IsNearlyEqual(static_cast<double>(T.TireRollingResistance), FMantleVehicleDesc().TiresRollingResistance, 1.0e-6))
+	{
+		Tires->SetField(TEXT("rollingResistance"), VehicleNumber(T.TireRollingResistance));
+	}
 	Doc->SetObjectField(TEXT("tires"), Tires);
 
+	// #447: a pedalled vehicle (a bicycle): the rider is its engine. Absent on every other vehicle, so their documents are what they were.
+	if (T.bPedal)
+	{
+		TSharedRef<FJsonObject> Pedal = MakeShared<FJsonObject>();
+		Pedal->SetField(TEXT("riderPower"), VehicleNumber(T.PedalRiderPower));
+		Pedal->SetField(TEXT("sprintPower"), VehicleNumber(T.PedalSprintPower));
+		Pedal->SetField(TEXT("sprintReserve"), VehicleNumber(T.PedalSprintReserve));
+		Pedal->SetField(TEXT("maxCadence"), VehicleNumber(T.PedalMaxCadence));
+		Pedal->SetField(TEXT("cadence"), VehicleNumber(T.PedalCadence));
+		Doc->SetObjectField(TEXT("pedal"), Pedal);
+	}
+
+	// A tracked vehicle's wheels are its road wheels (#448): none steers (it turns by its tracks' speeds), the belt drives every one and the handbrake locks
+	// the whole track, whatever the wheel detection or the creator set on a wheel.
+	const bool bRoadWheels = Source.MovementType == EMantleVehicleMovementKind::Tracked;
 	TArray<TSharedPtr<FJsonValue>> Wheels;
 	for (const FMantleVehicleSourceWheel& Wheel : Source.Wheels)
 	{
 		TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
 		Entry->SetStringField(TEXT("bone"), Wheel.Bone.ToString());
-		Entry->SetBoolField(TEXT("steering"), Wheel.bSteering);
-		Entry->SetBoolField(TEXT("driven"), Wheel.bDriven);
-		Entry->SetBoolField(TEXT("handbrake"), Wheel.bHandbrake);
+		Entry->SetBoolField(TEXT("steering"), bRoadWheels ? false : Wheel.bSteering);
+		Entry->SetBoolField(TEXT("driven"), bRoadWheels ? true : Wheel.bDriven);
+		Entry->SetBoolField(TEXT("handbrake"), bRoadWheels ? true : Wheel.bHandbrake);
 		if (Wheel.Radius > 0.f)
 		{
 			Entry->SetField(TEXT("radius"), VehicleNumber(Wheel.Radius));
@@ -4523,8 +4688,24 @@ bool FMantleVehicleConverter::WriteUpload(const FMantleGlbMesh& Body, const TSha
 	}
 	LODs.Append(LowerLODs.GetData(), LowerLODs.Num());
 	// The upload's bytes, not what the cook stores: shared vertices once, the skin and indices compact (it keeps a heavy car's LODs under the upload size).
-	for (FMantleGlbMesh& LOD : LODs)
+	for (int32 Index = 0; Index < LODs.Num(); ++Index)
 	{
+		FMantleGlbMesh& LOD = LODs[Index];
+		// The cook refuses a normal, tangent or UV that is not a number, after the whole export. Reading a model makes them finite and says where
+		// (FMantleVehicleModel::CleanNonFinite); this catches a body built before that, or any step after it, so the export is never refused for one.
+		const FMantleGlbNonFinite NonFinite = FMantleGlbWriter::SanitizeNonFinite(LOD);
+		if (NonFinite.Positions > 0)
+		{
+			OutError = FString::Printf(TEXT("The body's LOD %d has %d vertex positions that are not numbers. Fix or delete those vertices in a modeling tool, re-import the model and build again."),
+				Index, NonFinite.Positions);
+			return false;
+		}
+		if (NonFinite.Any())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("MANTLE_VEHICLE_NONFINITE LOD %d: set %d texture coordinates, %d normals and %d tangents that were not numbers (build the vehicle again to place them better)"),
+				Index, NonFinite.TexCoords, NonFinite.Normals, NonFinite.Tangents);
+		}
+		// Shared vertices once, after the values are numbers (a NaN never equals itself, so it would keep a vertex apart).
 		FMantleVehicleBodyLODs::Slim(LOD);
 	}
 	return FMantleGlbWriter::WriteLODs(LODs, OutBytes, OutError);
@@ -4561,11 +4742,23 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 	}
 	const FVehiclePresetScope PresetScope(Preset);
 
+	// The creator's hitch (#446) on a vehicle that tows nothing: said in its own words, not as unreadable movement settings.
+	const EMantleVehicleSourceHitch HitchChoice = Authored->Tuning.Hitch;
+	const bool bHitchRefused = (HitchChoice == EMantleVehicleSourceHitch::Ball || HitchChoice == EMantleVehicleSourceHitch::FifthWheel)
+		&& Authored->MovementType != EMantleVehicleMovementKind::Wheeled && Authored->MovementType != EMantleVehicleMovementKind::Tracked;
+	if (bHitchRefused)
+	{
+		AddError(FString::Printf(TEXT("has a hitch, but a %s tows nothing: only a wheeled or tracked vehicle pulls a trailer."),
+				FMantleVehicleChassisDocument::MovementName(Authored->MovementType)),
+			TEXT("Set Towing > Hitch to The type's own or None."));
+	}
+
 	// The movement blocks (a plane's flight block, a bike's rider): a malformed one would export a vehicle without it, so it is an error and not a quiet drop.
 	{
 		FString MovementError;
 		FMantleVehicleConverter::MakeDocument(*Authored, TMap<FString, FString>(), &MovementError);
-		if (!MovementError.IsEmpty())
+		// A refused hitch is MergeSource's last step, so its error is the hitch's alone, said above.
+		if (!MovementError.IsEmpty() && !(bHitchRefused && MovementError.Contains(TEXT("hitch"))))
 		{
 			AddError(FString::Printf(TEXT("has movement settings that can't be read (%s), so it would be published without them."), *FMantleVehicleShape::PlainReason(MovementError)),
 				TEXT("Build the vehicle again from the Build a vehicle window, or fix its Movement Blocks."));
@@ -4587,29 +4780,81 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 	VehicleCheckRange(Subject, TEXT("Frontal Area"), TEXT("frontalArea"), T.FrontalArea, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Max Torque"), TEXT("engine/maxTorque"), T.MaxTorque, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Max RPM"), TEXT("engine/maxRPM"), T.MaxRPM, OutIssues);
-	VehicleCheckRange(Subject, TEXT("Idle RPM"), TEXT("engine/idleRPM"), T.IdleRPM, OutIssues);
-	if (T.IdleRPM >= T.MaxRPM)
+	if (T.bElectric)
 	{
-		AddError(FString::Printf(TEXT("idles at %d RPM, not below its Max RPM (%d)."), T.IdleRPM, T.MaxRPM), TEXT("Lower Idle RPM or raise Max RPM."));
-	}
-	if (T.TorqueCurve.Num() < 2 || T.TorqueCurve.Num() > FMantleVehicleLimits::MaxTorqueCurvePoints)
-	{
-		AddError(FString::Printf(TEXT("has %d torque curve points; a vehicle has 2 to %d."), T.TorqueCurve.Num(), FMantleVehicleLimits::MaxTorqueCurvePoints),
-			TEXT("Give Torque Curve at least a point at low RPM and one at high RPM."));
-	}
-	for (int32 Point = 0; Point < T.TorqueCurve.Num(); ++Point)
-	{
-		VehicleCheckRange(Subject, FString::Printf(TEXT("Torque Curve point %d's RPM"), Point), TEXT("engine/torqueCurve/*/0"), T.TorqueCurve[Point].X, OutIssues);
-		VehicleCheckRange(Subject, FString::Printf(TEXT("Torque Curve point %d's torque"), Point), TEXT("engine/torqueCurve/*/1"), T.TorqueCurve[Point].Y, OutIssues);
-		if (Point > 0 && T.TorqueCurve[Point].X <= T.TorqueCurve[Point - 1].X)
+		// An electric motor (#445): its power, regen and battery; it has no idle, torque curve or engine braking to check.
+		VehicleCheckRange(Subject, TEXT("Peak Power"), TEXT("engine/peakPower"), T.PeakPower, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Regen Braking"), TEXT("engine/regenBraking"), T.RegenBraking, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Battery Capacity"), TEXT("engine/batteryCapacity"), T.BatteryCapacity, OutIssues);
+		// The document leaves a combustion engine's turbo, size and low range out of an electric car, so the creator's settings would do nothing.
+		if (T.Induction != EMantleVehicleSourceInduction::None)
 		{
-			AddError(FString::Printf(TEXT("has a torque curve whose point %d does not rise in RPM past the one before."), Point),
-				TEXT("List Torque Curve's points from low RPM to high."));
+			AddError(TEXT("is electric with an Induction; an electric motor has no turbo or supercharger."), TEXT("Set Induction to None."));
 		}
-		else if (Point > 0 && T.TorqueCurve[Point].X > T.MaxRPM)
+		if (T.EngineDisplacement > 0)
 		{
-			AddError(FString::Printf(TEXT("has a torque curve point at %s RPM, past its Max RPM (%d)."), *VehicleNumberText(T.TorqueCurve[Point].X), T.MaxRPM),
-				TEXT("Keep every Torque Curve point at or below Max RPM."));
+			AddError(TEXT("is electric with an Engine Size; an electric motor has none."), TEXT("Set Engine Size to 0."));
+		}
+		// #376 off-road: nor a transfer case's low range (the document leaves it out).
+		if (T.LowRange > 0.f)
+		{
+			AddError(TEXT("is electric with a Low Range; an electric motor drives through one fixed reduction."), TEXT("Set Low Range to 0."));
+		}
+	}
+	else
+	{
+		VehicleCheckRange(Subject, TEXT("Idle RPM"), TEXT("engine/idleRPM"), T.IdleRPM, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Engine Braking"), TEXT("engine/engineBraking"), T.EngineBraking, OutIssues);
+		if (T.EngineDisplacement > 0)
+		{
+			VehicleCheckRange(Subject, TEXT("Engine Size"), TEXT("engine/displacement"), T.EngineDisplacement, OutIssues);
+		}
+		// #444: a turbo or supercharger's settings, each to its range, and full boost above idle and no later than the rev limit. Boost settings changed
+		// on an engine without an induction are refused: the document would leave them out, so the creator's numbers would do nothing.
+		if (T.Induction != EMantleVehicleSourceInduction::None)
+		{
+			const int32 Spool = FMantleVehicleConverter::SpoolRPMFor(T);
+			VehicleCheckRange(Subject, TEXT("Max Boost"), TEXT("engine/maxBoost"), T.MaxBoost, OutIssues);
+			VehicleCheckRange(Subject, TEXT("Spool RPM"), TEXT("engine/spoolRPM"), Spool, OutIssues);
+			VehicleCheckRange(Subject, TEXT("Spool Time"), TEXT("engine/spoolTime"), T.SpoolTime, OutIssues);
+			if (Spool <= T.IdleRPM || Spool > T.MaxRPM)
+			{
+				AddError(FString::Printf(TEXT("reaches full boost at %d RPM, not above its Idle RPM (%d) and at most its Max RPM (%d)."), Spool, T.IdleRPM, T.MaxRPM),
+					TEXT("Set Spool RPM between them (0 uses 40% of Max RPM)."));
+			}
+		}
+		else
+		{
+			const FMantleVehicleSourceTuning Defaults;
+			if (T.MaxBoost != Defaults.MaxBoost || T.SpoolRPM != Defaults.SpoolRPM || T.SpoolTime != Defaults.SpoolTime)
+			{
+				AddError(TEXT("has Max Boost, Spool RPM or Spool Time changed but no Induction, so they would do nothing."),
+					TEXT("Set Induction to Turbo or Supercharger, or put those three back to their defaults."));
+			}
+		}
+		if (T.IdleRPM >= T.MaxRPM)
+		{
+			AddError(FString::Printf(TEXT("idles at %d RPM, not below its Max RPM (%d)."), T.IdleRPM, T.MaxRPM), TEXT("Lower Idle RPM or raise Max RPM."));
+		}
+		if (T.TorqueCurve.Num() < 2 || T.TorqueCurve.Num() > FMantleVehicleLimits::MaxTorqueCurvePoints)
+		{
+			AddError(FString::Printf(TEXT("has %d torque curve points; a vehicle has 2 to %d."), T.TorqueCurve.Num(), FMantleVehicleLimits::MaxTorqueCurvePoints),
+				TEXT("Give Torque Curve at least a point at low RPM and one at high RPM."));
+		}
+		for (int32 Point = 0; Point < T.TorqueCurve.Num(); ++Point)
+		{
+			VehicleCheckRange(Subject, FString::Printf(TEXT("Torque Curve point %d's RPM"), Point), TEXT("engine/torqueCurve/*/0"), T.TorqueCurve[Point].X, OutIssues);
+			VehicleCheckRange(Subject, FString::Printf(TEXT("Torque Curve point %d's torque"), Point), TEXT("engine/torqueCurve/*/1"), T.TorqueCurve[Point].Y, OutIssues);
+			if (Point > 0 && T.TorqueCurve[Point].X <= T.TorqueCurve[Point - 1].X)
+			{
+				AddError(FString::Printf(TEXT("has a torque curve whose point %d does not rise in RPM past the one before."), Point),
+					TEXT("List Torque Curve's points from low RPM to high."));
+			}
+			else if (Point > 0 && T.TorqueCurve[Point].X > T.MaxRPM)
+			{
+				AddError(FString::Printf(TEXT("has a torque curve point at %s RPM, past its Max RPM (%d)."), *VehicleNumberText(T.TorqueCurve[Point].X), T.MaxRPM),
+					TEXT("Keep every Torque Curve point at or below Max RPM."));
+			}
 		}
 	}
 	// #821: the steering's speed curve, when it has one, has 1 to 8 points rising in speed.
@@ -4632,6 +4877,31 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 	{
 		VehicleCheckRange(Subject, TEXT("Tire Rear Friction"), TEXT("tires/rearFriction"), T.TireRearFriction, OutIssues);
 	}
+	VehicleCheckRange(Subject, TEXT("Tire Rolling Resistance"), TEXT("tires/rollingResistance"), T.TireRollingResistance, OutIssues);
+	// #447: a pedalled vehicle's rider, and the two rules the cook holds them to.
+	if (T.bPedal)
+	{
+		VehicleCheckRange(Subject, TEXT("Rider Power"), TEXT("pedal/riderPower"), T.PedalRiderPower, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Sprint Power"), TEXT("pedal/sprintPower"), T.PedalSprintPower, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Sprint Reserve"), TEXT("pedal/sprintReserve"), T.PedalSprintReserve, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Max Cadence"), TEXT("pedal/maxCadence"), T.PedalMaxCadence, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Cadence"), TEXT("pedal/cadence"), T.PedalCadence, OutIssues);
+		if (T.PedalSprintPower < T.PedalRiderPower)
+		{
+			AddError(FString::Printf(TEXT("has a Sprint Power (%g W) under its Rider Power (%g W)."), T.PedalSprintPower, T.PedalRiderPower),
+				TEXT("Set Sprint Power to at least the Rider Power."));
+		}
+		if (T.PedalCadence + 20.f > T.PedalMaxCadence)
+		{
+			AddError(FString::Printf(TEXT("has a Cadence (%g rpm) within 20 of its Max Cadence (%g rpm)."), T.PedalCadence, T.PedalMaxCadence),
+				TEXT("Lower Cadence or raise Max Cadence so they are at least 20 rpm apart."));
+		}
+	}
+	if (T.bElectric && T.GearRatios.Num() != 1)
+	{
+		AddError(FString::Printf(TEXT("is electric with %d gears; an electric motor has one fixed reduction."), T.GearRatios.Num()),
+			TEXT("Give Gear Ratios one entry (Final Drive times it is the motor's reduction)."));
+	}
 	if (T.GearRatios.Num() < 1 || T.GearRatios.Num() > FMantleVehicleLimits::MaxGears)
 	{
 		AddError(FString::Printf(TEXT("has %d gears; a vehicle has 1 to %d."), T.GearRatios.Num(), FMantleVehicleLimits::MaxGears), TEXT("Give Gear Ratios 1 to 8 entries, first gear first."));
@@ -4640,25 +4910,128 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 	{
 		VehicleCheckRange(Subject, FString::Printf(TEXT("Gear Ratios %d"), Gear), TEXT("transmission/gearRatios/*"), T.GearRatios[Gear], OutIssues);
 	}
-	VehicleCheckRange(Subject, TEXT("Reverse Ratio"), TEXT("transmission/reverseRatio"), T.ReverseRatio, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Final Drive"), TEXT("transmission/finalDrive"), T.FinalDrive, OutIssues);
-	const int32 ChangeUp = T.ChangeUpRPM > 0 ? T.ChangeUpRPM : static_cast<int32>(T.MaxRPM * FMantleVehicleConverter::DefaultChangeUpFraction);
-	if (T.ChangeUpRPM > 0)
+	// #445 / belt drive: settings an electric car or a belt drive never uses are left out of the document. Changed from their defaults, they would
+	// do nothing without a word, so the creator is told (a type picked from a preset starts them at their defaults, so this is a hand change).
 	{
-		VehicleCheckRange(Subject, TEXT("Change Up RPM"), TEXT("transmission/changeUpRPM"), T.ChangeUpRPM, OutIssues);
-		if (T.ChangeUpRPM > T.MaxRPM)
+		const FMantleVehicleSourceTuning Plain;
+		TArray<FString> Unused;
+		if (T.bElectric)
 		{
-			AddError(FString::Printf(TEXT("changes up at %d RPM, past its Max RPM (%d)."), T.ChangeUpRPM, T.MaxRPM), TEXT("Lower Change Up RPM, or set it to 0 for 85% of Max RPM."));
+			if (T.EngineBraking != Plain.EngineBraking) Unused.Add(TEXT("Engine Braking"));
+			if (T.ReverseRatio != Plain.ReverseRatio) Unused.Add(TEXT("Reverse Ratio"));
+			// #258: an electric motor has no engine sound to pick (it plays its own motor), so the document leaves Engine Sound out.
+			if (T.EngineSound != Plain.EngineSound) Unused.Add(TEXT("Engine Sound"));
+		}
+		if (T.bElectric || T.bCvt)
+		{
+			if (T.ChangeUpRPM != Plain.ChangeUpRPM) Unused.Add(TEXT("Change Up RPM"));
+			if (T.ChangeDownRPM != Plain.ChangeDownRPM) Unused.Add(TEXT("Change Down RPM"));
+			if (T.ShiftTime != Plain.ShiftTime) Unused.Add(TEXT("Shift Time"));
+		}
+		if (Unused.Num() > 0)
+		{
+			OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
+				FString::Printf(TEXT("%s is %s, so its %s %s nothing and %s left out of the published vehicle."), *Subject,
+					T.bElectric ? TEXT("electric (one fixed gear, no engine braking)") : TEXT("a belt drive (it never shifts)"), *FString::Join(Unused, TEXT(", ")),
+					Unused.Num() == 1 ? TEXT("does") : TEXT("do"), Unused.Num() == 1 ? TEXT("is") : TEXT("are")),
+				TEXT("Put them back to their defaults to clear this note, or leave them: they come back if the vehicle is made combustion or geared again.") });
 		}
 	}
-	if (T.ChangeDownRPM > 0)
+	// #258: the engine sound. On a vehicle that has one to pick, one of the sounds it may have (FMantleEngineSounds: an aircraft's on a plane, a
+	// helicopter or a hovercraft, a motorcycle's on two wheels, either kind on handlebars on more wheels, an ATV's or a jet ski's, else a car's): any
+	// other would be refused on upload. On one with none to pick (pedalled or a trailer), it would do nothing and is left out, so the creator is told;
+	// an electric motor's is in the note above.
+	if (!T.EngineSound.IsNone() && !T.bElectric)
 	{
-		VehicleCheckRange(Subject, TEXT("Change Down RPM"), TEXT("transmission/changeDownRPM"), T.ChangeDownRPM, OutIssues);
-		if (T.ChangeDownRPM >= ChangeUp)
+		if (Source->CanPickEngineSound())
 		{
-			AddError(FString::Printf(TEXT("changes down at %d RPM, not below where it changes up (%d)."), T.ChangeDownRPM, ChangeUp),
-				TEXT("Lower Change Down RPM, or set it to 0 for 40% of Max RPM."));
+			const bool bTwoWheeler = FMantleEngineSounds::IsTwoWheeler(Source->MovementType == EMantleVehicleMovementKind::Wheeled, Source->Wheels.Num());
+			const bool bHandlebars = Source->DriverSeatKind == EMantleVehicleSeatKind::Motorcycle;
+			if (!FMantleEngineSounds::Fits(T.EngineSound, Source->IsFlier(), bTwoWheeler, bHandlebars))
+			{
+				TArray<FName> Ids;
+				FMantleEngineSounds::Options(Source->IsFlier(), bTwoWheeler, bHandlebars, Ids);
+				TArray<FString> Names;
+				for (const FName Id : Ids)
+				{
+					Names.Add(Id.ToString());
+				}
+				AddError(FString::Printf(TEXT("has the Engine Sound '%s', which is not one this vehicle can have (%s)."), *T.EngineSound.ToString(),
+					*FString::Join(Names, TEXT(", "))), TEXT("Pick one from the Engine Sound list, or None for the vehicle type's own."));
+			}
 		}
+		else
+		{
+			OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
+				FString::Printf(TEXT("%s has an Engine Sound, but a pedalled vehicle or a trailer has none to pick, so it does nothing and is left out of the published vehicle."), *Subject),
+				TEXT("Set Engine Sound to None to clear this note.") });
+		}
+	}
+	// A belt drive (ATV follow-on): one box after the belt, the belt's high ratio below its low one, the held rpm above idle and at most the red line.
+	// It never shifts, so it has no shift points or shift time to check.
+	if (T.bCvt && !T.bElectric)
+	{
+		if (T.GearRatios.Num() != 1)
+		{
+			AddError(FString::Printf(TEXT("has a belt drive with %d gears; a belt drive has one box after the belt."), T.GearRatios.Num()),
+				TEXT("Give Gear Ratios one entry (Final Drive times it is the box after the belt)."));
+		}
+		VehicleCheckRange(Subject, TEXT("Reverse Ratio"), TEXT("transmission/reverseRatio"), T.ReverseRatio, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Belt Low Ratio"), TEXT("transmission/cvt/lowRatio"), T.CvtLowRatio, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Belt High Ratio"), TEXT("transmission/cvt/highRatio"), T.CvtHighRatio, OutIssues);
+		VehicleCheckRange(Subject, TEXT("Belt Held RPM"), TEXT("transmission/cvt/shiftRPM"), T.CvtShiftRPM, OutIssues);
+		if (T.CvtHighRatio >= T.CvtLowRatio)
+		{
+			AddError(FString::Printf(TEXT("has a belt whose high ratio (%g) is not below its low ratio (%g)."), T.CvtHighRatio, T.CvtLowRatio),
+				TEXT("Make Belt High Ratio the smaller one."));
+		}
+		if (T.CvtShiftRPM <= T.IdleRPM || T.CvtShiftRPM > T.MaxRPM)
+		{
+			AddError(FString::Printf(TEXT("holds %d RPM on its belt, not above idle (%d) and at most Max RPM (%d)."), T.CvtShiftRPM, T.IdleRPM, T.MaxRPM),
+				TEXT("Set Belt Held RPM between Idle RPM and Max RPM (usually the power peak)."));
+		}
+		if (T.LowRange > 0.f)
+		{
+			VehicleCheckRange(Subject, TEXT("Low Range"), TEXT("transmission/lowRange"), T.LowRange, OutIssues);
+		}
+	}
+	// An electric car (#445) has no reverse ratio, shift points or shift time.
+	else if (!T.bElectric)
+	{
+		VehicleCheckRange(Subject, TEXT("Reverse Ratio"), TEXT("transmission/reverseRatio"), T.ReverseRatio, OutIssues);
+		const int32 ChangeUp = T.ChangeUpRPM > 0 ? T.ChangeUpRPM : static_cast<int32>(T.MaxRPM * FMantleVehicleConverter::DefaultChangeUpFraction);
+		if (T.ChangeUpRPM > 0)
+		{
+			VehicleCheckRange(Subject, TEXT("Change Up RPM"), TEXT("transmission/changeUpRPM"), T.ChangeUpRPM, OutIssues);
+			if (T.ChangeUpRPM > T.MaxRPM)
+			{
+				AddError(FString::Printf(TEXT("changes up at %d RPM, past its Max RPM (%d)."), T.ChangeUpRPM, T.MaxRPM), TEXT("Lower Change Up RPM, or set it to 0 for 85% of Max RPM."));
+			}
+		}
+		if (T.ChangeDownRPM > 0)
+		{
+			VehicleCheckRange(Subject, TEXT("Change Down RPM"), TEXT("transmission/changeDownRPM"), T.ChangeDownRPM, OutIssues);
+			if (T.ChangeDownRPM >= ChangeUp)
+			{
+				AddError(FString::Printf(TEXT("changes down at %d RPM, not below where it changes up (%d)."), T.ChangeDownRPM, ChangeUp),
+					TEXT("Lower Change Down RPM, or set it to 0 for 40% of Max RPM."));
+			}
+		}
+		VehicleCheckRange(Subject, TEXT("Shift Time"), TEXT("transmission/shiftTime"), T.ShiftTime, OutIssues);
+		// #376 off-road: 0 is none.
+		if (T.LowRange > 0.f)
+		{
+			VehicleCheckRange(Subject, TEXT("Low Range"), TEXT("transmission/lowRange"), T.LowRange, OutIssues);
+		}
+	}
+	if (T.FrontDifferential == EMantleVehicleDifferential::LimitedSlip)
+	{
+		VehicleCheckRange(Subject, TEXT("Front Differential Bias"), TEXT("transmission/differentials/front/biasRatio"), T.FrontDifferentialBias, OutIssues);
+	}
+	if (T.RearDifferential == EMantleVehicleDifferential::LimitedSlip)
+	{
+		VehicleCheckRange(Subject, TEXT("Rear Differential Bias"), TEXT("transmission/differentials/rear/biasRatio"), T.RearDifferentialBias, OutIssues);
 	}
 	VehicleCheckRange(Subject, TEXT("Suspension Max Raise"), TEXT("suspension/maxRaise"), T.SuspensionMaxRaise, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Suspension Max Drop"), TEXT("suspension/maxDrop"), T.SuspensionMaxDrop, OutIssues);
@@ -4668,7 +5041,9 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 	VehicleCheckRange(Subject, TEXT("Max Steering Angle"), TEXT("steering/maxAngle"), T.MaxSteeringAngle, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Brake Torque"), TEXT("brakes/brakeTorque"), T.BrakeTorque, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Handbrake Torque"), TEXT("brakes/handbrakeTorque"), T.HandbrakeTorque, OutIssues);
+	VehicleCheckRange(Subject, TEXT("Brake Front Share"), TEXT("brakes/frontShare"), T.BrakeFrontShare, OutIssues);
 	VehicleCheckRange(Subject, TEXT("Tire Friction"), TEXT("tires/friction"), T.TireFriction, OutIssues);
+	VehicleCheckRange(Subject, TEXT("Tire Rolling Resistance"), TEXT("tires/rollingResistance"), T.TireRollingResistance, OutIssues);
 	if (T.bSeatLocation)
 	{
 		for (int32 Axis = 0; Axis < 3; ++Axis)
@@ -4737,6 +5112,14 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 		for (int32 Axis = 0; Axis < 3; ++Axis)
 		{
 			VehicleCheckRange(Subject, TEXT("Trunk Stand"), TEXT("trunk/stand/*"), T.TrunkStand[Axis], OutIssues);
+		}
+	}
+	// The creator's hitch (#446): its place within the document's range.
+	if (T.Hitch == EMantleVehicleSourceHitch::Ball || T.Hitch == EMantleVehicleSourceHitch::FifthWheel)
+	{
+		for (int32 Axis = 0; Axis < 3; ++Axis)
+		{
+			VehicleCheckRange(Subject, TEXT("Hitch Location"), TEXT("hitch/location/*"), T.HitchLocation[Axis], OutIssues);
 		}
 	}
 	if (T.bHood)
@@ -4897,9 +5280,33 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 		}
 	}
 
-	// The wheels.
+	// The wheels. A tracked vehicle's are its road wheels (#448): 3 to 10 on each track, none steered (the document writes them as road wheels whatever
+	// the asset's rows say), so it has more than a car may and no steered wheel.
 	const int32 NumWheels = Source->Wheels.Num();
-	if (NumWheels < FMantleVehicleLimits::MinWheels || NumWheels > FMantleVehicleLimits::MaxWheels)
+	const bool bTracked = Source->MovementType == EMantleVehicleMovementKind::Tracked;
+	if (bTracked)
+	{
+		if (NumWheels < 2 * FMantleVehicleLimits::MinTrackRoadWheelsPerSide || NumWheels > FMantleVehicleLimits::MaxTrackedWheels)
+		{
+			AddError(FString::Printf(TEXT("has %d road wheels; a tracked vehicle has %d to %d, %d to %d on each track."), NumWheels, 2 * FMantleVehicleLimits::MinTrackRoadWheelsPerSide,
+				FMantleVehicleLimits::MaxTrackedWheels, FMantleVehicleLimits::MinTrackRoadWheelsPerSide, FMantleVehicleLimits::MaxTrackRoadWheelsPerSide),
+				TEXT("Give each track its own row of road wheels, each wheel on a bone of its own, or edit Wheels."));
+		}
+		FMantleVehicleTrackedDesc Tracks;
+		if (VehicleTrackedBlock(*Source, Tracks))
+		{
+			VehicleCheckRange(Subject, TEXT("Pivot Track Speed"), TEXT("tracked/pivotTrackSpeed"), Tracks.PivotTrackSpeed, OutIssues);
+			VehicleCheckRange(Subject, TEXT("Lateral Share"), TEXT("tracked/lateralShare"), Tracks.LateralShare, OutIssues);
+			VehicleCheckRange(Subject, TEXT("Track Width"), TEXT("tracked/trackWidth"), Tracks.TrackWidth, OutIssues);
+			VehicleCheckRange(Subject, TEXT("Pad Pitch"), TEXT("tracked/padPitch"), Tracks.PadPitch, OutIssues);
+		}
+		else
+		{
+			AddError(TEXT("is a tracked vehicle, but its Movement Blocks have no tracks (a tracked block with the tracks' width)."),
+				TEXT("Build the vehicle again from a tank or bulldozer in the Build a vehicle window."));
+		}
+	}
+	else if (NumWheels < FMantleVehicleLimits::MinWheels || NumWheels > FMantleVehicleLimits::MaxWheels)
 	{
 		AddError(FString::Printf(TEXT("has %d wheels; a vehicle has %d to %d."), NumWheels, FMantleVehicleLimits::MinWheels, FMantleVehicleLimits::MaxWheels),
 			TEXT("Run Convert Vehicle on its body to find the wheel bones, or edit Wheels."));
@@ -4933,11 +5340,11 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 			VehicleCheckRange(Subject, FString::Printf(TEXT("%s's Width"), *Wheel.Bone.ToString()), TEXT("wheels/*/width"), Wheel.Width, OutIssues);
 		}
 	}
-	if (NumWheels > 0 && Driven == 0)
+	if (NumWheels > 0 && Driven == 0 && !bTracked)
 	{
 		AddError(TEXT("has no driven wheel."), TEXT("Tick Driven on at least one wheel."));
 	}
-	if (NumWheels > 0 && Steered == 0)
+	if (NumWheels > 0 && Steered == 0 && !bTracked)
 	{
 		AddError(TEXT("has no steering wheel."), TEXT("Tick Steering on at least one wheel (usually the front ones)."));
 	}
@@ -5219,6 +5626,77 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 		if (bMeasured && Wheel.Width <= 0.f)
 		{
 			VehicleCheckRange(Subject, FString::Printf(TEXT("%s's measured width"), *Wheel.Bone.ToString()), TEXT("wheels/*/width"), Width, OutIssues);
+		}
+	}
+
+	// A tracked vehicle's two tracks (#448), as the cook and the game hold them (FMantleVehicleAssetReader::CheckTrackedLayout) against the body's bones: each
+	// road wheel is on the track of its side (the sign of its bone's rest Y), each track has 3 to 10, and it can turn on the spot.
+	if (bTracked)
+	{
+		const TArray<FTransform> TrackPose = VehicleJointPose(Body);
+		FMantleVehicleTrackedDesc Tracks;
+		VehicleTrackedBlock(*Source, Tracks);
+		int32 Count[2] = { 0, 0 };
+		double SumAbsY[2] = { 0.0, 0.0 };
+		double MinX = TNumericLimits<double>::Max();
+		double MaxX = -TNumericLimits<double>::Max();
+		double SumRadius = 0.0;
+		int32 Placed = 0;
+		bool bOnCenterline = false;
+		for (const FMantleVehicleSourceWheel& Wheel : Source->Wheels)
+		{
+			const int32 Joint = FMantleVehicleConverter::JointIndex(Body, Wheel.Bone);
+			if (!TrackPose.IsValidIndex(Joint))
+			{
+				// Said above: the body does not have the wheel's bone.
+				continue;
+			}
+			const FVector Position = TrackPose[Joint].GetLocation();
+			if (FMath::Abs(Position.Y) < FMantleVehicleLimits::TrackSideMinOffset)
+			{
+				bOnCenterline = true;
+				AddError(FString::Printf(TEXT("has road wheel %s on its middle line (%s cm from it), so it is on neither track."), *Wheel.Bone.ToString(), *VehicleNumberText(Position.Y)),
+					FString::Printf(TEXT("Move the wheel's bone at least %s cm to the left or the right, onto its track."), *VehicleNumberText(FMantleVehicleLimits::TrackSideMinOffset)));
+				continue;
+			}
+			double Radius = Wheel.Radius;
+			double Width = 0.0;
+			if (!(Radius > 0.0) && !MeasureWheel(Body, Wheel.Bone, Radius, Width))
+			{
+				Radius = 0.0;
+			}
+			const int32 Side = Position.Y < 0.0 ? 0 : 1;
+			++Count[Side];
+			SumAbsY[Side] += FMath::Abs(Position.Y);
+			MinX = FMath::Min(MinX, Position.X);
+			MaxX = FMath::Max(MaxX, Position.X);
+			SumRadius += Radius;
+			++Placed;
+		}
+		bool bSidesFit = !bOnCenterline;
+		for (int32 Side = 0; Side < 2; ++Side)
+		{
+			if (Count[Side] < FMantleVehicleLimits::MinTrackRoadWheelsPerSide || Count[Side] > FMantleVehicleLimits::MaxTrackRoadWheelsPerSide)
+			{
+				bSidesFit = false;
+				AddError(FString::Printf(TEXT("has %d road wheels on its %s track; each track has %d to %d."), Count[Side], Side == 0 ? TEXT("left") : TEXT("right"),
+					FMantleVehicleLimits::MinTrackRoadWheelsPerSide, FMantleVehicleLimits::MaxTrackRoadWheelsPerSide),
+					TEXT("Give each track its own row of 3 to 10 road wheels: a wheel is on the left track when its bone is left of the middle line (-Y), else on the right."));
+			}
+		}
+		// Turning on the spot: past contact length / gauge x lateral share = 2 the tracks' sideways grip holds it straight (the cook's rule).
+		if (bSidesFit && Placed > 0)
+		{
+			const double Gauge = SumAbsY[0] / Count[0] + SumAbsY[1] / Count[1];
+			const double ContactLength = (MaxX - MinX) + SumRadius / Placed;
+			const double TurnRatio = Gauge > 0.0 ? ContactLength / Gauge * Tracks.LateralShare : TNumericLimits<double>::Max();
+			if (TurnRatio >= FMantleVehicleLimits::TrackedMaxTurnRatio)
+			{
+				AddError(FString::Printf(TEXT("can't turn on the spot: its tracks are too long for how far apart they are (%s cm of track on the ground over %s cm between the tracks, times Lateral Share %s, is %s; it must be under %s)."),
+					*VehicleNumberText(FMath::RoundToDouble(ContactLength)), *VehicleNumberText(FMath::RoundToDouble(Gauge)), *VehicleNumberText(Tracks.LateralShare),
+					*VehicleNumberText(FMath::RoundToDouble(TurnRatio * 100.0) / 100.0), *VehicleNumberText(FMantleVehicleLimits::TrackedMaxTurnRatio)),
+					TEXT("Move the tracks further apart, bring the first and last road wheels closer together, or lower the Lateral Share."));
+			}
 		}
 	}
 

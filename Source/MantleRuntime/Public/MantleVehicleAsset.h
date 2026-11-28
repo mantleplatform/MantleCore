@@ -3,6 +3,7 @@
 
 #include "CoreMinimal.h"
 #include "MantleSkinnedMesh.h"
+#include "MantleVehicleDifferential.h"
 #include "UObject/Object.h"
 #include "MantleVehicleAsset.generated.h"
 
@@ -219,8 +220,8 @@ struct FMantleVehicleLightBeamDesc
 };
 
 /**
- * Which simulation builds a vehicle (the document's movementType). A truck, six-wheeler and motorcycle are Wheeled; a jet is a Plane.
- * (Not FMantleVehicleMovementType, the gameplay module's registry class.)
+ * Which simulation builds a vehicle (the document's movementType). A truck, six-wheeler and motorcycle are Wheeled; a jet is a Plane; a tank
+ * and a bulldozer are Tracked. (Not FMantleVehicleMovementType, the gameplay module's registry class.)
  */
 UENUM(BlueprintType)
 enum class EMantleVehicleMovementKind : uint8
@@ -229,6 +230,19 @@ enum class EMantleVehicleMovementKind : uint8
 	Plane,
 	Helicopter,
 	Hover,
+	/** A boat or a jet ski (#15): floats on a place's water on its hull's points, pushed by a propeller or a jet. */
+	Boat,
+	/** Towed by a vehicle with a hitch (#446): no engine of its own; every wheel rolls free and brakes, none steers. */
+	Trailer,
+	Tracked,
+};
+
+/** What couples a trailer to the vehicle that tows it (#446): a semi's fifth wheel and kingpin, or a tow ball and its coupler. Both sides must match. */
+UENUM(BlueprintType)
+enum class EMantleVehicleHitchKind : uint8
+{
+	FifthWheel,
+	Ball,
 };
 
 /** A seat's kind (the document's seat.kind): the clip set its occupant plays (MantleVehicleSeatAssets::ForDriverSeatKind). */
@@ -284,6 +298,10 @@ struct FMantleVehicleAerofoilDesc
 	double Camber = 5.0;
 	double MaxControlAngle = 12.0;
 	double StallAngle = 20.0;
+	/** The peak lift coefficient (#379, maxLift); 0 when the document has none: the type's. */
+	double MaxLift = 0.0;
+	/** The whole surface's span^2 / area (#379, aspectRatio); 0 when the document has none: the type's. */
+	double AspectRatio = 0.0;
 };
 
 /** One engine's push (FMantleVehicleThruster). Bone, when set, is where it pushes from (a reference, never posed). Direction is as given: only its direction counts. */
@@ -293,6 +311,10 @@ struct FMantleVehicleThrusterDesc
 	FVector Location = FVector::ZeroVector;
 	FVector Direction = FVector::ForwardVector;
 	double MaxThrustNewtons = 0.0;
+	/** Shaft power, kW (#379, power): above 0 a propeller, whose push falls off with speed; 0 a jet. */
+	double PowerKw = 0.0;
+	/** A jet's thrust with the afterburner lit, N (#379, afterburnerThrust); 0: none. */
+	double AfterburnerNewtons = 0.0;
 };
 
 /** A propeller or rotor bone that turns while someone is aboard (FMantleVehicleSpinBone); cosmetic. Axis is in the body's space. */
@@ -312,6 +334,11 @@ struct FMantleVehicleFlightDesc
 	double ThrottleLeverRate = 0.5;
 	double LinearDamping = 0.0;
 	double AngularDamping = 0.0;
+	/** A jet's seconds from idle to full thrust (#379, spoolTime); below 0 when the document has none: 4 for a jet (no thruster with power), 0 for propellers. */
+	double SpoolTime = -1.0;
+	/** The player's assists (#379, assists.stallProtection / assists.coordinatedTurns); absent: on. */
+	bool bStallProtection = true;
+	bool bCoordinatedTurns = true;
 	TArray<FMantleVehicleAerofoilDesc> Aerofoils;
 	TArray<FMantleVehicleThrusterDesc> Thrusters;
 	TArray<FMantleVehicleSpinBoneDesc> SpinBones;
@@ -327,6 +354,8 @@ struct FMantleVehicleRotorDesc
 	FVector Location = FVector::ZeroVector;
 	FVector Axis = FVector::UpVector;
 	double MaxThrustNewtons = 0.0;
+	/** The disc's diameter, cm (#380): sizes the ground cushion and the downwash. 0 (absent): worked out from the mass. */
+	double Diameter = 0.0;
 	double PitchAcceleration = 1.5;
 	double RollAcceleration = 1.5;
 	double YawAcceleration = 1.0;
@@ -336,15 +365,22 @@ struct FMantleVehicleRotorDesc
 	double StabilityMaxAcceleration = 4.0;
 };
 
-/** A helicopter's block (MovementType Helicopter): the numbers ApplyHelicopter sets. */
+/** A helicopter's block (MovementType Helicopter): the numbers DeriveHelicopter (MantleVehicleChassisDocument) sets. */
 struct FMantleVehicleHelicopterDesc
 {
 	double AirSpeedLimit = 0.0;
 	/** The collective that holds the weight: weight over rotor thrust. */
 	double HoverCollective = 0.0;
 	double ThrottleLeverRate = 1.0;
-	double LinearDamping = 0.1;
+	/** #380: the rotor's drag is the chassis's speed-squared drag now, so no body damping by default. */
+	double LinearDamping = 0.0;
 	double AngularDamping = 0.0;
+	/** #380, creator settings: height hold (W/S ask for a climb, letting go holds the height; off: a real collective lever and the vortex ring) and the yaw
+	 *  assist (the pedals ask for a yaw rate, no torque swing). Absent: on. */
+	bool bHeightHold = true;
+	bool bYawHold = true;
+	/** #380: the fin (and any surface the creator adds), the same as a plane's aerofoils. */
+	TArray<FMantleVehicleAerofoilDesc> Aerofoils;
 	TArray<FMantleVehicleRotorDesc> Rotors;
 	TArray<FMantleVehicleSpinBoneDesc> SpinBones;
 	/** The pilot's hands: left on the collective, right on the cyclic. */
@@ -387,15 +423,16 @@ struct FMantleVehicleHoverRudderDesc
 /** What stands in for a tire's grip on a hover (FMantleVehicleHoverDamping). */
 struct FMantleVehicleHoverDampingDesc
 {
-	double LateralPerSecond = 1.5;
-	double MaxLateralAccel = 400.0;
-	double YawPerSecond = 2.0;
-	double MaxYawAccelDegrees = 180.0;
+	/** The slide assist when a document gives none: real light hovercraft turn nose-first and keep sliding the old way (#381; DiscoverHover guide 12, Vanguard manual). */
+	double LateralPerSecond = 0.3;
+	double MaxLateralAccel = 100.0;
+	double YawPerSecond = 1.0;
+	double MaxYawAccelDegrees = 90.0;
 	double SkirtBrakePerSecond = 2.0;
 	double MaxSkirtBrakeAccel = 500.0;
 };
 
-/** A hovercraft's block (MovementType Hover): the numbers ApplyHovercraft sets. */
+/** A hovercraft's block (MovementType Hover): the numbers DeriveHovercraft (MantleVehicleChassisDocument) sets. */
 struct FMantleVehicleHoverDesc
 {
 	TArray<FMantleVehicleHoverPadDesc> Pads;
@@ -405,6 +442,111 @@ struct FMantleVehicleHoverDesc
 	FMantleVehicleHoverDampingDesc Damping;
 	/** The chassis's angular damping on the ground and in the air alike. */
 	double AngularDamping = 0.5;
+};
+
+/** A hitch (the document's hitch block, a towing vehicle's) or a coupler (trailer.coupler): its kind and where it is, cm, in the body's space. */
+struct FMantleVehicleHitchDesc
+{
+	EMantleVehicleHitchKind Kind = EMantleVehicleHitchKind::FifthWheel;
+	FVector Location = FVector::ZeroVector;
+};
+
+/** A trailer's block (MovementType Trailer, #446): its coupler, the legs it stands on while uncoupled, and how much cargo it may carry. */
+struct FMantleVehicleTrailerDesc
+{
+	FMantleVehicleHitchDesc Coupler;
+	/** The landing gear (a jockey stand on a ball trailer): one collision box, cm in the body's space, that collides only while the trailer is uncoupled. */
+	bool bLandingGear = false;
+	FVector LandingGearCenter = FVector::ZeroVector;
+	FVector LandingGearExtent = FVector::ZeroVector;
+	/** The most cargo it may carry, kg, and where its center sits (unset: the center of mass). Cargo is set by script and is 0 when spawned. */
+	double MaxCargoKg = 0.0;
+	bool bCargoLocation = false;
+	FVector CargoLocation = FVector::ZeroVector;
+};
+
+/** A boat's hull (boat.hull): the box its water points are made from, and how the water holds and drags it (FMantleVehicleBoatHull). Lengths cm. */
+struct FMantleVehicleBoatHullDesc
+{
+	/** The keel's middle, in the body's space: the hull runs Length along X and Beam across Y about it, its bottom here. */
+	FVector Location = FVector::ZeroVector;
+	double Length = 600.0;
+	double Beam = 240.0;
+	/** How deep a point can sink and still lift more: the hull's own depth. */
+	double Depth = 90.0;
+	double DeadriseDegrees = 20.0;
+	/** Points along each of the hull's three rows. */
+	int32 Points = 6;
+	double DragAlong = 0.02;
+	double DragAcross = 0.4;
+	/** Up-and-down damping as a ratio of critical: 0 none, 1 critical. */
+	double HeaveDamping = 0.3;
+};
+
+/** A boat's drive (boat.propulsion): a propeller or a jet, where it pushes from and how hard (FMantleVehicleBoatPropulsion). */
+struct FMantleVehicleBoatPropulsionDesc
+{
+	/** 0 a propeller, 1 a jet (the document's "propeller" or "jet"). */
+	int32 Kind = 0;
+	FVector Location = FVector::ZeroVector;
+	FVector Direction = FVector::ForwardVector;
+	double MaxThrustNewtons = 0.0;
+	double ReverseShare = 0.4;
+	double VectorAngleDegrees = 25.0;
+	double TopSpeedCmPerSec = 2000.0;
+	double BrakeFadeCmPerSec = 100.0;
+	/** A propeller's sideways push at the stern in reverse, as a share of the reverse push. */
+	double PropWalk = 0.05;
+};
+
+/** A boat's rudder (boat.rudder): a foil in the water that follows the steering. */
+struct FMantleVehicleBoatRudderDesc
+{
+	FVector Location = FVector::ZeroVector;
+	double AreaM2 = 0.0;
+	double MaxControlAngle = 0.0;
+	double StallAngle = 20.0;
+};
+
+/** A boat's block (MovementType Boat). */
+struct FMantleVehicleBoatDesc
+{
+	FMantleVehicleBoatHullDesc Hull;
+	/** cm/s where the hull is fully on plane; 0 a displacement hull, which never planes. */
+	double PlaningSpeedCmPerSec = 0.0;
+	FMantleVehicleBoatPropulsionDesc Propulsion;
+	bool bRudder = false;
+	FMantleVehicleBoatRudderDesc Rudder;
+	/** The body's angular damping, in the water and out of it. */
+	double AngularDamping = 0.3;
+};
+
+/**
+ * A sprocket, idler or return roller of a tracked vehicle (tracked.rollers[]): a bone the belt runs round, spun at its side's belt speed over its
+ * Radius (cm). Spin only, no suspension. Its side is the sign of its bone's rest Y, as a road wheel's.
+ */
+struct FMantleVehicleTrackRollerDesc
+{
+	FName Bone;
+	double Radius = 0.0;
+};
+
+/**
+ * A tracked vehicle's block (MovementType Tracked): two tracks, each the row of road wheels (the document's wheels) on its side of the body sharing
+ * one belt. Speeds cm/s, lengths cm. Every default the contract's.
+ */
+struct FMantleVehicleTrackedDesc
+{
+	/** How fast each track runs, the two opposite ways, in a pivot at full steering. */
+	double PivotTrackSpeed = 100.0;
+	/** The track's sideways resistance over its grip (mu_t / mu): what holds it in a turn and what a pivot has to overcome. */
+	double LateralShare = 0.8;
+	/** A track's pad width (with the mass, the ground pressure). Required: a document always gives it. */
+	double TrackWidth = 0.0;
+	/** One pad's length along the belt: the belt material's pattern. */
+	double PadPitch = 15.0;
+	/** The sprockets, idlers and return rollers; empty when the document has none. */
+	TArray<FMantleVehicleTrackRollerDesc> Rollers;
 };
 
 /**
@@ -447,6 +589,30 @@ struct FMantleVehicleRiderDesc
 	bool bRearBrakeTorque = false;
 	double RearBrakeTorque = 0.0;
 	FMantleVehicleRotationControlDesc RotationControl;
+	/**
+	 * #447: a bicycle's crank (seat.rider.crank). bCrank: the feet pedal round CrankCenter (the body's space, cm), each pedal CrankLength from it, the
+	 * left on the left foot peg's Y and the right on the right's; the foot pegs are then the pedals with the cranks level. CrankBone: a body bone the
+	 * crank turns (about Y); NAME_None, nothing on the body turns.
+	 */
+	bool bCrank = false;
+	FVector CrankCenter = FVector::ZeroVector;
+	double CrankLength = 0.0;
+	FName CrankBone;
+	/** #447: how much more the pelvis moves while sprinting, standing on the pedals (seat.rider.sprintPelvisShift), seat frame, cm. */
+	FVector SprintPelvisShift = FVector::ZeroVector;
+};
+
+/**
+ * #447: a pedalled vehicle's rider (the document's pedal block): the rider is the engine. The power a rider holds, the power of a sprint, how much
+ * effort above the held power a sprint spends (W', kJ), the cadence where the push runs out and the one the gears shift to hold.
+ */
+struct FMantleVehiclePedalDesc
+{
+	double RiderPower = 250.0;
+	double SprintPower = 900.0;
+	double SprintReserve = 15.0;
+	double MaxCadence = 200.0;
+	double Cadence = 85.0;
 };
 
 /** A livery that lights up with one of the car's lights (the document's liveryGlow entry). */
@@ -458,6 +624,14 @@ struct FMantleVehicleLiveryGlowDesc
 	double Strength = 1.0;
 };
 
+/** A vehicle document's engine.induction (#444): what UMantleVehicleDefinition's EMantleVehicleInduction becomes (MantlePlaceVehicle). */
+enum class EMantleVehicleDescInduction : uint8
+{
+	None,
+	Turbo,
+	Supercharger
+};
+
 /**
  * A cooked vehicle's resolved document (MVH1's JSON, schema/vehicle.schema.json with every default
  * filled by the cook). Unreal units: cm, kg, Nm, degrees, cm/s. Nothing in it names an asset path.
@@ -465,8 +639,8 @@ struct FMantleVehicleLiveryGlowDesc
 struct MANTLERUNTIME_API FMantleVehicleDesc
 {
 	double Mass = 1500.0;
-	/** cm/s: each wheel's spin is capped at MaxSpeed over its radius. */
-	double MaxSpeed = 4000.0;
+	/** cm/s: the governed top speed (the drive fades out over the last 2% below it). 0 (the document has none): no governor. */
+	double MaxSpeed = 0.0;
 	bool bCenterOfMass = false;
 	FVector CenterOfMass = FVector::ZeroVector;
 	double DragCoefficient = 0.3;
@@ -478,6 +652,34 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	int32 IdleRPM = 900;
 	/** (rpm, fraction of MaxTorque), rpm strictly rising. */
 	TArray<FVector2D> TorqueCurve;
+	/** engine.tractionControl: a driven wheel never pushes harder than its grip. Absent: on. */
+	bool bTractionControl = true;
+	/** engine.engineBraking: brake torque (Nm) per engine RPM on each driven wheel with the throttle released. Absent: 0. */
+	double EngineBraking = 0.0;
+	/** engine.drive "electric" (#445): an electric motor. MaxTorque is its peak torque and MaxRPM its top speed; it has no idle and no torque curve
+	 *  (IdleRPM 0, TorqueCurve empty), and one gear. Absent or "combustion": false. */
+	bool bElectric = false;
+	/** engine.peakPower, kW (electric only). */
+	double PeakPower = 0.0;
+	/** engine.regenBraking, g of lift-off deceleration (electric only). Absent on an electric car: DefaultRegenBraking. */
+	double RegenBraking = 0.0;
+	/** engine.batteryCapacity, kWh (electric only). Absent on an electric car: DefaultBatteryCapacity. */
+	double BatteryCapacity = 0.0;
+	static constexpr double DefaultRegenBraking = 0.15;
+	static constexpr double DefaultBatteryCapacity = 60.0;
+	/** engine.induction (#444): "none", "turbo" or "supercharger". Absent: none. The torque curve is the engine at full boost. */
+	EMantleVehicleDescInduction Induction = EMantleVehicleDescInduction::None;
+	/** engine.maxBoost, psi: the boost at full throttle from spoolRPM up. Absent: 10. */
+	double MaxBoost = 10.0;
+	/** engine.spoolRPM: full boost from here up (above idleRPM, at most maxRPM). Absent (-1): 40% of maxRPM. */
+	int32 SpoolRPM = -1;
+	/** engine.spoolTime, s: a turbo's lag from no boost to full boost. Absent: 0.8. */
+	double SpoolTime = 0.8;
+	/** engine.displacement (#378): the engine's size in cc, as a motorcycle's engine pick sets it; read by sound and scripts, never by the driving. 0: not given. */
+	int32 Displacement = 0;
+	/** engine.sound (#258): the engine sound the creator picked, an engine type id (FMantleEngineSounds). None: the vehicle type's default. Read as
+	 *  any string: the cook checks it, and a sound this client does not have plays the default. */
+	FName EngineSound;
 
 	/** Forward gears, first gear first. */
 	TArray<float> GearRatios;
@@ -485,6 +687,21 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	double FinalDrive = 0.0;
 	int32 ChangeUpRPM = 0;
 	int32 ChangeDownRPM = 0;
+	/** transmission.shiftTime: seconds each gear change takes (no drive while it shifts). Absent: 0.5, Epic's GearChangeTime default. */
+	double ShiftTime = 0.5;
+	/** transmission.cvt (ATV follow-on): a belt drive. The engine holds CvtShiftRPM at full throttle (idle at a closed one) while the belt slides from
+	 *  CvtLowRatio to CvtHighRatio; GearRatios has the one gear after the belt, and it never shifts (ChangeUpRPM MaxRPM, ChangeDownRPM 0). */
+	bool bCvt = false;
+	double CvtLowRatio = 0.0;
+	double CvtHighRatio = 0.0;
+	int32 CvtShiftRPM = 0;
+	/** transmission.lowRange (#376 off-road): the transfer case's low-range ratio; 0 = none. */
+	double LowRange = 0.0;
+	/** transmission.differentials (#376 off-road): each side's type (None = Mantle's equal split) and a limited-slip one's bias ratio. */
+	EMantleVehicleDifferential FrontDifferential = EMantleVehicleDifferential::None;
+	EMantleVehicleDifferential RearDifferential = EMantleVehicleDifferential::None;
+	double FrontDifferentialBias = 1.0;
+	double RearDifferentialBias = 1.0;
 
 	double SuspensionMaxRaise = 10.0;
 	double SuspensionMaxDrop = 10.0;
@@ -502,10 +719,20 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 
 	double BrakeTorque = 1500.0;
 	double HandbrakeTorque = 3000.0;
+	/** brakes.abs: a braked wheel holds at its grip instead of locking (the handbrake still locks). Absent: on. */
+	bool bABS = true;
+	/** brakes.frontShare: the share of the total brake torque (BrakeTorque x wheel count) on the steered wheels. Absent: 0.65. */
+	double BrakeFrontShare = 0.65;
 	double TireFriction = 2.0;
 	/** The grip of every wheel that does not steer (tires.rearFriction), where TireFriction is the steered wheels'; unset, TireFriction is every wheel's. */
 	bool bTireRearFriction = false;
 	double TireRearFriction = 0.0;
+	/** tires.rollingResistance: the rolling-resistance coefficient every wheel uses (a track's road wheels 0.04). Absent: 0.012, a car tyre's. */
+	double TiresRollingResistance = 0.012;
+
+	/** #447: the pedal block; bPedal, the rider pedals it and the engine block drives nothing (as a plane's). */
+	bool bPedal = false;
+	FMantleVehiclePedalDesc Pedal;
 
 	TArray<FMantleVehicleWheelDesc> Wheels;
 
@@ -575,13 +802,21 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	FVector CameraBoomLocation = FVector::ZeroVector;
 
 	/**
-	 * What simulation builds it (movementType). A plane has Flight, a helicopter Helicopter and a hovercraft Hover, and only that one is meaningful.
-	 * The wheels stay required for every type (the reader needs a steered and a driven one); a type's rules say what they do.
+	 * What simulation builds it (movementType). A plane has Flight, a helicopter Helicopter, a hovercraft Hover, a boat Boat and a tracked vehicle Tracked,
+	 * and only that one is meaningful. The wheels stay required for every type (the reader needs a steered and a driven one); a type's rules say what they
+	 * do. A tracked vehicle's wheels are its road wheels, 3 to 10 a side: none steers, every one is driven and has the handbrake.
 	 */
 	EMantleVehicleMovementKind MovementType = EMantleVehicleMovementKind::Wheeled;
 	FMantleVehicleFlightDesc Flight;
 	FMantleVehicleHelicopterDesc Helicopter;
 	FMantleVehicleHoverDesc Hover;
+	FMantleVehicleBoatDesc Boat;
+	/** A trailer's coupler, legs and cargo (MovementType Trailer). */
+	FMantleVehicleTrailerDesc Trailer;
+	/** A towing vehicle's hitch (the hitch block, #446): wheeled vehicles only. */
+	bool bHitch = false;
+	FMantleVehicleHitchDesc Hitch;
+	FMantleVehicleTrackedDesc Tracked;
 
 	/** The seats' kinds (seat.kind and passengerSeat.kind). */
 	EMantleVehicleSeatKind SeatKind = EMantleVehicleSeatKind::Car;
@@ -739,8 +974,26 @@ struct MANTLERUNTIME_API FMantleVehicleLimits
 	static constexpr int32 MaxRotors = 4;
 	static constexpr int32 MinHoverPads = 3;
 	static constexpr int32 MaxHoverPads = 8;
+	/** placeAssets.vehicle minBoatPoints to maxBoatPoints: a boat hull's points along each row. */
+	static constexpr int32 MinBoatPoints = 3;
+	static constexpr int32 MaxBoatPoints = 8;
 	/** placeAssets.vehicle.maxSteeringCurvePoints: the points of steering.speedCurve. */
 	static constexpr int32 MaxSteeringCurvePoints = 8;
+	/**
+	 * A tracked vehicle's wheels (its road wheels): placeAssets.vehicle.maxTrackedWheels in all (MaxWheels stays every other type's), and
+	 * minTrackRoadWheelsPerSide to maxTrackRoadWheelsPerSide on each side; maxTrackRollers caps tracked.rollers.
+	 */
+	static constexpr int32 MaxTrackedWheels = 20;
+	static constexpr int32 MinTrackRoadWheelsPerSide = 3;
+	static constexpr int32 MaxTrackRoadWheelsPerSide = 10;
+	static constexpr int32 MaxTrackRollers = 8;
+	/** How far, cm, a road wheel's bone must be off the centerline (|rest Y|) for its track to be told: nearer, it is on neither. */
+	static constexpr double TrackSideMinOffset = 1.0;
+	/**
+	 * A tracked vehicle turns on the spot only while its contact length over its gauge, times its lateral share, stays under this (the cook's and
+	 * validate.py's steerability rule): past it the tracks' sideways resistance is more than their grip can twist round.
+	 */
+	static constexpr double TrackedMaxTurnRatio = 2.0;
 	/** How short a thrust direction, a spin axis or a rotor axis may be (the cook's movementRules): shorter, it points nowhere. */
 	static constexpr double DirectionMinLength = 0.01;
 
@@ -768,7 +1021,7 @@ struct MANTLERUNTIME_API FMantleVehicleLimits
  * rule names, none it moves the root, a wheel bone or a bone a wheel hangs from, every bone a part rides, every bone the
  * car clips turn (the steering wheel's, the doors', the trunk lid's, the hood's), none of them the root, a wheel bone or a bone a
  * wheel hangs from, every bone a contact point is on, and every bone a movement block or the rider names
- * (ResolveMovementBones). A document with a movement type has its block and no other; a block's optional
+ * (ResolveMovementBones), and a tracked vehicle's wheels laid out as two tracks it can turn on (CheckTrackedLayout). A document with a movement type has its block and no other; a block's optional
  * numbers read as the contract's defaults when left out, and a key the reader does not know is refused. A refusal is false
  * with the reason. No UObjects: any thread.
  */
@@ -789,11 +1042,21 @@ public:
 
 	/**
 	 * Checks the bones the movement blocks and the rider name against the body's (the cook's resolveMovement) and names them as the body
-	 * does: a bone the body lacks is refused; a posed bone (an aerofoil's, a spin bone) is not the root, a wheel's bone or one a wheel hangs from; a
+	 * does: a bone the body lacks is refused; a posed bone (an aerofoil's, a spin bone, a track's roller) is not the root, a wheel's bone or one a wheel hangs from; a
 	 * fork is neither the root nor a wheel's bone; a grip that names no bone is on the root (a handlebar: the fork). Read does this; so does the
 	 * chassis builder for the body it makes.
 	 */
 	static bool ResolveMovementBones(FMantleVehicleDesc& Desc, TConstArrayView<FMantleSkinnedMeshBone> Bones, FString& OutError);
+
+	/**
+	 * A tracked vehicle's layout, which needs where its wheels are (WheelPositions, in Desc.Wheels order: the bones' rest positions in the body's
+	 * component space, cm), so ParseDocument cannot check it: each road wheel is on the left (Y below 0) or the right (Y above 0) track, never within
+	 * TrackSideMinOffset of Y 0 (its side could not be told);
+	 * each side has MinTrackRoadWheelsPerSide to MaxTrackRoadWheelsPerSide; and it can turn on the spot: with B the gauge (the left wheels' mean |Y| plus
+	 * the right's) and l the contact length (the wheels' longest X less their shortest, plus their mean radius), l / B x tracked.lateralShare is under
+	 * TrackedMaxTurnRatio (the cook's and validate.py's rule). True for every other type. Read does this; so does the chassis builder for the body it makes.
+	 */
+	static bool CheckTrackedLayout(const FMantleVehicleDesc& Desc, TConstArrayView<FVector> WheelPositions, FString& OutError);
 
 	/** Reads a whole MVH1 file. */
 	static bool Read(TConstArrayView<uint8> Data, FMantleVehicleAsset& Out, FString& OutError);

@@ -33,7 +33,7 @@
       ]
     },
     "body": { "length": 640, "width": 190, "height": 72, "groundClearance": 20 },
-    "centerOfMass": [0, 0, 46],
+    "centerOfMass": [23, 0, 46],
     "seat": {
       "location": [89, -36, 76],
       "steeringWheel": { "location": [135.8, -36, 79], "radius": 19 }
@@ -46,39 +46,45 @@
   },
   "defaults": {
     "mass": 2400,
-    "maxSpeed": 4000,
+    "maxSpeed": 5694,
     "dragCoefficient": 0.34,
     "frontalArea": 2.9,
     "engine": {
-      "maxTorque": 800,
+      "sound": "v8",
+      "maxTorque": 389,
       "maxRPM": 6000,
       "idleRPM": 800,
-      "torqueCurve": [[0, 0.55], [1800, 0.85], [3500, 1], [6000, 0.8]]
+      "torqueCurve": [[0, 0.6], [1000, 0.72], [2500, 0.9], [4100, 1], [4900, 0.893], [6000, 0.7]],
+      "tractionControl": true,
+      "engineBraking": 0.145
     },
     "transmission": {
-      "gearRatios": [4.0, 2.4, 1.6, 1.2, 0.95],
-      "reverseRatio": 3.9,
-      "finalDrive": 3.0,
-      "changeUpRPM": 5100,
-      "changeDownRPM": 1800
+      "gearRatios": [2.84, 1.55, 1.0, 0.7],
+      "reverseRatio": 2.32,
+      "finalDrive": 2.981,
+      "changeUpRPM": 4900,
+      "changeDownRPM": 1800,
+      "shiftTime": 0.3
     },
     "suspension": {
       "maxRaise": 14,
-      "maxDrop": 14,
-      "springRate": 200,
+      "maxDrop": 16,
+      "springRate": 175,
       "springPreload": 60,
-      "damping": 0.45
+      "damping": 0.78
     },
     "steering": {
       "maxAngle": 32,
       "ackermann": true
     },
     "brakes": {
-      "brakeTorque": 3500,
-      "handbrakeTorque": 6000
+      "brakeTorque": 5000,
+      "handbrakeTorque": 6000,
+      "abs": true,
+      "frontShare": 0.65
     },
     "tires": {
-      "friction": 3.0
+      "friction": 1.37
     },
     "camera": {
       "armLength": 520,
@@ -87,18 +93,21 @@
   },
   "ranges": {
     "mass": [1600, 3500],
-    "maxSpeed": [2000, 5500],
+    "maxSpeed": [2000, 6000],
     "dragCoefficient": [0.25, 0.55],
-    "engine/maxTorque": [400, 1400],
+    "engine/maxTorque": [200, 1400],
     "engine/maxRPM": [4000, 8000],
     "engine/idleRPM": [500, 1100],
+    "engine/engineBraking": [0, 0.5],
+    "transmission/shiftTime": [0.05, 1],
     "suspension/maxRaise": [5, 30],
     "suspension/maxDrop": [5, 30],
-    "suspension/springRate": [100, 600],
+    "suspension/springRate": [55, 600],
     "suspension/damping": [0.2, 0.9],
     "steering/maxAngle": [20, 45],
     "brakes/brakeTorque": [1500, 7000],
-    "tires/friction": [1.5, 5],
+    "brakes/frontShare": [0.5, 0.8],
+    "tires/friction": [0.8, 5],
     "wheels/*/radius": [24, 42]
   }
 }

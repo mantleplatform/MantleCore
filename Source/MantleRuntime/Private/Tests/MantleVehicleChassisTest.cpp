@@ -70,6 +70,27 @@ bool FMantleVehicleChassisPresetsMakeAssetsTest::RunTest(const FString& Paramete
 			TestTrue(*FString::Printf(TEXT("%s: the body validates (%s)"), *Id, *HeliWhy), Asset.Body.Validate(HeliWhy));
 			continue;
 		}
+		// A tracked vehicle has its own tests too (Mantle.Vehicle.Chassis.Tracked*): here it is only a valid asset, with a road wheel each side of its three
+		// to ten axles, on bones, none steered and every one driven and braked, a body that validates, a center of mass, its hull as collision, and its
+		// driver in a car's seat with no steering wheel (it is steered with levers) and no passenger.
+		if (Spec.Tracked.bSet)
+		{
+			TestTrue(*FString::Printf(TEXT("%s: three to ten axles"), *Id), Spec.Axles.Num() >= 3 && Spec.Axles.Num() <= 10);
+			TestEqual(*FString::Printf(TEXT("%s: a road wheel each side of every axle"), *Id), Desc.Wheels.Num(), 2 * Spec.Axles.Num());
+			TestEqual(*FString::Printf(TEXT("%s: and a position each"), *Id), Asset.WheelPositions.Num(), Desc.Wheels.Num());
+			TestEqual(*FString::Printf(TEXT("%s: a root and a bone per road wheel"), *Id), Asset.Body.Bones.Num(), Desc.Wheels.Num() + 1);
+			TestEqual(*FString::Printf(TEXT("%s: one collision box"), *Id), Desc.Collision.Num(), 1);
+			TestTrue(*FString::Printf(TEXT("%s: it has a center of mass"), *Id), Desc.bCenterOfMass);
+			TestTrue(*FString::Printf(TEXT("%s: no road wheel steers, and every one is driven and braked"), *Id), !Desc.Wheels.ContainsByPredicate([](const FMantleVehicleWheelDesc& Wheel)
+			{
+				return Wheel.bSteering || !Wheel.bDriven || !Wheel.bHandbrake;
+			}));
+			TestTrue(*FString::Printf(TEXT("%s: the driver sits on the left in a car's seat with no steering wheel, and no passenger"), *Id),
+				Desc.SeatLocation.Y < 0.0 && Desc.SeatKind == EMantleVehicleSeatKind::Car && !Desc.bSteeringWheel && !Desc.bPassengerSeat);
+			FString TrackedWhy;
+			TestTrue(*FString::Printf(TEXT("%s: the body validates (%s)"), *Id, *TrackedWhy), Asset.Body.Validate(TrackedWhy));
+			continue;
+		}
 		FMantleVehicleChassisReference Reference;
 		if (TestTrue(*FString::Printf(TEXT("%s: the chassis reads (%s)"), *Id, *Error), FMantleVehicleChassisBuilder::ReadReference(Text, Reference, Error)))
 		{
@@ -132,13 +153,23 @@ bool FMantleVehicleChassisPresetsMakeAssetsTest::RunTest(const FString& Paramete
 			TestEqual(*FString::Printf(TEXT("%s: wheel %d's center is at its radius"), *Id, Index), Asset.WheelPositions[Index].Z, Desc.Wheels[Index].Radius);
 			TestTrue(*FString::Printf(TEXT("%s: wheel %d has a width"), *Id, Index), Desc.Wheels[Index].Width > 0.0);
 		}
-		TestEqual(*FString::Printf(TEXT("%s: one collision box"), *Id), Desc.Collision.Num(), 1);
+		// A fifth-wheel tractor (#446) collides as its cab and the frame under its fifth wheel.
+		TestEqual(*FString::Printf(TEXT("%s: one collision box (a tractor's cab and frame: two)"), *Id), Desc.Collision.Num(), Spec.HasTractorFrame() ? 2 : 1);
 		TestTrue(*FString::Printf(TEXT("%s: it has a center of mass"), *Id), Desc.bCenterOfMass);
-		if (Reference.bCenterline)
+		// A rider straddles a bike (on the centerline) or a quad (the ATV's wheels in pairs, #376 step 9d): on the centerline, no wheel, no passenger.
+		// A jet ski's rider (#15) holds a handlebar that is its steering wheel, turning about the column, and takes a pillion behind.
+		if (Reference.bCenterline || Reference.Rider.bSet)
 		{
+			const bool bJetSki = Spec.Type == EMantleChassisType::JetSki;
 			TestTrue(*FString::Printf(TEXT("%s: the rider sits on the centerline"), *Id), FMath::IsNearlyZero(Desc.SeatLocation.Y));
-			TestFalse(*FString::Printf(TEXT("%s: a rider has handlebars, not a steering wheel"), *Id), Desc.bSteeringWheel);
-			TestFalse(*FString::Printf(TEXT("%s: and no passenger"), *Id), Desc.bPassengerSeat);
+			TestEqual(*FString::Printf(TEXT("%s: a rider has handlebars, not a steering wheel (a jet ski's handlebar is one)"), *Id), Desc.bSteeringWheel, bJetSki);
+			TestEqual(*FString::Printf(TEXT("%s: and no passenger (a jet ski's sits behind the rider)"), *Id), Desc.bPassengerSeat, bJetSki);
+			continue;
+		}
+		// A trailer (#446) keeps the document's driver seat (the hovercraft precedent: its movement type ignores it) and has no passenger.
+		if (Spec.bTrailer)
+		{
+			TestFalse(*FString::Printf(TEXT("%s: a trailer has no passenger"), *Id), Desc.bPassengerSeat);
 			continue;
 		}
 		TestTrue(*FString::Printf(TEXT("%s: the driver sits on the left, -Y"), *Id), Desc.SeatLocation.Y < 0.0);
@@ -387,7 +418,7 @@ bool FMantleVehicleBodyCollisionLeavesWheelsOutTest::RunTest(const FString& Para
 		const TSharedPtr<const FMantleVehicleBodyCollision> Chassis = FMantleVehicleBodyCollision::FromBody(Asset.Body, Names);
 		if (TestTrue(*FString::Printf(TEXT("%s: the chassis body has a collision shape"), *Id), Chassis.IsValid()))
 		{
-			if (Spec.Helicopter.bSet || Spec.Hovercraft.bSet)
+			if (Spec.Helicopter.bSet || Spec.Hovercraft.bSet || Spec.Boat.bSet)
 			{
 				TestEqual(*FString::Printf(TEXT("%s: with no wheels drawn, every triangle is in it"), *Id), Chassis->NumTriangles(), Asset.Body.LODs[0].NumTriangles());
 			}

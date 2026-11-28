@@ -15,6 +15,7 @@ class UMantleVehicleSource;
 class UObject;
 class USkeletalMesh;
 struct FMantleSkinnedMesh;
+struct FMantleVehiclePreset;
 struct FMantleVehicleSurroundings;
 struct FMantleVehicleSourcePart;
 struct FSkeletalMaterial;
@@ -80,6 +81,20 @@ struct FMantleVehicleModelOptions
 	 * propeller bones. Ignored when Spec is given: that chassis is the one used.
 	 */
 	TOptional<bool> TwinEngine;
+	/** The creator's drive choice (#376 off-road follow-on): front, rear or all-wheel drive on the type's axles (FMantleChassisSpec::ApplyDrive). Unset or
+	 *  Type: the type's own. Ignored, with a note, on a type whose drive isn't a choice. */
+	TOptional<EMantleVehicleDrive> Drive;
+	/**
+	 * The creator's hitch (#446, the window's Towing choice): unset or Preset keeps the type's own; None takes it away; a tow ball or a fifth wheel goes at
+	 * HitchLocation or, unset, where DefaultHitchLocation puts it on the built vehicle. A plane, helicopter, hovercraft, boat or trailer gets none, with a note.
+	 */
+	TOptional<EMantleVehicleSourceHitch> Hitch;
+	TOptional<FVector> HitchLocation;
+	/**
+	 * The creator's engine sound (#258, the window's Engine Sound pick): an id of FMantleEngineSounds that the vehicle can have, written into its
+	 * Tuning.EngineSound after the type's own (FMantleVehicleBuilder::ApplyEngineSound). Unset: the type's own, as its preset sets it.
+	 */
+	TOptional<FName> EngineSound;
 	/** The chassis to put the model on, already shaped (the window's); unset, the type's own sized to the model (FMantleVehicleChassisSkin::Propose). */
 	TOptional<FMantleChassisSpec> Spec;
 	/** The folder (a long package path) the vehicle is saved under, one subfolder of its name inside; empty for the project's MantleVehicles folder. */
@@ -221,6 +236,8 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 * say what was done, including that pieces which move become one solid piece.
 	 */
 	static FMantleVehicleBuildResult BuildAny(UObject* Model, const FString& PresetId, const FMantleVehicleModelOptions& Options = FMantleVehicleModelOptions());
+	/** BuildAny before the creator's hitch goes on (ApplyHitch): the Blueprint, own-wheels or skin route. */
+	static FMantleVehicleBuildResult BuildAnyRoute(UObject* Model, const FString& PresetId, const FMantleVehicleModelOptions& Options);
 
 	/**
 	 * Chassis from a model (#821 WP5, #793 step 5): the creator's static or skeletal Model worn whole as the skin of PresetId's own chassis. The chassis is the
@@ -320,6 +337,42 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	static void ApplyOwnHinges(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options);
 
 	/**
+	 * The creator's hitch on a built vehicle (#446): Options.Hitch and Options.HitchLocation into Source's Tuning.Hitch and Tuning.HitchLocation, the place
+	 * DefaultHitchLocation's when none is given. Nothing when Options.Hitch is unset; a note and nothing on a vehicle that is not wheeled or tracked. Saves the
+	 * vehicle again when the build saved it.
+	 */
+	static void ApplyHitch(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options);
+
+	/**
+	 * The creator's engine sound (#258) on the built vehicle: Options.EngineSound into its Tuning.EngineSound, so the window's pick and the asset's
+	 * Details show one value. Nothing when unset; a note and nothing on a vehicle that has none to pick or can't have that one. Saves the vehicle again
+	 * when the build saved it.
+	 */
+	static void ApplyEngineSound(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options);
+	/** The engine sounds a type's vehicles may pick (FMantleEngineSounds: a car's, a motorcycle's on two wheels, both on handlebars over more wheels,
+	 *  an aircraft's on a plane, a helicopter or a hovercraft), by its movement, wheels, driver's seat, pedals and drive; empty for one with none to
+	 *  pick (pedalled, electric or a trailer). Pure. */
+	static void EngineSoundOptions(const FMantleVehiclePreset& Type, TArray<FName>& OutIds);
+	/** The engine sound a type's preset gives its vehicles (defaults.engine.sound); None when it gives none. Pure. */
+	static FName PresetEngineSound(const FMantleVehiclePreset& Type);
+	/** An engine sound's name in the window's words: "V8", "Inline-4", "Motorcycle V-twin"; "Mantle's default" for None. Pure. */
+	static FString EngineSoundName(FName Id);
+
+	/**
+	 * The window's Towing choice as build options (#446). Always sets Options.Hitch, so the type's own (Preset) undoes an earlier pick on a vehicle built
+	 * again; a type that tows nothing (bTypeTows false) always gets Preset, whatever was picked. HitchLocation only for a tow ball or fifth wheel the
+	 * creator placed (bPlaced). Pure.
+	 */
+	static void HitchOptions(FMantleVehicleModelOptions& Options, bool bTypeTows, EMantleVehicleSourceHitch Choice, bool bPlaced, const FVector& At);
+
+	/**
+	 * Where a hitch of Kind goes on Source's body (#446), in the body's space: FMantleVehicleChassisDocument::DefaultHitchLocation with the body's rear end, the
+	 * middle of its unsteered wheels (the rear axles) and its lowest point (the tyres' bottoms) as the ground. A body that can't be read gets a car's
+	 * (behind a 5 m car, on its centre line).
+	 */
+	static FVector DefaultHitchLocation(const UMantleVehicleSource& Source, EMantleVehicleHitchKind Kind);
+
+	/**
 	 * The steering wheel of a model that keeps its own skeleton: its bone, found from the model's bone names (FMantleVehicleChassisSkin::SuggestSteeringWheelBone) when Source's is
 	 * empty (a bone the creator set is kept; the wheels' bones, what they hang from and the doors', hood's and trunk's are never taken, as the cook turns each bone for one part
 	 * only), and then, when Steering Wheel is off, its place measured from the vertices weighted to the bone (PlaceSteeringWheel). True when it changed Source, with notes in
@@ -379,8 +432,8 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 * level"), and selects it. The creator then presses Test Locally. False, with OutProblem in plain words, when no level is open.
 	 * OutActor, when given, receives the new spawn.
 	 *
-	 * A plane or jet needs a long flat stretch to take off from: it is put where the ground ahead of the camera is flattest for its take-off run (about 150 m for a jet, 350 m for
-	 * a plane), not necessarily 6 m ahead. OutNote, when given, says in plain words where it went and what a flier needs: the run it needs and whether the spot has it, or that a
+	 * A plane or jet needs a long flat stretch to take off from: it is put where the ground ahead of the camera is flattest for its take-off run (about 350 m for a jet, 410 m for a light plane,
+	 * 530 m for a warbird), not necessarily 6 m ahead. OutNote, when given, says in plain words where it went and what a flier needs: the run it needs and whether the spot has it, or that a
 	 * helicopter needs open space above. Empty for a vehicle that drives.
 	 */
 	static bool PlaceInLevel(UMantleVehicleSource& Source, FString& OutProblem, AMantleVehicleSpawnPoint** OutActor = nullptr, FString* OutNote = nullptr);

@@ -51,6 +51,10 @@ class SMantleVehicleBuilder : public SCompoundWidget
 	friend struct FMantleVehicleBuilderShotAccess;
 	/** The tests of the Liveries step: its images, names and the one the car starts in. */
 	friend struct FMantleVehicleBuilderLiveryAccess;
+	/** The tests of the Towing choice (#446): what Build sends, and that a new type starts on its own hitch. */
+	friend struct FMantleVehicleBuilderHitchAccess;
+	/** The tests of the Engine Sound pick (#258): its list by type, what Build sends, and that it and the built vehicle's settings show one value. */
+	friend struct FMantleVehicleBuilderEngineSoundAccess;
 
 public:
 	SLATE_BEGIN_ARGS(SMantleVehicleBuilder) {}
@@ -81,9 +85,9 @@ private:
 	TSharedRef<SWidget> WithPicture(const TSharedRef<SWidget>& Left, bool bLights = false, bool bLiveries = false);
 	/** The picture: the model on its frame once there is one, else the line that says what to do next. */
 	TSharedRef<SWidget> MakePicture();
-	/** The Size row of a type shaped by one Size (a plane, helicopter or hovercraft). */
+	/** The Size row of a type shaped by one Size (a plane, helicopter, hovercraft or tracked vehicle). */
 	TSharedRef<SWidget> MakeSizeRow();
-	/** One feel slider (grip, power, suspension or top speed), -1 to 1. A road vehicle has all four, a hovercraft its top speed. */
+	/** One feel slider (grip, power, suspension or top speed), -1 to 1. A road vehicle and a tracked one have all four, a hovercraft its top speed. */
 	TSharedRef<SWidget> MakeFeelRow(EMantleVehicleFeel Feel);
 	TSharedRef<SWidget> MakePassengerRow();
 	/** The feel sliders the picked type has, and its passenger tickbox where its preset has a passenger seat, one under the other. */
@@ -91,6 +95,20 @@ private:
 
 	/** Picks a type: loads its frame as the archetype. Picking the type already picked changes nothing. */
 	void PickPreset(const FString& PresetId, const FText& Name);
+	/** #378: picks one of the selected type's engines (a motorcycle's size): its numbers, centre of mass and lean replace the last engine's. */
+	void PickEngine(const FString& EngineId);
+	/** The selected type's id without its engine ("motorcycle" for "motorcycle+600"). */
+	FString SelectedTypeId() const;
+	/** The Engine row under the cards, shown when the selected type has engines. */
+	TSharedRef<SWidget> MakeEngineRow();
+	/** #258: the Engine Sound row under it, shown when the selected type's vehicles can pick one (FMantleVehicleBuilder::EngineSoundOptions). */
+	TSharedRef<SWidget> MakeEngineSoundRow();
+	/** #258: the selected type's engine sounds and its own one, which the pick starts on (PickPreset). */
+	void RefreshEngineSounds();
+	/** #258: picks an engine sound: the vehicle this window built gets it at once (so its Details show the same), and Build sends it. */
+	void PickEngineSound(FName Id);
+	/** #258: the engine sound the window shows: the built vehicle's own setting while there is one (changed in its Details too), else the pick. */
+	FName CurrentEngineSound() const;
 
 	// Feel and size.
 	void SetShapeSize(double Value);
@@ -294,11 +312,22 @@ private:
 	TArray<FMantleVehicleModelPiece> PieceValues;
 	/** The four ways a model's nose may face and the turn each one needs. */
 	TArray<TSharedPtr<FString>> YawChoices;
+	/** #378: the selected type's engines by name, and their ids in the same order. */
+	TArray<TSharedPtr<FString>> EngineChoices;
+	TArray<FString> EngineIds;
+	/** #258: the selected type's engine sounds by name and id (empty: it has none to pick), and the pick (the type's own until the creator picks). */
+	TArray<TSharedPtr<FString>> EngineSoundChoices;
+	TArray<FName> EngineSoundIds;
+	FName EngineSoundChoice;
 	TArray<double> YawValues;
 	/** The picked model is worn as a skin on the frame (else its own wheels are fitted). Worked out when the model or the type is picked. */
 	bool bUseSkin = false;
 	/** The frame is the twin-engined plane (FMantleVehicleChassisSkin::AsTwin): set when the model has two propellers, or by the creator. */
 	bool bTwinEngine = false;
+	/** The creator's drive choice (#376 off-road follow-on): the type's own, or front, rear or all-wheel drive. Kept when the type changes; a type whose drive
+	 *  isn't a choice hides it and ignores it. */
+	EMantleVehicleDrive DriveChoice = EMantleVehicleDrive::Type;
+	TArray<TSharedPtr<FString>> DriveChoices;
 	TSharedPtr<SVerticalBox> ResultBox;
 	/** What Import a file... did, in plain words, under the picker; red when it failed. */
 	FText ImportStatus;
@@ -322,6 +351,17 @@ private:
 	// Seats and paint.
 	/** "This model has no inside": the driver and passenger are not drawn. Written into the vehicle when it is built, and at once when it is already built. */
 	bool bHideRiders = false;
+	/**
+	 * The creator's hitch (#446): the type's own, none, a tow ball or a fifth wheel, in EMantleVehicleSourceHitch's order. With bHitchPlaced at HitchAt (cm, in the
+	 * vehicle's space), else where the build puts it (FMantleVehicleBuilder::DefaultHitchLocation). A new type starts on its own (PickPreset), so a pick
+	 * made for another type never follows it; a type that tows nothing hides the choice and always builds with its own.
+	 */
+	EMantleVehicleSourceHitch HitchChoice = EMantleVehicleSourceHitch::Preset;
+	TArray<TSharedPtr<FString>> HitchChoices;
+	bool bHitchPlaced = false;
+	FVector HitchAt = FVector(-250.0, 0.0, 50.0);
+	/** Whether the selected type can tow: wheeled or tracked, not a trailer. */
+	bool TypeTows() const;
 	struct FPaintChoice
 	{
 		FString Section;

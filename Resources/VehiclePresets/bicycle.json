@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "id": "bicycle",
+  "name": "Bicycle",
+  "description": "A road bike the rider pedals. Push harder for more speed, coast with the pedals still, hold sprint to stand on the pedals while the rider's sprint lasts. It shifts its own gears, leans into turns by itself and steers by the front fork; the rider is part of its weight.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format and motorcycle.json for the two-wheeler (#553, #378) rules it shares: layout.centerline, wheel_f under fork_f, a motorcycle seat with chassis.rider, derive.stability 0. #447: modeled on a Trek Domane AL 2 Gen 4 (56 cm): 10.55 kg bike plus a 75 kg rider (mass and centre of mass are bike and rider together), Claris 2x8 (50/34 rings, 11-13-15-18-21-24-28-32 cassette) as 8 ratios picked from the 16 pairs, each crank turns per wheel turn (cog / ring), finalDrive 1, 700x32c tyres (34.3 cm). defaults.pedal makes it pedalled: the engine block below is nominal and drives nothing (as a plane's), and the transmission's reverseRatio and change rpms are not used (reverse uses 1st, shifts follow pedal.cadence). chassis.rider.crank is the bottom bracket and crank length (172.5 mm); the foot pegs are the pedals with the cranks level, where a coasting rider's feet rest. Brakes give ~0.6 g at full brake (keyboard brake is all or nothing). CdA 0.32 (hands on the hoods), Crr 0.005 (road clincher).",
+  "movementType": "wheeled",
+  "publishable": true,
+  "type": "motorcycle",
+  "seats": {
+    "driver": "motorcycle"
+  },
+  "fit": {
+    "wheelRadius": 34.3,
+    "trackWidth": 40,
+    "minScale": 0.8,
+    "maxScale": 1.25
+  },
+  "wheels": {
+    "min": 2,
+    "max": 2
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 100.5,
+      "track": 40,
+      "wheelRadius": 34.3,
+      "wheelWidth": 3.2,
+      "centerline": true,
+      "axles": [
+        {
+          "steer": true,
+          "drive": false
+        },
+        {
+          "steer": false,
+          "drive": true,
+          "handbrake": true
+        }
+      ]
+    },
+    "body": {
+      "length": 165,
+      "width": 40,
+      "height": 75,
+      "groundClearance": 25
+    },
+    "centerOfMass": [-14, 0, 98],
+    "seat": {
+      "location": [-30, 0, 92.4]
+    },
+    "rider": {
+      "handlebar": {
+        "left": [44, -21, 97],
+        "right": [44, 21, 97]
+      },
+      "footPegs": {
+        "left": [-26, -12.5, 28.5],
+        "right": [8.5, 12.5, 28.5]
+      },
+      "crank": {
+        "center": [-8.75, 0, 27],
+        "length": 17.25
+      },
+      "pelvisOffset": [0, 0, 21.9],
+      "stopPelvisShift": [25, 10, -22],
+      "sprintPelvisShift": [15, 0, 12],
+      "kneeSplayDegrees": 4,
+      "rotationControl": {
+        "torqueControl": true,
+        "torqueRotationDamping": 15,
+        "targetRotation": true,
+        "rollVsSpeed": true,
+        "rollControlScaling": 1,
+        "rollMaxAngle": 45,
+        "rotationStiffness": 100,
+        "rotationDamping": 10,
+        "maxAccel": 100,
+        "autoCenterRollStrength": 1
+      }
+    }
+  },
+  "derive": {
+    "stability": 0,
+    "cameraArmPerLength": 0.63,
+    "cameraHeightPerHeight": 1.1
+  },
+  "defaults": {
+    "mass": 85.55,
+    "maxSpeed": 2500,
+    "dragCoefficient": 0.8,
+    "frontalArea": 0.4,
+    "pedal": {
+      "riderPower": 250,
+      "sprintPower": 900,
+      "sprintReserve": 15,
+      "maxCadence": 200,
+      "cadence": 85
+    },
+    "engine": {
+      "maxTorque": 10,
+      "maxRPM": 1000,
+      "idleRPM": 300,
+      "torqueCurve": [[0, 1], [1000, 1]],
+      "tractionControl": false
+    },
+    "transmission": {
+      "gearRatios": [0.941, 0.824, 0.618, 0.529, 0.42, 0.36, 0.3, 0.22],
+      "reverseRatio": 0.941,
+      "finalDrive": 1,
+      "changeUpRPM": 500,
+      "changeDownRPM": 300,
+      "shiftTime": 0.15
+    },
+    "suspension": {
+      "maxRaise": 3,
+      "maxDrop": 3,
+      "springRate": 110,
+      "springPreload": 50,
+      "damping": 0.18
+    },
+    "steering": {
+      "maxAngle": 45,
+      "ackermann": false
+    },
+    "brakes": {
+      "brakeTorque": 92,
+      "handbrakeTorque": 52,
+      "abs": false,
+      "frontShare": 0.7
+    },
+    "tires": {
+      "friction": 1.12,
+      "rollingResistance": 0.005
+    },
+    "camera": {
+      "armLength": 300,
+      "height": 120
+    }
+  },
+  "ranges": {
+    "mass": [60, 160],
+    "maxSpeed": [1000, 4000],
+    "dragCoefficient": [0.5, 1.2],
+    "frontalArea": [0.25, 0.8],
+    "pedal/riderPower": [50, 600],
+    "pedal/sprintPower": [100, 2500],
+    "pedal/sprintReserve": [0, 60],
+    "pedal/maxCadence": [120, 250],
+    "pedal/cadence": [50, 120],
+    "suspension/maxRaise": [1, 10],
+    "suspension/maxDrop": [1, 10],
+    "suspension/springRate": [50, 400],
+    "suspension/damping": [0.1, 0.9],
+    "steering/maxAngle": [20, 60],
+    "brakes/brakeTorque": [20, 400],
+    "brakes/frontShare": [0.3, 0.8],
+    "tires/friction": [0.5, 3],
+    "tires/rollingResistance": [0.003, 0.02],
+    "seat/rider/rotationControl/rollMaxAngle": [20, 55],
+    "wheels/*/radius": [20, 37]
+  }
+}

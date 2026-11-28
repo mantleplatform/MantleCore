@@ -4,6 +4,7 @@
 
 #include "MantleVehicleBlueprint.h"
 #include "MantleVehicleBuilder.h"
+#include "MantleChassisSpec.h"
 #include "MantleVehicleChassisBuilder.h"
 #include "MantleVehicleChassisSkin.h"
 #include "MantleVehicleConverter.h"
@@ -383,6 +384,14 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeTypeStep()
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
 					[
+						MakeEngineRow()
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
+					[
+						MakeEngineSoundRow()
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
+					[
 						SNew(STextBlock)
 							.AutoWrapText(true)
 							.ColorAndOpacity(FSlateColor(Bad))
@@ -405,7 +414,7 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakePresetCard(const FString& PresetI
 		.ContentPadding(FMargin(12, 10))
 		.ButtonColorAndOpacity_Lambda([this, PresetId]()
 		{
-			return SelectedPresetId == PresetId ? FLinearColor(0.25f, 0.55f, 1.0f) : FLinearColor(1.f, 1.f, 1.f);
+			return SelectedTypeId() == PresetId ? FLinearColor(0.25f, 0.55f, 1.0f) : FLinearColor(1.f, 1.f, 1.f);
 		})
 		.OnClicked_Lambda([this, PresetId, Name]()
 		{
@@ -429,31 +438,189 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakePresetCard(const FString& PresetI
 		];
 }
 
-void SMantleVehicleBuilder::PickPreset(const FString& PresetId, const FText& Name)
+FString SMantleVehicleBuilder::SelectedTypeId() const
 {
-	if (PresetId == SelectedPresetId)
+	FString TypeId;
+	FString Engine;
+	FMantleChassisSpec::SplitPresetId(SelectedPresetId, TypeId, Engine);
+	return TypeId;
+}
+
+TSharedRef<SWidget> SMantleVehicleBuilder::MakeEngineRow()
+{
+	return SNew(SHorizontalBox)
+		.Visibility_Lambda([this] { return EngineIds.Num() > 0 ? EVisibility::Visible : EVisibility::Collapsed; })
+		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 2.f, 8.f, 2.f)
+		[
+			SNew(STextBlock)
+				.Text(LOCTEXT("EngineLabel", "Engine"))
+				.ToolTipText(LOCTEXT("EngineTip", "The engine fills in that engine's real numbers: power, gears, weight, top speed, brakes and how far it leans. You can tune any of them afterwards."))
+		]
+		+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
+		[
+			SNew(SComboBox<TSharedPtr<FString>>)
+				.OptionsSource(&EngineChoices)
+				.OnGenerateWidget_Lambda([](TSharedPtr<FString> Item) { return SNew(STextBlock).Text(FText::FromString(*Item)); })
+				.OnSelectionChanged_Lambda([this](TSharedPtr<FString> Item, ESelectInfo::Type)
+				{
+					const int32 At = EngineChoices.IndexOfByKey(Item);
+					if (At != INDEX_NONE)
+					{
+						PickEngine(EngineIds[At]);
+					}
+				})
+				[
+					SNew(STextBlock).Text_Lambda([this]
+					{
+						FString TypeId;
+						FString Engine;
+						FMantleChassisSpec::SplitPresetId(SelectedPresetId, TypeId, Engine);
+						const int32 At = EngineIds.IndexOfByKey(Engine);
+						return At != INDEX_NONE ? FText::FromString(*EngineChoices[At]) : FText::GetEmpty();
+					})
+				]
+		];
+}
+
+TSharedRef<SWidget> SMantleVehicleBuilder::MakeEngineSoundRow()
+{
+	return SNew(SHorizontalBox)
+		.Visibility_Lambda([this] { return EngineSoundIds.Num() > 0 ? EVisibility::Visible : EVisibility::Collapsed; })
+		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 2.f, 8.f, 2.f)
+		[
+			SNew(STextBlock)
+				.Text(LOCTEXT("EngineSoundLabel", "Engine sound"))
+				.ToolTipText(LOCTEXT("EngineSoundTip", "Which engine it sounds like. A turbo or supercharger is heard on top of it. The same setting as Engine Sound in the vehicle's settings: change it in either place."))
+		]
+		+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
+		[
+			SNew(SComboBox<TSharedPtr<FString>>)
+				.OptionsSource(&EngineSoundChoices)
+				.OnGenerateWidget_Lambda([](TSharedPtr<FString> Item) { return SNew(STextBlock).Text(FText::FromString(*Item)); })
+				.OnSelectionChanged_Lambda([this](TSharedPtr<FString> Item, ESelectInfo::Type)
+				{
+					const int32 At = EngineSoundChoices.IndexOfByKey(Item);
+					if (At != INDEX_NONE)
+					{
+						PickEngineSound(EngineSoundIds[At]);
+					}
+				})
+				[
+					SNew(STextBlock).Text_Lambda([this] { return FText::FromString(FMantleVehicleBuilder::EngineSoundName(CurrentEngineSound())); })
+				]
+		];
+}
+
+void SMantleVehicleBuilder::RefreshEngineSounds()
+{
+	EngineSoundChoices.Reset();
+	EngineSoundIds.Reset();
+	EngineSoundChoice = NAME_None;
+	const FMantleVehiclePreset* Type = FMantleVehiclePresets::Find(SelectedPresetId);
+	if (!Type)
 	{
 		return;
+	}
+	FMantleVehicleBuilder::EngineSoundOptions(*Type, EngineSoundIds);
+	for (const FName Id : EngineSoundIds)
+	{
+		EngineSoundChoices.Add(MakeShared<FString>(FMantleVehicleBuilder::EngineSoundName(Id)));
+	}
+	// The pick starts on the type's own sound (the one its preset gives every vehicle of it).
+	if (EngineSoundIds.Num() > 0)
+	{
+		EngineSoundChoice = FMantleVehicleBuilder::PresetEngineSound(*Type);
+	}
+}
+
+void SMantleVehicleBuilder::PickEngineSound(const FName Id)
+{
+	EngineSoundChoice = Id;
+	// The vehicle this window built takes it at once: its Details and this row are one setting (Build sends it again, which then changes nothing).
+	if (UMantleVehicleSource* Built = BuiltSource.Get(); Built && Built->CanPickEngineSound() && Built->Tuning.EngineSound != Id)
+	{
+		Built->Modify();
+		Built->Tuning.EngineSound = Id;
+	}
+}
+
+FName SMantleVehicleBuilder::CurrentEngineSound() const
+{
+	const UMantleVehicleSource* Built = BuiltSource.Get();
+	return Built ? Built->Tuning.EngineSound : EngineSoundChoice;
+}
+
+void SMantleVehicleBuilder::PickEngine(const FString& EngineId)
+{
+	const FString TypeId = SelectedTypeId();
+	const FString Selector = TypeId + TEXT("+") + EngineId;
+	if (TypeId.IsEmpty() || Selector == SelectedPresetId)
+	{
+		return;
+	}
+	FMantleChassisSpec Loaded;
+	FString Error;
+	if (!FMantleVehicleChassisBuilder::LoadSpec(Selector, Loaded, Error))
+	{
+		TypeProblem = FText::Format(LOCTEXT("EngineNotRead", "That engine could not be read ({0}). Reinstall the Mantle plugin, then open this window again."), FText::FromString(Error));
+		return;
+	}
+	TypeProblem = FText::GetEmpty();
+	SelectedPresetId = Selector;
+	const FMantleVehiclePreset* Picked = FMantleVehiclePresets::Find(Selector);
+	Shape.Start(Loaded, Picked ? Picked->FitMinScale : 0.0, Picked ? Picked->FitMaxScale : 0.0);
+	bPreviewDirty = false;
+	// Another engine is another vehicle's numbers: what was built for the last one stays in the project, and the model is read again.
+	ForgetBuild();
+	ReadModel();
+}
+
+void SMantleVehicleBuilder::PickPreset(const FString& PresetId, const FText& Name)
+{
+	if (PresetId == SelectedTypeId())
+	{
+		return;
+	}
+	// #378: a type with engines (the motorcycle) starts with its default engine; the Engine row lists the rest.
+	EngineChoices.Reset();
+	EngineIds.Reset();
+	FString Selector = PresetId;
+	if (const FMantleVehiclePreset* Type = FMantleVehiclePresets::Find(PresetId))
+	{
+		for (const FMantleVehiclePresetEngine& Engine : Type->Engines)
+		{
+			EngineChoices.Add(MakeShared<FString>(Engine.Description.IsEmpty() ? Engine.Name : Engine.Name + TEXT(" (") + Engine.Description.LeftChop(Engine.Description.EndsWith(TEXT(".")) ? 1 : 0) + TEXT(")")));
+			EngineIds.Add(Engine.Id);
+		}
+		if (!Type->DefaultEngine.IsEmpty())
+		{
+			Selector = PresetId + TEXT("+") + Type->DefaultEngine;
+		}
 	}
 	// The type's frame at its own size: the starting point of its sizes and feel.
 	FMantleChassisSpec Loaded;
 	FString Error;
-	if (!FMantleVehicleChassisBuilder::LoadSpec(PresetId, Loaded, Error))
+	if (!FMantleVehicleChassisBuilder::LoadSpec(Selector, Loaded, Error))
 	{
 		TypeProblem = FText::Format(LOCTEXT("TypeNotRead", "The {0}'s shape could not be read ({1}). Reinstall the Mantle plugin, then open this window again."),
 			Name, FText::FromString(Error));
 		return;
 	}
 	TypeProblem = FText::GetEmpty();
-	SelectedPresetId = PresetId;
+	SelectedPresetId = Selector;
 	SelectedPresetName = Name;
-	// A plane, helicopter or hovercraft is sized by one Size held to the preset's own fit range.
-	const FMantleVehiclePreset* Picked = FMantleVehiclePresets::Find(PresetId);
+	// A new type starts on its own hitch (#446): a tow ball or fifth wheel picked for the last type, or its place, doesn't follow it.
+	HitchChoice = EMantleVehicleSourceHitch::Preset;
+	bHitchPlaced = false;
+	// A plane, helicopter, hovercraft or tracked vehicle is sized by one Size held to the preset's own fit range.
+	const FMantleVehiclePreset* Picked = FMantleVehiclePresets::Find(Selector);
 	Shape.Start(Loaded, Picked ? Picked->FitMinScale : 0.0, Picked ? Picked->FitMaxScale : 0.0);
 	bPreviewDirty = false;
 
 	// A different type is a different vehicle: what was made for the last one stays in the project, and this window stops pointing at it.
 	ForgetBuild();
+	// #258: its own engine sounds, starting on its own one.
+	RefreshEngineSounds();
 
 	// A model already picked is read again for the new type: its moving parts, its facing, its size and whether it fits are the new type's.
 	ReadModel();
@@ -544,7 +711,7 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeFeelRow(const EMantleVehicleFeel 
 		[
 			SNew(SBox).WidthOverride(150.f)
 			[
-				SNew(STextBlock).Text(FMantleVehicleShape::FeelLabel(Feel)).ToolTipText(FMantleVehicleShape::FeelHelp(Feel))
+				SNew(STextBlock).Text(FMantleVehicleShape::FeelLabel(Feel)).ToolTipText_Lambda([this, Feel] { return FMantleVehicleShape::FeelHelp(Feel, Shape.GetFamily()); })
 			]
 		]
 		+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center).Padding(0.f, 4.f)
@@ -555,7 +722,7 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeFeelRow(const EMantleVehicleFeel 
 				.Delta(0.05f)
 				.MinFractionalDigits(2)
 				.MaxFractionalDigits(2)
-				.ToolTipText(FMantleVehicleShape::FeelHelp(Feel))
+				.ToolTipText_Lambda([this, Feel] { return FMantleVehicleShape::FeelHelp(Feel, Shape.GetFamily()); })
 				.Value_Lambda([this, Feel] { return static_cast<float>(Shape.GetFeel(Feel)); })
 				.OnValueChanged_Lambda([this, Feel](float Value) { SetFeel(Feel, Value); })
 				.OnEndSliderMovement_Lambda([this](float) { FlushPreview(); })
@@ -756,6 +923,11 @@ bool SMantleVehicleBuilder::CanBuild() const
 
 void SMantleVehicleBuilder::ForgetBuild()
 {
+	// #258: the engine sound the built vehicle had (set here or in its Details) stays the pick for the next build of this type.
+	if (const UMantleVehicleSource* Built = BuiltSource.Get())
+	{
+		EngineSoundChoice = Built->Tuning.EngineSound;
+	}
 	BuiltSource.Reset();
 	if (ThumbnailSection.IsValid())
 	{
@@ -1153,6 +1325,52 @@ void SMantleVehicleBuilder::RebuildModelRows()
 		];
 	}
 
+	// The drive (#376 off-road follow-on): the type's own, or the creator's front, rear or all-wheel drive, on a type where it is a choice.
+	if (Shape.GetArchetype().IsDriveOffered())
+	{
+		const EMantleVehicleDrive Own = Shape.GetArchetype().DefaultDrive();
+		const FString OwnWords = FMantleVehiclePresets::DriveWords(Own);
+		const FString OwnName = OwnWords.IsEmpty() ? FString(TEXT("its own")) : OwnWords;
+		DriveChoices = { MakeShared<FString>(FString::Printf(TEXT("The type's own (%s)"), *OwnName)), MakeShared<FString>(TEXT("Front-wheel drive")),
+			MakeShared<FString>(TEXT("Rear-wheel drive")), MakeShared<FString>(TEXT("All-wheel drive")) };
+		const int32 DriveAt = FMath::Clamp(static_cast<int32>(DriveChoice), 0, DriveChoices.Num() - 1);
+		ModelRowsBox->AddSlot().AutoHeight().Padding(0, 0, 0, 6)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 2.f, 8.f, 2.f)
+			[
+				SNew(SBox).WidthOverride(150.f)
+				[
+					SNew(STextBlock)
+						.Text(LOCTEXT("DriveLabel", "Drive"))
+						.ToolTipText(LOCTEXT("DriveTip", "Which wheels the engine turns. A front-wheel-drive car pulls itself along and is steady; a rear-wheel-drive one pushes and can slide its tail; all-wheel drive pulls hardest off the line and on loose ground."))
+				]
+			]
+			+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
+			[
+				SNew(SComboBox<TSharedPtr<FString>>)
+					.OptionsSource(&DriveChoices)
+					.InitiallySelectedItem(DriveChoices[DriveAt])
+					.OnGenerateWidget_Lambda([](TSharedPtr<FString> Item) { return SNew(STextBlock).Text(FText::FromString(*Item)); })
+					.OnSelectionChanged_Lambda([this](TSharedPtr<FString> Item, ESelectInfo::Type)
+					{
+						const int32 At = DriveChoices.IndexOfByKey(Item);
+						if (At != INDEX_NONE)
+						{
+							DriveChoice = static_cast<EMantleVehicleDrive>(At);
+						}
+					})
+					[
+						SNew(STextBlock).Text_Lambda([this]
+						{
+							const int32 At = static_cast<int32>(DriveChoice);
+							return DriveChoices.IsValidIndex(At) ? FText::FromString(*DriveChoices[At]) : FText::GetEmpty();
+						})
+					]
+			]
+		];
+	}
+
 	// What Mantle proposed for the frame, and the Size slider of a type that has one Size.
 	if (!ProposalText.IsEmpty())
 	{
@@ -1308,6 +1526,98 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeSeatsAndPaintStep()
 				SNew(STextBlock).Text(LOCTEXT("NoInside", "This model has no inside: hide the driver and passenger"))
 			]
 	];
+
+	// Towing (#446): any wheeled or tracked vehicle may have a hitch, the type's own unless the creator changes it.
+	if (TypeTows())
+	{
+		const FMantleChassisSpec& Type = Shape.GetArchetype();
+		const FString OwnWords = !Type.bHitch ? FString(TEXT("none")) : Type.Hitch.Kind == EMantleVehicleHitchKind::Ball ? FString(TEXT("a tow ball")) : FString(TEXT("a fifth wheel"));
+		HitchChoices = { MakeShared<FString>(FString::Printf(TEXT("The type's own (%s)"), *OwnWords)), MakeShared<FString>(TEXT("None")),
+			MakeShared<FString>(TEXT("Tow ball (a small trailer's)")), MakeShared<FString>(TEXT("Fifth wheel (a semi trailer's)")) };
+		const int32 HitchSelected = FMath::Clamp(static_cast<int32>(HitchChoice), 0, HitchChoices.Num() - 1);
+		Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 4)
+		[
+			SNew(STextBlock)
+				.Font(FAppStyle::GetFontStyle("BoldFont"))
+				.Text(LOCTEXT("TowingTitle", "Towing"))
+		];
+		Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 6)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 2.f, 8.f, 2.f)
+			[
+				SNew(SBox).WidthOverride(150.f)
+				[
+					SNew(STextBlock)
+						.Text(LOCTEXT("HitchLabel", "Hitch"))
+						.ToolTipText(LOCTEXT("HitchTip", "What a trailer couples to. A tow ball takes a small trailer (the utility trailer); a fifth wheel takes a semi trailer. Mantle puts a tow ball just behind your vehicle's rear end and a fifth wheel just ahead of its rear wheels, unless you place it yourself."))
+				]
+			]
+			+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
+			[
+				SNew(SComboBox<TSharedPtr<FString>>)
+					.OptionsSource(&HitchChoices)
+					.InitiallySelectedItem(HitchChoices[HitchSelected])
+					.OnGenerateWidget_Lambda([](TSharedPtr<FString> Item) { return SNew(STextBlock).Text(FText::FromString(*Item)); })
+					.OnSelectionChanged_Lambda([this](TSharedPtr<FString> Item, ESelectInfo::Type)
+					{
+						const int32 At = HitchChoices.IndexOfByKey(Item);
+						if (At != INDEX_NONE)
+						{
+							HitchChoice = static_cast<EMantleVehicleSourceHitch>(At);
+						}
+					})
+					[
+						SNew(STextBlock).Text_Lambda([this]
+						{
+							const int32 At = static_cast<int32>(HitchChoice);
+							return HitchChoices.IsValidIndex(At) ? FText::FromString(*HitchChoices[At]) : FText::GetEmpty();
+						})
+					]
+			]
+		];
+		auto HitchIsPlaced = [this] { return HitchChoice == EMantleVehicleSourceHitch::Ball || HitchChoice == EMantleVehicleSourceHitch::FifthWheel; };
+		Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 4)
+		[
+			SNew(SCheckBox)
+				.IsEnabled_Lambda(HitchIsPlaced)
+				.ToolTipText(LOCTEXT("HitchPlaceTip", "Turn this on to set where the hitch is yourself, in centimetres in your vehicle's space: X forward, Y to the right, Z up. A trailer's coupler must reach it: a tow ball about 50 cm and a fifth wheel about 120 cm above the ground. You can also move it later under Towing in the vehicle's settings."))
+				.IsChecked_Lambda([this] { return bHitchPlaced ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+				.OnCheckStateChanged_Lambda([this](ECheckBoxState State) { bHitchPlaced = State == ECheckBoxState::Checked; })
+				[
+					SNew(STextBlock).Text(LOCTEXT("HitchPlace", "I'll place the hitch myself"))
+				]
+		];
+		TSharedRef<SHorizontalBox> Axes = SNew(SHorizontalBox);
+		const TCHAR* AxisNames[] = { TEXT("X"), TEXT("Y"), TEXT("Z") };
+		for (int32 Axis = 0; Axis < 3; ++Axis)
+		{
+			Axes->AddSlot().FillWidth(1.f).VAlign(VAlign_Center).Padding(0.f, 0.f, 8.f, 0.f)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 4.f, 0.f)
+				[
+					SNew(STextBlock).Text(FText::FromString(AxisNames[Axis]))
+				]
+				+ SHorizontalBox::Slot().FillWidth(1.f)
+				[
+					SNew(SSpinBox<float>)
+						.MinValue(-1000.f)
+						.MaxValue(1000.f)
+						.Delta(1.f)
+						.MaxFractionalDigits(1)
+						.IsEnabled_Lambda([this, HitchIsPlaced] { return bHitchPlaced && HitchIsPlaced(); })
+						.Value_Lambda([this, Axis] { return static_cast<float>(HitchAt[Axis]); })
+						.OnValueChanged_Lambda([this, Axis](float Value) { HitchAt[Axis] = Value; })
+						.OnValueCommitted_Lambda([this, Axis](float Value, ETextCommit::Type) { HitchAt[Axis] = Value; })
+				]
+			];
+		}
+		Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 12)
+		[
+			Axes
+		];
+	}
 
 	Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 4)
 	[
@@ -1578,6 +1888,12 @@ FText SMantleVehicleBuilder::PaintPickLabel(const uint8 Pick)
 	case 4: return LOCTEXT("PickDashboard", "Dashboard");
 	default: return LOCTEXT("PickBody", "Body color");
 	}
+}
+
+bool SMantleVehicleBuilder::TypeTows() const
+{
+	const FMantleChassisSpec& Type = Shape.GetArchetype();
+	return !Type.bTrailer && !Type.Aircraft.bSet && !Type.Helicopter.bSet && !Type.Hovercraft.bSet && !Type.Boat.bSet;
 }
 
 void SMantleVehicleBuilder::SetHideRiders(const bool bOn)
@@ -1957,9 +2273,18 @@ FMantleVehicleModelOptions SMantleVehicleBuilder::MakeBuildOptions() const
 		Options.Hinges = HingeChoice;
 	}
 	Options.HideRiders = bHideRiders;
+	// The Towing choice (#446), always sent: the type's own then undoes an earlier pick when the same vehicle is built again, and a type that tows
+	// nothing is built with its own whatever was picked before (FMantleVehicleBuilder::HitchOptions).
+	FMantleVehicleBuilder::HitchOptions(Options, TypeTows(), HitchChoice, bHitchPlaced, HitchAt);
+	// #258: the Engine Sound pick, on a type that has one to pick (the built vehicle's own setting while there is one).
+	if (EngineSoundIds.Num() > 0)
+	{
+		Options.EngineSound = CurrentEngineSound();
+	}
 	if (bUseSkin)
 	{
 		Options.Spec = Shape.GetShaped();
+		Options.Drive = DriveChoice;
 		Options.YawDegrees = ModelYaw;
 		Options.Map = PartMap;
 		// Pressing Build again for the same type and model updates the vehicle this window made, in the same assets, instead of adding a new set each time.

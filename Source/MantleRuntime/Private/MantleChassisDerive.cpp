@@ -3,6 +3,7 @@
 
 #include "Dom/JsonObject.h"
 #include "MantleChassisSpec.h"
+#include "MantleFlightModel.h"
 #include "MantleVehicleAsset.h"
 
 // Named, not anonymous: MantleRuntime builds as a unity build.
@@ -35,14 +36,17 @@ namespace MantleChassisDerivePrivate
 		constexpr const TCHAR* MaxSpeed = TEXT("maxSpeed");
 		constexpr const TCHAR* FrontalArea = TEXT("frontalArea");
 		constexpr const TCHAR* MaxTorque = TEXT("engine/maxTorque");
+		constexpr const TCHAR* PeakPower = TEXT("engine/peakPower");
 		constexpr const TCHAR* FinalDrive = TEXT("transmission/finalDrive");
 		constexpr const TCHAR* MaxRaise = TEXT("suspension/maxRaise");
 		constexpr const TCHAR* MaxDrop = TEXT("suspension/maxDrop");
 		constexpr const TCHAR* SpringRate = TEXT("suspension/springRate");
 		constexpr const TCHAR* SpringPreload = TEXT("suspension/springPreload");
+		constexpr const TCHAR* Damping = TEXT("suspension/damping");
 		constexpr const TCHAR* MaxSteerAngle = TEXT("steering/maxAngle");
 		constexpr const TCHAR* BrakeTorque = TEXT("brakes/brakeTorque");
 		constexpr const TCHAR* HandbrakeTorque = TEXT("brakes/handbrakeTorque");
+		constexpr const TCHAR* EngineBraking = TEXT("engine/engineBraking");
 		constexpr const TCHAR* TireFriction = TEXT("tires/friction");
 		constexpr const TCHAR* CameraArmLength = TEXT("camera/armLength");
 		constexpr const TCHAR* CameraHeight = TEXT("camera/height");
@@ -66,7 +70,7 @@ namespace MantleChassisDerivePrivate
 	const TCHAR* const LimitedPathTable[] = {
 		DocPath::Mass, DocPath::MaxSpeed, DocPath::FrontalArea, DocPath::MaxTorque, DocPath::FinalDrive, DocPath::MaxRaise, DocPath::MaxDrop,
 		DocPath::SpringRate, DocPath::SpringPreload, DocPath::MaxSteerAngle, DocPath::BrakeTorque, DocPath::HandbrakeTorque, DocPath::TireFriction,
-		DocPath::CameraArmLength, DocPath::CameraHeight,
+		DocPath::CameraArmLength, DocPath::CameraHeight, DocPath::EngineBraking, DocPath::Damping, DocPath::PeakPower,
 	};
 
 	/** Whether a rule's answer differs from what it was held to by more than the floating-point noise of working it out (a result at a bound must not look held). */
@@ -169,9 +173,9 @@ namespace MantleChassisDerivePrivate
 	void RoundHandling(FMantleChassisHandling& H)
 	{
 		for (double* Number : { &H.Mass, &H.MaxSpeed, &H.DragCoefficient, &H.FrontalArea, &H.MaxTorque, &H.FinalDrive, &H.MaxRaise, &H.MaxDrop, &H.SpringRate,
-				 &H.SpringPreload, &H.SpringDamping, &H.MaxSteerAngle, &H.BrakeTorque, &H.HandbrakeTorque, &H.TireFriction, &H.CameraArmLength, &H.CameraHeight,
+				 &H.SpringPreload, &H.SpringDamping, &H.MaxSteerAngle, &H.BrakeTorque, &H.HandbrakeTorque, &H.EngineBraking, &H.PeakPower, &H.TireFriction, &H.CameraArmLength, &H.CameraHeight,
 				 &H.WingAreaM2, &H.TailplaneAreaM2, &H.FinAreaM2, &H.EngineThrustNewtons, &H.RotorThrustNewtons, &H.HoverThrustNewtons, &H.PadSpringRate,
-				 &H.HoverFinAreaM2 })
+				 &H.HoverFinAreaM2, &H.BoatThrustNewtons, &H.BoatRudderAreaM2 })
 		{
 			*Number = RoundSignificant(*Number);
 		}
@@ -227,7 +231,9 @@ FMantleChassisHandling FMantleChassisDerive::Derive(const FMantleChassisSpec& Sp
 
 	// Mass: the archetype's, by the body's volume (length x width x (height + ground clearance)) against its own.
 	const double VolumeRatio = SizeRatio(Spec.Length * Spec.Width * (Spec.Height + Spec.Clearance), Base.Length * Base.Width * (Base.Height + Base.Clearance));
-	H.Mass = Limited(H.Clamped, DocPath::Mass, Arch.Mass * VolumeRatio);
+	// A pedalled vehicle (#447) carries its rider in its mass, and the rider doesn't shrink or grow with the frame: only the rest goes by the volume.
+	const double FixedRiderKg = Spec.bPedal ? FMath::Min(FMantleChassisSpec::PedalRiderMassKg, Arch.Mass) : 0.0;
+	H.Mass = Limited(H.Clamped, DocPath::Mass, FixedRiderKg + (Arch.Mass - FixedRiderKg) * VolumeRatio);
 	const double MassRatio = SizeRatio(H.Mass, Arch.Mass);
 
 	// Center of mass: forward by the archetype's share of the wheelbase, up by its share of the body above the wheel centers, lowered if the track needs it
@@ -254,9 +260,11 @@ FMantleChassisHandling FMantleChassisDerive::Derive(const FMantleChassisSpec& Sp
 	H.SpringPreload = Limited(H.Clamped, DocPath::SpringPreload, Arch.SpringPreload * SizeRatio(H.SpringRate, Arch.SpringRate));
 	H.MaxRaise = Limited(H.Clamped, DocPath::MaxRaise, Arch.MaxRaise * RadiusRatio, MinTravel, MaxTravel);
 	H.MaxDrop = Limited(H.Clamped, DocPath::MaxDrop, Arch.MaxDrop * RadiusRatio, MinTravel, MaxTravel);
-	// Damping stays the archetype's absolute value: the Chaos solver reads it as an absolute (PBDSuspensionConstraints.cpp:579), not a share of the spring,
-	// so it is the first suspect if a scaled car pogoes.
-	H.SpringDamping = Arch.SpringDamping;
+	// Damping: the Chaos solver reads it as an absolute (PBDSuspensionConstraints.cpp:579), not a share of the spring, so for the archetype's damping
+	// ratio it follows the critical damping 2 sqrt(k m) of one wheel: the square root of the spring's ratio times the ratio of the mass each wheel
+	// carries (#376 step 9). Kept as it was, a car at 1.6x bounced at a third of the archetype's ratio and one at 0.7x was near critical.
+	const double WheelMassRatio = MassRatio * (BaseWheels / Wheels);
+	H.SpringDamping = Limited(H.Clamped, DocPath::Damping, Arch.SpringDamping * FMath::Sqrt(SizeRatio(H.SpringRate, Arch.SpringRate) * WheelMassRatio));
 
 	// Steering: the lock is an angle, the archetype's own whatever the size. The turning circle (the distance from the steered axles to the middle of the
 	// others over tan(lock)) then follows the wheelbase and the axle layout, as it does on a real car: a longer wheelbase turns wider.
@@ -264,6 +272,8 @@ FMantleChassisHandling FMantleChassisDerive::Derive(const FMantleChassisSpec& Sp
 
 	// Engine: the archetype's power-to-weight, so the torque at the curve's peak follows the mass.
 	H.MaxTorque = Limited(H.Clamped, DocPath::MaxTorque, Arch.MaxTorque * MassRatio * (1.0 + Reach * Power));
+	// An electric motor's peak power (#445) by the same rule, so its base speed (power over torque) is the archetype's. 0 (combustion): left out.
+	H.PeakPower = Arch.PeakPower > 0.0 ? Limited(H.Clamped, DocPath::PeakPower, Arch.PeakPower * MassRatio * (1.0 + Reach * Power)) : 0.0;
 
 	// Top speed and gearing: the archetype's top speed, less in proportion to a smaller wheel; the final drive makes the top gear turn the same share of
 	// the redline at that speed: the wheel's size over the speed.
@@ -273,6 +283,11 @@ FMantleChassisHandling FMantleChassisDerive::Derive(const FMantleChassisSpec& Sp
 	// Brakes: the same deceleration, so each wheel's torque follows the mass it carries and its radius; the handbrake follows the brakes.
 	H.BrakeTorque = Limited(H.Clamped, DocPath::BrakeTorque, Arch.BrakeTorque * MassRatio * (BaseWheels / Wheels) * RadiusRatio);
 	H.HandbrakeTorque = Limited(H.Clamped, DocPath::HandbrakeTorque, Arch.HandbrakeTorque * SizeRatio(H.BrakeTorque, Arch.BrakeTorque));
+	// Engine braking: the same lift-off deceleration. Its torque is engineBraking x the engine's rpm, and at a given road speed the rpm follows the final
+	// drive over the wheel's radius, which is 1 / the top speed's ratio (above). So it follows the mass each wheel carries and its radius, like the
+	// brakes, and the top speed's ratio: a smaller car's engine turns faster at the same speed (#376 step 10: without it a 0.7 sedan slowed 0.18 g).
+	H.EngineBraking = Limited(H.Clamped, DocPath::EngineBraking,
+		Arch.EngineBraking * MassRatio * (BaseWheels / Wheels) * RadiusRatio * SizeRatio(H.MaxSpeed, Arch.MaxSpeed));
 
 	// Tires and drag: the archetype's tire and drag coefficient; the frontal area is the body's face against its own.
 	H.TireFriction = Limited(H.Clamped, DocPath::TireFriction, Arch.TireFriction * (1.0 + Reach * Grip));
@@ -311,9 +326,17 @@ FMantleChassisHandling FMantleChassisDerive::Derive(const FMantleChassisSpec& Sp
 		const FMantleChassisHovercraft& Own = Base.Hovercraft;
 		const double Compression = FMath::Max(Spec.Hovercraft.Compression(Spec.Clearance), 1.0);
 		const double BaseCompression = FMath::Max(Own.Compression(Base.Clearance), 1.0);
-		H.HoverThrustNewtons = Arch.HoverThrustNewtons * MassRatio;
+		// The Power slider pushes harder or softer, by its 30 percent (#381); Grip goes to the slide dampers (FMantleVehicleChassisDocument).
+		H.HoverThrustNewtons = Arch.HoverThrustNewtons * MassRatio * (1.0 + Reach * Power);
+		H.HoverGrip = Grip;
 		H.PadSpringRate = Arch.PadSpringRate * MassRatio * (BaseWheels / Wheels) * SizeRatio(BaseCompression, Compression);
 		H.HoverFinAreaM2 = Arch.HoverFinAreaM2 * SizeRatio(Spec.Hovercraft.FinHeight * Spec.Hovercraft.FinChord, Own.FinHeight * Own.FinChord);
+	}
+	// A boat's drive pushes the same share of its weight at every size, as a hovercraft's fan does; its rudder follows the hull's side (length by height).
+	if (Spec.Boat.bSet)
+	{
+		H.BoatThrustNewtons = Arch.BoatThrustNewtons * MassRatio;
+		H.BoatRudderAreaM2 = Arch.BoatRudderAreaM2 * SizeRatio(Spec.Length * Spec.Height, Base.Length * Base.Height);
 	}
 
 	RoundHandling(H);
@@ -323,27 +346,68 @@ FMantleChassisHandling FMantleChassisDerive::Derive(const FMantleChassisSpec& Sp
 namespace MantleChassisDerivePrivate
 {
 	/**
-	 * The force of one aerofoil in newtons, FAerofoilSimModule::GetForce: the lift along the surface's force axis is 2 sin((alpha + control + camber) 90 / stall)
-	 * times area times q (none past twice the stall angle), the drag along the airflow 0.05 + ((alpha + control + camber) / (stall + |control + camber|))^2
-	 * times the same.
+	 * One aerofoil's force in the vertical plane (#379, FMantleFlightModel::AerofoilForce, as the module flies it): flying level at Speed (m/s) with the body
+	 * pitched Pitch degrees nose-up, a surface whose lift axis is the body's up sees the air at (V cos, 0, -V sin) in its own frame. Out is the force along
+	 * the body's X and Z, newtons, and where along X it acts (cm from the surface's x).
 	 */
-	void AerofoilForce(const double Area, const double Camber, const double Control, const double Stall, const double Alpha, const double Q, double& OutLift, double& OutDrag)
+	void SurfaceForce(const FMantleAerofoilSurface& Surface, const double Control, const double Pitch, const double Speed, double& OutX, double& OutZ, double& OutShiftX)
 	{
-		const double Total = Control + Camber;
-		const double Angle = Alpha + Total;
-		const double Lift = FMath::Abs(Angle) > 2.0 * Stall ? 0.0 : 2.0 * FMath::Sin(FMath::DegreesToRadians(Angle * 90.0 / Stall));
-		double A = Alpha;
-		if (A > 90.0)
+		const double Theta = FMath::DegreesToRadians(Pitch);
+		const FMantleAerofoilForce Force = FMantleFlightModel::AerofoilForce(FVector(Speed * FMath::Cos(Theta), 0.0, -Speed * FMath::Sin(Theta)), Control,
+			FMantleChassisDerive::AirDensity, Surface);
+		OutX = Force.Force.X;
+		OutZ = Force.Force.Z;
+		OutShiftX = Force.PointX;
+	}
+
+	/** A preset surface as the model sees it (its handling's area): the peak lift the document writes (the type's when the preset gives none). */
+	FMantleAerofoilSurface ModelSurface(const FMantleChassisSurface& Surface, const double AreaM2, const double TypeMaxLift)
+	{
+		FMantleAerofoilSurface Out;
+		Out.AreaM2 = AreaM2;
+		Out.CamberDegrees = Surface.Camber;
+		Out.StallDegrees = Surface.StallAngle;
+		Out.MaxLift = Surface.MaxLift > 0.0 ? Surface.MaxLift : TypeMaxLift;
+		Out.AspectRatio = Surface.AspectRatio() > 0.0 ? Surface.AspectRatio() : 7.0;
+		Out.ChordCm = FMath::Sqrt(FMath::Max(AreaM2, 0.0) / FMath::Max(Out.AspectRatio, 0.1)) * 100.0;
+		return Out;
+	}
+
+	/** One engine as the model sees it: the handling's thrust, and the preset's power and afterburner scaled by the same ratio (FMantleVehicleChassisDocument). */
+	FMantlePlaneEngine ModelEngine(const FMantleChassisAircraft& Craft, const FMantleChassisHandling& Handling)
+	{
+		const double Ratio = Craft.EngineThrustNewtons > 0.0 ? Handling.EngineThrustNewtons / Craft.EngineThrustNewtons : 1.0;
+		FMantlePlaneEngine Engine;
+		Engine.MaxThrustNewtons = Handling.EngineThrustNewtons;
+		Engine.PowerWatts = Craft.bPropeller ? Craft.EnginePowerKw * 1000.0 * Ratio : 0.0;
+		Engine.AfterburnerNewtons = Craft.bPropeller ? 0.0 : Craft.AfterburnerNewtons * Ratio;
+		return Engine;
+	}
+
+	/** The lever (0..1) at which FMantleFlightModel::Thrust gives Newtons at this speed, sea level, bisected (it rises with the lever); above 1 when it can't. */
+	double LeverFor(const FMantlePlaneEngine& Engine, const double Newtons, const double SpeedMs)
+	{
+		if (Newtons <= 0.0)
 		{
-			A = 180.0 - A;
+			return 0.0;
 		}
-		if (A < -90.0)
+		const double Full = FMantleFlightModel::Thrust(Engine, 1.0, SpeedMs, 1.0);
+		if (Full <= 0.0)
 		{
-			A = -180.0 - A;
+			return 2.0;
 		}
-		const double Ratio = (A + Total) / (Stall + FMath::Abs(Total));
-		OutLift = Lift * Area * Q;
-		OutDrag = (0.05 + Ratio * Ratio) * Area * Q;
+		if (Newtons >= Full)
+		{
+			return Newtons / Full;
+		}
+		double Low = 0.0;
+		double High = 1.0;
+		for (int32 Step = 0; Step < 60; ++Step)
+		{
+			const double Middle = 0.5 * (Low + High);
+			(FMantleFlightModel::Thrust(Engine, Middle, SpeedMs, 1.0) < Newtons ? Low : High) = Middle;
+		}
+		return 0.5 * (Low + High);
 	}
 
 	/** Where the fuselage's drag pushes, chassis frame, cm (schema/validate.py PLANE_BODY_DRAG_POINT): the root body's origin, on the ground. */
@@ -379,6 +443,11 @@ bool FMantleChassisDerive::LevelFlight(const FMantleChassisSpec& Spec, const FMa
 	}
 	const double ThrustArm = EngineZ / FMath::Max(1, Craft.EngineCount) - Com.Z;
 	const double BodyDrag = Handling.FrontalArea * Handling.DragCoefficient * Q;
+	// #379: the surfaces as the model flies them (a wing's halves together: the force is linear in the area and both see the same air here).
+	const FMantleAerofoilSurface WingSurface = ModelSurface(Wing, Handling.WingAreaM2, 1.5);
+	const FMantleAerofoilSurface TailSurface = ModelSurface(Tail, Handling.TailplaneAreaM2, 1.2);
+	const FMantleAerofoilSurface FinSurface = ModelSurface(Fin, Handling.FinAreaM2, 1.2);
+	const FMantlePlaneEngine EngineModel = ModelEngine(Craft, Handling);
 
 	struct FBalance
 	{
@@ -399,26 +468,17 @@ bool FMantleChassisDerive::LevelFlight(const FMantleChassisSpec& Spec, const FMa
 		{
 			const bool bWing = Which == 0;
 			const FMantleChassisSurface& Surface = bWing ? Wing : Tail;
-			double Lift = 0.0;
-			double Drag = 0.0;
-			AerofoilForce(bWing ? Handling.WingAreaM2 : Handling.TailplaneAreaM2, Surface.Camber, bWing ? 0.0 : Elevator * Tail.MaxControlAngle, Surface.StallAngle, Pitch, Q, Lift,
-				Drag);
-			const double SurfaceX = Drag * AirflowX;
-			const double SurfaceZ = Lift + Drag * AirflowZ;
-			double Reach = Surface.X - Com.X;
-			if (bWing)
-			{
-				const double CenterOfLift = Pitch > Wing.StallAngle ? (Pitch - Wing.StallAngle) * 10.0 + 20.0 : (Wing.StallAngle - Pitch) * 20.0 / Wing.StallAngle + 20.0;
-				Reach += CenterOfLift - 50.0;
-			}
+			double SurfaceX = 0.0;
+			double SurfaceZ = 0.0;
+			double ShiftX = 0.0;
+			SurfaceForce(bWing ? WingSurface : TailSurface, bWing ? 0.0 : Elevator * Tail.MaxControlAngle, Pitch, SpeedMs, SurfaceX, SurfaceZ, ShiftX);
+			const double Reach = Surface.X + ShiftX - Com.X;
 			Fx += SurfaceX;
 			Fz += SurfaceZ;
 			Moment += Reach * SurfaceZ - (Surface.Z - Com.Z) * SurfaceX;
 		}
 		// The fin lifts sideways, so only its drag is in this plane; the fuselage's drag acts at BodyDragPoint.
-		double FinLift = 0.0;
-		double FinDrag = 0.0;
-		AerofoilForce(Handling.FinAreaM2, Fin.Camber, 0.0, Fin.StallAngle, 0.0, Q, FinLift, FinDrag);
+		const double FinDrag = Q * FinSurface.AreaM2 * FMantleFlightModel::DragCoefficient(Fin.Camber, 0.0, FinSurface);
 		Fx += (FinDrag + BodyDrag) * AirflowX;
 		Fz += (FinDrag + BodyDrag) * AirflowZ;
 		Moment += (Fin.X - Com.X) * FinDrag * AirflowZ - (FinZ - Com.Z) * FinDrag * AirflowX;
@@ -429,7 +489,8 @@ bool FMantleChassisDerive::LevelFlight(const FMantleChassisSpec& Spec, const FMa
 		FBalance Out;
 		Out.Vertical = Fz / FMath::Cos(Theta) - Weight;
 		Out.Moment = Moment;
-		Out.Throttle = Thrust / (Craft.EngineCount * Handling.EngineThrustNewtons);
+		// #379: the lever that gives each engine its share at this speed (a propeller's push has fallen off, a jet's afterburner is the lever's last tenth).
+		Out.Throttle = LeverFor(EngineModel, Thrust / FMath::Max(1, Craft.EngineCount), SpeedMs);
 		return Out;
 	};
 	// The elevator that zeroes the moment at a pitch, bisected between full down and full up (held at either end when the moment does not change sign).
@@ -500,9 +561,18 @@ bool FMantleChassisDerive::SolveTrim(const FMantleChassisSpec& Spec, const FMant
 	{
 		return false;
 	}
-	// Only the sum of the camber and the control angle acts on the air (AerofoilForce), so the camber that centers the elevator is the camber now plus the
-	// control angle the plane needs. The throttle is the same either way.
-	const double Camber = Spec.Aircraft.Tailplane.Camber + Held.Elevator * Spec.Aircraft.Tailplane.MaxControlAngle;
+	// Below the stall the elevator's lift step is what the same degrees of camber give (FMantleFlightModel), so the camber that centers the elevator is
+	// about the camber now plus the control angle the plane needs; a few passes take up what the rounded peak and the drag leave.
+	FMantleChassisSpec Trimmed = Spec;
+	for (int32 Pass = 0; Pass < 4; ++Pass)
+	{
+		Trimmed.Aircraft.Tailplane.Camber += Held.Elevator * Spec.Aircraft.Tailplane.MaxControlAngle;
+		if (!LevelFlight(Trimmed, Handling, Spec.Aircraft.CruiseSpeedCmPerSec / 100.0, Held))
+		{
+			return false;
+		}
+	}
+	const double Camber = Trimmed.Aircraft.Tailplane.Camber + Held.Elevator * Spec.Aircraft.Tailplane.MaxControlAngle;
 	const double Throttle = Held.Throttle;
 	if (!FMath::IsFinite(Camber) || !FMath::IsFinite(Throttle) || Throttle <= 0.0 || Throttle > 1.0)
 	{

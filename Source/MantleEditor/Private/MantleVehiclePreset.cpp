@@ -5,6 +5,9 @@
 #include "Dom/JsonValue.h"
 #include "HAL/FileManager.h"
 #include "Interfaces/IPluginManager.h"
+#include "MantleChassisSpec.h"
+#include "MantleEngineSounds.h"
+#include "MantleVehicleChassisBuilder.h"
 #include "MantleVehicleSource.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -121,13 +124,20 @@ namespace MantleVehiclePresetPrivate
 		static const TSet<FString> Known = {
 			TEXT("mass"), TEXT("maxSpeed"), TEXT("centerOfMass"), TEXT("dragCoefficient"), TEXT("frontalArea"),
 			TEXT("engine/maxTorque"), TEXT("engine/maxRPM"), TEXT("engine/idleRPM"), TEXT("engine/torqueCurve"),
+			TEXT("engine/tractionControl"), TEXT("engine/engineBraking"), TEXT("engine/displacement"), TEXT("engine/sound"),
+			TEXT("engine/drive"), TEXT("engine/peakPower"), TEXT("engine/regenBraking"), TEXT("engine/batteryCapacity"),
+			TEXT("engine/induction"), TEXT("engine/maxBoost"), TEXT("engine/spoolRPM"), TEXT("engine/spoolTime"),
 			TEXT("transmission/gearRatios"), TEXT("transmission/reverseRatio"), TEXT("transmission/finalDrive"),
-			TEXT("transmission/changeUpRPM"), TEXT("transmission/changeDownRPM"),
+			TEXT("transmission/changeUpRPM"), TEXT("transmission/changeDownRPM"), TEXT("transmission/shiftTime"),
+			TEXT("transmission/cvt/lowRatio"), TEXT("transmission/cvt/highRatio"), TEXT("transmission/cvt/shiftRPM"),
+			TEXT("transmission/lowRange"), TEXT("transmission/differentials/front/type"), TEXT("transmission/differentials/front/biasRatio"),
+			TEXT("transmission/differentials/rear/type"), TEXT("transmission/differentials/rear/biasRatio"),
 			TEXT("suspension/maxRaise"), TEXT("suspension/maxDrop"), TEXT("suspension/springRate"),
 			TEXT("suspension/springPreload"), TEXT("suspension/damping"),
 			TEXT("steering/maxAngle"), TEXT("steering/ackermann"), TEXT("steering/speedCurve"),
-			TEXT("brakes/brakeTorque"), TEXT("brakes/handbrakeTorque"),
-			TEXT("tires/friction"), TEXT("tires/rearFriction"),
+			TEXT("brakes/brakeTorque"), TEXT("brakes/handbrakeTorque"), TEXT("brakes/abs"), TEXT("brakes/frontShare"),
+			TEXT("tires/friction"), TEXT("tires/rearFriction"), TEXT("tires/rollingResistance"),
+			TEXT("pedal/riderPower"), TEXT("pedal/sprintPower"), TEXT("pedal/sprintReserve"), TEXT("pedal/maxCadence"), TEXT("pedal/cadence"),
 			TEXT("camera/armLength"), TEXT("camera/height") };
 		return Known;
 	}
@@ -222,6 +232,23 @@ namespace MantleVehiclePresetPrivate
 				Bad(Path);
 				return false;
 			}
+			return true;
+		}
+
+		/** A string (#445: the engine's drive; #444: its induction). */
+		bool String(const FString& Path, FString& Out)
+		{
+			const TSharedPtr<FJsonValue> Value = Find(Path);
+			if (!Value.IsValid())
+			{
+				return false;
+			}
+			if (Value->Type != EJson::String)
+			{
+				Bad(Path);
+				return false;
+			}
+			Out = Value->AsString();
 			return true;
 		}
 
@@ -343,14 +370,17 @@ TArray<const FMantleVehiclePreset*> FMantleVehiclePresets::Publishable()
 			Out.Add(&Preset);
 		}
 	}
-	// Road vehicles first, then what flies, then what floats; within a movement type the order stays by id.
+	// Road vehicles first, then tracked ones (#448), then what flies, then what floats, then what is towed (#446); within a movement type the
+	// order stays by id.
 	const auto Rank = [](const FString& MovementType)
 	{
 		if (MovementType == TEXT("wheeled")) { return 0; }
-		if (MovementType == TEXT("plane")) { return 1; }
-		if (MovementType == TEXT("helicopter")) { return 2; }
-		if (MovementType == TEXT("hover")) { return 3; }
-		return 4;
+		if (MovementType == TEXT("tracked")) { return 1; }
+		if (MovementType == TEXT("plane")) { return 2; }
+		if (MovementType == TEXT("helicopter")) { return 3; }
+		if (MovementType == TEXT("hover")) { return 4; }
+		if (MovementType == TEXT("trailer")) { return 6; }
+		return 5;
 	};
 	Out.StableSort([&Rank](const FMantleVehiclePreset& A, const FMantleVehiclePreset& B) { return Rank(A.MovementType) < Rank(B.MovementType); });
 	return Out;
@@ -360,15 +390,22 @@ FString FMantleVehiclePresets::CardSentence(const FMantleVehiclePreset& Preset)
 {
 	// The cards of the three tall road vehicles: each names its own kinds, so no two cards offer the same vehicle.
 	static const TPair<const TCHAR*, const TCHAR*> OwnLines[] = {
-		{ TEXT("pickup"), TEXT("A tall road vehicle with long suspension: pickups, SUVs and off-roaders.") },
+		{ TEXT("pickup"), TEXT("A tall road vehicle with long suspension: pickups and SUVs.") },
 		{ TEXT("van"), TEXT("A tall box-bodied van: delivery vans, minibuses and ambulances.") },
-		{ TEXT("truck"), TEXT("A large, heavy road vehicle: box trucks, campervans and small buses.") },
+		{ TEXT("truck"), TEXT("A large, heavy road vehicle: box trucks, delivery trucks and campervans.") },
+	};
+	// Its own drive (#376 off-road follow-on), where a creator may change it.
+	const FString Drive = FMantleVehiclePresets::DriveWords(Preset.DefaultDrive);
+	// Before the sentence's full stop, so the card stays one sentence: "... pickups and SUVs (rear-wheel drive)."
+	const auto WithDrive = [&Drive](const FString& Sentence)
+	{
+		return Drive.IsEmpty() || !Sentence.EndsWith(TEXT(".")) ? Sentence : Sentence.LeftChop(1) + TEXT(" (") + Drive + TEXT(").");
 	};
 	for (const TPair<const TCHAR*, const TCHAR*>& Own : OwnLines)
 	{
 		if (Preset.Id == Own.Key && !Preset.Description.TrimStartAndEnd().IsEmpty())
 		{
-			return Own.Value;
+			return WithDrive(Own.Value);
 		}
 	}
 	FString Text = Preset.Description.TrimStartAndEnd();
@@ -385,12 +422,45 @@ FString FMantleVehiclePresets::CardSentence(const FMantleVehiclePreset& Preset)
 	{
 		Text += TEXT(".");
 	}
-	return Text;
+	return WithDrive(Text);
+}
+
+FString FMantleVehiclePresets::DriveWords(const EMantleVehicleDrive Drive)
+{
+	return Drive == EMantleVehicleDrive::Front ? TEXT("front-wheel drive") : Drive == EMantleVehicleDrive::Rear ? TEXT("rear-wheel drive")
+		: Drive == EMantleVehicleDrive::All ? TEXT("all-wheel drive") : FString();
 }
 
 const FMantleVehiclePreset* FMantleVehiclePresets::Find(const FString& Id)
 {
-	return All().FindByPredicate([&Id](const FMantleVehiclePreset& Preset) { return Preset.Id == Id; });
+	FString FileId;
+	FString Engine;
+	FMantleChassisSpec::SplitPresetId(Id, FileId, Engine);
+	if (Engine.IsEmpty())
+	{
+		return All().FindByPredicate([&Id](const FMantleVehiclePreset& Preset) { return Preset.Id == Id; });
+	}
+	// #378: the type with one of its engines, read once and kept (game thread only, as All is).
+	static TMap<FString, TUniquePtr<FMantleVehiclePreset>> WithEngines;
+	if (const TUniquePtr<FMantleVehiclePreset>* Found = WithEngines.Find(Id))
+	{
+		return Found->Get();
+	}
+	FString Text;
+	FString Error;
+	TUniquePtr<FMantleVehiclePreset> Read = MakeUnique<FMantleVehiclePreset>();
+	if (!FMantleVehicleChassisBuilder::LoadPresetText(Id, Text, Error) || !Parse(Text, *Read, Error))
+	{
+		UE_LOG(LogMantleVehiclePreset, Warning, TEXT("The vehicle preset %s could not be read: %s"), *Id, *Error);
+		return nullptr;
+	}
+	Read->EngineId = Engine;
+	return WithEngines.Add(Id, MoveTemp(Read)).Get();
+}
+
+FString FMantleVehiclePresets::SelectorIdOf(const FName Preset, const FName PresetEngine)
+{
+	return PresetEngine.IsNone() ? Preset.ToString() : Preset.ToString() + TEXT("+") + PresetEngine.ToString();
 }
 
 bool FMantleVehiclePresets::Parse(const FString& Json, FMantleVehiclePreset& Out, FString& OutError)
@@ -474,6 +544,31 @@ bool FMantleVehiclePresets::Parse(const FString& Json, FMantleVehiclePreset& Out
 		Preset.Defaults = *Defaults;
 	}
 
+	// #378: the engines a type offers (a motorcycle's sizes) and the one it starts with.
+	Root->TryGetStringField(TEXT("defaultEngine"), Preset.DefaultEngine);
+	const TArray<TSharedPtr<FJsonValue>>* Engines = nullptr;
+	if (Root->TryGetArrayField(TEXT("engines"), Engines) && Engines)
+	{
+		for (const TSharedPtr<FJsonValue>& Entry : *Engines)
+		{
+			const TSharedPtr<FJsonObject>* Engine = nullptr;
+			FMantleVehiclePresetEngine Read;
+			if (!Entry.IsValid() || !Entry->TryGetObject(Engine) || !Engine || !(*Engine)->TryGetStringField(TEXT("id"), Read.Id) || Read.Id.IsEmpty()
+				|| !(*Engine)->TryGetStringField(TEXT("name"), Read.Name))
+			{
+				OutError = TEXT("an engine needs an id and a name");
+				return false;
+			}
+			(*Engine)->TryGetStringField(TEXT("description"), Read.Description);
+			Preset.Engines.Add(MoveTemp(Read));
+		}
+		if (!Preset.Engines.ContainsByPredicate([&Preset](const FMantleVehiclePresetEngine& E) { return E.Id == Preset.DefaultEngine; }))
+		{
+			OutError = TEXT("defaultEngine is not one of the engines");
+			return false;
+		}
+	}
+
 	const TSharedPtr<FJsonObject>* Ranges = nullptr;
 	if (Root->TryGetObjectField(TEXT("ranges"), Ranges) && Ranges)
 	{
@@ -498,6 +593,12 @@ bool FMantleVehiclePresets::Parse(const FString& Json, FMantleVehiclePreset& Out
 		}
 	}
 
+	// Its own drive (#376 off-road follow-on), for its card: from the chassis's axles where the drive is a creator's choice.
+	{
+		FMantleChassisSpec Spec;
+		FString SpecError;
+		Preset.DefaultDrive = FMantleChassisSpec::Parse(Json, Spec, SpecError) ? Spec.DefaultDrive() : EMantleVehicleDrive::Type;
+	}
 	Out = MoveTemp(Preset);
 	return true;
 }
@@ -543,6 +644,41 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 
 	// Read into a copy so a value of the wrong kind leaves the vehicle as it was.
 	FMantleVehicleSourceTuning T = Source.Tuning;
+	// A preset is a whole vehicle type: every setting a preset may leave out starts from its default, so nothing of the type before stays behind
+	// (a motorcycle's engine size or a tank's rolling resistance on a sedan). The keys every preset carries are read over it below; the settings no
+	// preset holds (the seats, doors, center of mass and helicopter assists) are the vehicle's own and stay.
+	{
+		const FMantleVehicleSourceTuning Plain;
+		T.IdleRPM = Plain.IdleRPM;
+		T.TorqueCurve = Plain.TorqueCurve;
+		T.PeakPower = Plain.PeakPower;
+		T.RegenBraking = Plain.RegenBraking;
+		T.BatteryCapacity = Plain.BatteryCapacity;
+		T.bTractionControl = Plain.bTractionControl;
+		T.EngineBraking = Plain.EngineBraking;
+		T.EngineDisplacement = Plain.EngineDisplacement;
+		T.EngineSound = Plain.EngineSound;
+		T.ReverseRatio = Plain.ReverseRatio;
+		T.ChangeUpRPM = Plain.ChangeUpRPM;
+		T.ChangeDownRPM = Plain.ChangeDownRPM;
+		T.ShiftTime = Plain.ShiftTime;
+		T.CvtLowRatio = Plain.CvtLowRatio;
+		T.CvtHighRatio = Plain.CvtHighRatio;
+		T.CvtShiftRPM = Plain.CvtShiftRPM;
+		T.FrontDifferentialBias = Plain.FrontDifferentialBias;
+		T.RearDifferentialBias = Plain.RearDifferentialBias;
+		T.SteeringSpeedCurve = Plain.SteeringSpeedCurve;
+		T.bABS = Plain.bABS;
+		T.BrakeFrontShare = Plain.BrakeFrontShare;
+		T.bTireRearFriction = Plain.bTireRearFriction;
+		T.TireRearFriction = Plain.TireRearFriction;
+		T.TireRollingResistance = Plain.TireRollingResistance;
+		T.PedalRiderPower = Plain.PedalRiderPower;
+		T.PedalSprintPower = Plain.PedalSprintPower;
+		T.PedalSprintReserve = Plain.PedalSprintReserve;
+		T.PedalMaxCadence = Plain.PedalMaxCadence;
+		T.PedalCadence = Plain.PedalCadence;
+	}
 	FDefaultsReader Reader;
 	Reader.Root = Preset.Defaults;
 
@@ -555,6 +691,12 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 	Reader.Float(TEXT("dragCoefficient"), T.DragCoefficient);
 	Reader.Float(TEXT("frontalArea"), T.FrontalArea);
 
+	// #445: an electric motor, with its power, regen and battery. A preset sets the drive whole: a combustion preset makes the vehicle combustion again.
+	FString Drive;
+	T.bElectric = Reader.String(TEXT("engine/drive"), Drive) && Drive == TEXT("electric");
+	Reader.Float(TEXT("engine/peakPower"), T.PeakPower);
+	Reader.Float(TEXT("engine/regenBraking"), T.RegenBraking);
+	Reader.Float(TEXT("engine/batteryCapacity"), T.BatteryCapacity);
 	Reader.Float(TEXT("engine/maxTorque"), T.MaxTorque);
 	Reader.Int(TEXT("engine/maxRPM"), T.MaxRPM);
 	Reader.Int(TEXT("engine/idleRPM"), T.IdleRPM);
@@ -573,6 +715,21 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 	Reader.Float(TEXT("transmission/finalDrive"), T.FinalDrive);
 	Reader.Int(TEXT("transmission/changeUpRPM"), T.ChangeUpRPM);
 	Reader.Int(TEXT("transmission/changeDownRPM"), T.ChangeDownRPM);
+	// #376: each gear change's time, part of the car; absent, the default (0.5 s).
+	Reader.Float(TEXT("transmission/shiftTime"), T.ShiftTime);
+	// ATV follow-on: a belt drive. A preset sets it whole: one without a belt makes the vehicle geared again.
+	T.bCvt = Reader.Find(TEXT("transmission/cvt/lowRatio")).IsValid();
+	Reader.Float(TEXT("transmission/cvt/lowRatio"), T.CvtLowRatio);
+	Reader.Float(TEXT("transmission/cvt/highRatio"), T.CvtHighRatio);
+	Reader.Int(TEXT("transmission/cvt/shiftRPM"), T.CvtShiftRPM);
+	// #376 off-road: a low range and the differentials. A preset sets them whole: one without them takes them away.
+	T.LowRange = 0.f;
+	Reader.Float(TEXT("transmission/lowRange"), T.LowRange);
+	FString Front, Rear;
+	T.FrontDifferential = Reader.String(TEXT("transmission/differentials/front/type"), Front) ? MantleDifferentialFromName(Front) : EMantleVehicleDifferential::None;
+	T.RearDifferential = Reader.String(TEXT("transmission/differentials/rear/type"), Rear) ? MantleDifferentialFromName(Rear) : EMantleVehicleDifferential::None;
+	Reader.Float(TEXT("transmission/differentials/front/biasRatio"), T.FrontDifferentialBias);
+	Reader.Float(TEXT("transmission/differentials/rear/biasRatio"), T.RearDifferentialBias);
 
 	Reader.Float(TEXT("suspension/maxRaise"), T.SuspensionMaxRaise);
 	Reader.Float(TEXT("suspension/maxDrop"), T.SuspensionMaxDrop);
@@ -587,12 +744,72 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 
 	Reader.Float(TEXT("brakes/brakeTorque"), T.BrakeTorque);
 	Reader.Float(TEXT("brakes/handbrakeTorque"), T.HandbrakeTorque);
+	// #376: the driver aids and brake balance, part of the car; absent, the defaults (ABS and traction control on, 0.65, none).
+	Reader.Bool(TEXT("brakes/abs"), T.bABS);
+	Reader.Float(TEXT("brakes/frontShare"), T.BrakeFrontShare);
+	Reader.Bool(TEXT("engine/tractionControl"), T.bTractionControl);
+	Reader.Float(TEXT("engine/engineBraking"), T.EngineBraking);
+	// #378: the engine's size, from a motorcycle's engine pick; absent, 0 (not given).
+	Reader.Int(TEXT("engine/displacement"), T.EngineDisplacement);
+	// #258: the type's engine sound (absent, None: the type's own); one of Mantle's engine sounds, or the preset is refused like any bad value.
+	{
+		FString Sound;
+		if (Reader.String(TEXT("engine/sound"), Sound))
+		{
+			const FName Id(*Sound);
+			if (FMantleEngineSounds::Car().Contains(Id) || FMantleEngineSounds::Bike().Contains(Id) || FMantleEngineSounds::Aircraft().Contains(Id))
+			{
+				T.EngineSound = Id;
+			}
+			else
+			{
+				Reader.Bad(TEXT("engine/sound"));
+			}
+		}
+	}
+	// An electric preset (#445) is a motor: no engine size, no engine sound (#258: it plays its own motor) and no low range (#376 off-road), whatever
+	// the vehicle had.
+	if (T.bElectric)
+	{
+		T.EngineDisplacement = 0;
+		T.EngineSound = NAME_None;
+		T.LowRange = 0.f;
+	}
+	// #444: the preset's engine is the engine, so its induction is applied whole: absent, none and the boost settings' defaults (a turbo car's boost
+	// would otherwise stay on a preset without one).
+	{
+		const FMantleVehicleSourceTuning Plain;
+		T.Induction = Plain.Induction;
+		T.MaxBoost = Plain.MaxBoost;
+		T.SpoolRPM = Plain.SpoolRPM;
+		T.SpoolTime = Plain.SpoolTime;
+		FString Induction;
+		if (Reader.String(TEXT("engine/induction"), Induction))
+		{
+			if (Induction == TEXT("turbo")) T.Induction = EMantleVehicleSourceInduction::Turbo;
+			else if (Induction == TEXT("supercharger")) T.Induction = EMantleVehicleSourceInduction::Supercharger;
+			else if (Induction != TEXT("none")) Reader.Bad(TEXT("engine/induction"));
+		}
+		Reader.Float(TEXT("engine/maxBoost"), T.MaxBoost);
+		Reader.Int(TEXT("engine/spoolRPM"), T.SpoolRPM);
+		Reader.Float(TEXT("engine/spoolTime"), T.SpoolTime);
+	}
 
 	Reader.Float(TEXT("tires/friction"), T.TireFriction);
 	if (Reader.Float(TEXT("tires/rearFriction"), T.TireRearFriction))
 	{
 		T.bTireRearFriction = true;
 	}
+	// #447, #448: how much every wheel loses to rolling; absent, a car tire's 0.012.
+	Reader.Float(TEXT("tires/rollingResistance"), T.TireRollingResistance);
+	// #447: a pedalled preset (the Bicycle): any pedal number makes the vehicle pedalled; an absent one is its default.
+	bool bAnyPedal = false;
+	bAnyPedal |= Reader.Float(TEXT("pedal/riderPower"), T.PedalRiderPower);
+	bAnyPedal |= Reader.Float(TEXT("pedal/sprintPower"), T.PedalSprintPower);
+	bAnyPedal |= Reader.Float(TEXT("pedal/sprintReserve"), T.PedalSprintReserve);
+	bAnyPedal |= Reader.Float(TEXT("pedal/maxCadence"), T.PedalMaxCadence);
+	bAnyPedal |= Reader.Float(TEXT("pedal/cadence"), T.PedalCadence);
+	T.bPedal = bAnyPedal;
 
 	Reader.Float(TEXT("camera/armLength"), T.CameraArmLength);
 	Reader.Float(TEXT("camera/height"), T.CameraHeight);

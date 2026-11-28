@@ -60,6 +60,14 @@ struct MANTLEEDITOR_API FMantleVehicleModel
 	static bool Read(UObject* Asset, FMantleVehicleModel& Out, FString& OutError);
 
 	/**
+	 * Makes every normal, tangent and UV finite, as the upload's cook requires; Read does it to what it reads. Unreal keeps a mesh's UVs as 16-bit floats unless
+	 * told otherwise, so a source UV past 65504 (a broken export's, often in the millions) is read back as infinite. A bad UV takes a good one from another corner
+	 * of a triangle it is in (the triangle then samples one texel, as near the creator's as the file allows), else 0; a bad normal the area-weighted normal of
+	 * its triangles, else up; a bad tangent one square to its normal. Adds a note to OutNotes per section, in plain words. Returns the vertices changed.
+	 */
+	static int32 CleanNonFinite(FMantleVehicleModel& Model, TArray<FString>& OutNotes);
+
+	/**
 	 * Whether a static mesh is read from its full-detail source and not from its render data (#821). A Nanite mesh's render LOD 0 is its fallback, a much reduced
 	 * stand-in; the source model is what the creator made. True (read the source) when the mesh uses Nanite (bNanite), its source is kept (bSourceAvailable) and its
 	 * triangles fit a vehicle's cap; false otherwise. OutNote, when given, is set to the plain words the build shows for a Nanite mesh either way, and left empty for a
@@ -155,7 +163,7 @@ enum class EMantleVehiclePartKind : uint8
 {
 	/** A wheel: it spins about the chassis's wheel center, so the part is moved onto that center. */
 	Wheel,
-	/** A motorcycle's front fork: it turns with the steering about the chassis's wheel center; the part is left where the model has it. */
+	/** A motorcycle's front fork, or a quad's handlebar (#376 step 9d): it turns with the steering; the part is left where the model has it. */
 	Fork,
 	/** A propeller or a rotor: it spins about its own hub, so the bone is moved to the part's hub. */
 	Spinner,
@@ -192,7 +200,7 @@ struct FMantleVehicleModelPlacement
 	FVector Direction(const FVector& ModelDirection) const { return FRotator(0.0, YawDegrees, 0.0).RotateVector(ModelDirection); }
 };
 
-/** How the chassis is sized to a model: a Size for a plane, a jet, a helicopter or a hovercraft, the eight sizes for a road vehicle. */
+/** How the chassis is sized to a model: a Size for a plane, a jet, a helicopter, a hovercraft or a tracked vehicle, the eight sizes for a road vehicle. */
 struct FMantleVehicleModelProposal
 {
 	/** The type is shaped by one Size (FMantleVehicleShape::UsesSize). */
@@ -346,7 +354,7 @@ struct MANTLEEDITOR_API FMantleVehicleChassisSkin
 	static FMantleVehicleModelProposal Propose(const FMantleChassisSpec& Archetype, const FMantleVehiclePreset& Preset, const FMantleVehicleModel& Model, double YawDegrees,
 		const FMantleVehicleModelMap& Map);
 
-	/** Turns, scales and moves Model onto Spec's chassis (Chassis is its gray body): the scale fits the footprint (a flier, a hovercraft) or the length (a road vehicle). */
+	/** Turns, scales and moves Model onto Spec's chassis (Chassis is its gray body): the scale fits the footprint (a flier, a hovercraft, a tracked vehicle) or the length (a road vehicle). */
 	static FMantleVehicleModelPlacement FitPlacement(const FMantleChassisSpec& Spec, const FMantleSkinnedMesh& Chassis, const FMantleVehicleModel& Model, double YawDegrees,
 		const FMantleVehicleModelMap& Map);
 
@@ -436,7 +444,8 @@ struct MANTLEEDITOR_API FMantleVehicleChassisSkin
 	 * its front edge (the bone's place when it is within a quarter of the door's length from the front, else the front edge at the outer side, halfway up) on an upright
 	 * axis; the hood about its rear edge and the trunk about its front edge, at the top, on a sideways one. A trunk whose bone sits at one side edge (BoneAtEdge on Y) and
 	 * not at its top is a side-hinged tailgate: it turns on an upright axis through the bone, swinging out away from the car's middle (+Z hinged on -Y, -Z on +Y), still
-	 * opened from behind the car. Flipped turns the axis the other way. Doors turn at 0.75, lids
+	 * opened from behind the car. An upright trunk (taller than deep) whose bone sits at its bottom edge (BoneAtEdge on Z), not at a side or its top, is a pickup's drop-down tailgate: it turns about
+	 * -Y through the bone, its top swinging back and down. Flipped turns the axis the other way. Doors turn at 0.75, lids
 	 * at 1. The character stands on the ground (Z = 0) 60 cm out from the body: at the door's side halfway along it, in front of the hood, behind the trunk, facing the car.
 	 * Every number is held to the document's +-1000 cm.
 	 */

@@ -57,8 +57,10 @@ bool FMantleChassisTrimMatchesValidatePyTest::RunTest(const FString& Parameters)
 		double PresetThrottle;
 	};
 	const FExpected Expected[] = {
-		{ TEXT("plane"), 2.9400753447442574, -0.024613605390435264, 0.37701565892948463, -4.0, 0.37 },
-		{ TEXT("jet"), 0.3945735855856263, -0.0007101547969350615, 0.255270240936646, -0.9, 0.255 },
+		// #379's presets on FMantleFlightModel (schema/validate.py's FlightModel twin).
+		{ TEXT("plane"), 0.2654956419137038, -2.7504712291669467e-06, 0.6785932940581396, -1.119, 0.6786 },
+		{ TEXT("warbird"), -0.11925673052524244, 8.215400445563646e-06, 0.5076667520674627, -0.292, 0.5077 },
+		{ TEXT("jet"), 3.4430255518756736, 1.071913160843787e-05, 0.3041828800473684, -6.514, 0.3042 },
 	};
 	for (const FExpected& Want : Expected)
 	{
@@ -91,7 +93,7 @@ bool FMantleChassisTrimMatchesValidatePyTest::RunTest(const FString& Parameters)
 			TestTrue(*FString::Printf(TEXT("%s: the solved camber (%.3f) is within the elevator's 0.05 of the preset's %g"), *Label, Camber, Want.PresetCamber),
 				FMath::Abs(Camber - Want.PresetCamber) <= 0.05 * Spec.Aircraft.Tailplane.MaxControlAngle);
 			TestTrue(*FString::Printf(TEXT("%s: the solved throttle (%.4f) is within 0.02 of the preset's %g"), *Label, Throttle, Want.PresetThrottle), FMath::Abs(Throttle - Want.PresetThrottle) <= 0.02);
-			// Camber and control angle only act as a sum, so the camber the solve gives centers the elevator exactly.
+			// Below the stall the elevator's lift step is what the same camber gives, and the solve iterates, so its camber centers the elevator.
 			FMantleChassisSpec Trimmed = Spec;
 			Trimmed.Aircraft.Tailplane.Camber = Camber;
 			FMantleChassisTrim After;
@@ -202,7 +204,7 @@ bool FMantleChassisTrimFollowsSizeTest::RunTest(const FString& Parameters)
 	if (Load(*this, TEXT("plane"), Plane))
 	{
 		const FMantleChassisSpec Same = FMantleChassisSpec::Scaled(Plane, 1.0);
-		TestTrue(TEXT("Scaled at 1 keeps the preset's camber and cruise throttle"), Same.Aircraft.Tailplane.Camber == -4.0 && Same.Aircraft.CruiseThrottle == 0.37);
+		TestTrue(TEXT("Scaled at 1 keeps the preset's camber and cruise throttle"), Same.Aircraft.Tailplane.Camber == -1.119 && Same.Aircraft.CruiseThrottle == 0.6786);
 	}
 	return true;
 }
@@ -233,9 +235,9 @@ bool FMantleChassisHeldNumbersTest::RunTest(const FString& Parameters)
 		}
 	}
 
-	// A plane 1.3 times the preset's size has its tail 11 m back: past the +-1000 cm a document can say.
+	// A warbird (the flight port's fighter airframe) 1.3 times the preset's size has its tail 11 m back: past the +-1000 cm a document can say.
 	FMantleChassisSpec Plane;
-	if (Load(*this, TEXT("plane@1.3"), Plane))
+	if (Load(*this, TEXT("warbird@1.3"), Plane))
 	{
 		const TArray<FString> Held = FMantleVehicleChassisDocument::HeldNumbers(Plane);
 		if (TestTrue(TEXT("an oversized plane has numbers held"), Held.Num() > 0))

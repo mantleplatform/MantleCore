@@ -7,6 +7,8 @@
 
 class UWorld;
 struct FMantleCosmeticPackage;
+struct FMantlePlace;
+class FJsonObject;
 struct FMantleLocalScriptPackage;
 
 /**
@@ -67,6 +69,9 @@ struct FMantlePreviewExportOptions
 
 	/** The folder bundles go under, as <root>/<session>/<generation>/ (one session folder per editor process, one more generation per export). Empty: <Project>/Saved/Mantle/Preview. */
 	FString OutputRoot;
+
+	/** The cook cache's folder (FMantlePreviewExport::CookCacheKey). Empty: <Project>/Saved/Mantle/PreviewCook/Cache. */
+	FString CookCacheDirectory;
 
 	/**
 	 * #628: the gated features the client this preview will run in reads (its capability answer's "features"). The cook is told
@@ -149,4 +154,41 @@ public:
 
 	/** #729: the local model name a settings file's JSON text names ("mesh"); empty when it names none. */
 	static FString ReadWeaponMeshName(const FString& DocumentText);
+
+	// ---- The cook cache: a cook the last export already did is read back, not run again ----------------------------------------
+
+	/** The most the cook cache keeps; the entries used longest ago go first (PruneCookCache, at the start of each export). */
+	static constexpr int64 CookCacheMaxBytes = 8LL * 1024 * 1024 * 1024;
+
+	/** <Project>/Saved/Mantle/PreviewCook/Cache, absolute. */
+	static FString DefaultCookCacheDirectory();
+
+	/**
+	 * One cook's cache key: 64 hex digits of SHA-256 over a format tag, the cook tool's identity (CookToolIdentity), the upload's kind,
+	 * its cook options (the --options JSON), the allowed features (--allow-features) and the SHA-256 of its bytes: everything the tool
+	 * is given. So a changed asset, option, client feature set or cook tool cooks again, and only an identical cook is reused.
+	 */
+	static FString CookCacheKey(const FString& ToolIdentity, const FString& Kind, const FString& OptionsJson, const FString& AllowFeatures,
+		TConstArrayView<uint8> Input);
+
+	/** The cook tool's part of the key: the SHA-256 of its file, so a rebuilt tool misses wherever it is. Empty (nothing is cached) when it can't be read. */
+	static FString CookToolIdentity(const FString& Tool);
+
+	/** Keeps one successful cook under Key: its output and the tool's result JSON (the result is written last, so a torn write is a miss). */
+	static bool StoreCookCache(const FString& Directory, const FString& Key, TConstArrayView<uint8> Cooked, const FString& ResultJson);
+
+	/**
+	 * Reads one back. False when there is none, or the stored result isn't a success that matches the stored output (its cookedHash and
+	 * cookedBytes), so a damaged entry cooks again. A hit marks the entry as just used.
+	 */
+	static bool LoadCookCache(const FString& Directory, const FString& Key, TArray<uint8>& OutCooked, TSharedPtr<FJsonObject>& OutResult);
+
+	/** Deletes the entries used longest ago until the cache holds at most MaxBytes. */
+	static void PruneCookCache(const FString& Directory, int64 MaxBytes);
+
+	/**
+	 * Takes the vehicles VehicleIds names out of Place: the vehicle spawns that name one, and the asset entries for them. Returns how many
+	 * spawns went, or -1 (with OutError) when something is attached to one of those spawns, which could not stay without it.
+	 */
+	static int32 DropVehicles(FMantlePlace& Place, const TSet<FString>& VehicleIds, FString& OutError);
 };

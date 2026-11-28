@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "id": "muscle",
+  "name": "Muscle car",
+  "description": "A big rear-drive V8 coupe: muscle cars and pony cars. Huge torque from low revs and heavy at the front, so it needs a careful foot out of corners.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format. The real car is a 2015 Dodge Challenger R/T Scat Pack 6.4 automatic (#376 step 9b): Car and Driver's test 0-60 mph 4.2 s, 70-0 mph 154 ft, 0.90 g; 4222 lb curb, 54/46 (the 2012 SRT8 392's split); 644 Nm at 4200 rpm and 485 hp at 6100 on the ZF 8HP70 with a 3.09 axle (final drive scaled by our 36 cm wheel over the real 36.4); 176 mph, drag-limited. The low end of the torque curve (80% by 1500 rpm) and the 6400 rpm limit are estimates.",
+  "movementType": "wheeled",
+  "publishable": true,
+  "type": "car",
+  "seats": {
+    "driver": "car",
+    "passenger": "car"
+  },
+  "fit": {
+    "wheelRadius": 36,
+    "trackWidth": 162,
+    "minScale": 0.5,
+    "maxScale": 2
+  },
+  "wheels": {
+    "min": 4,
+    "max": 6
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 295,
+      "track": 162,
+      "wheelRadius": 36,
+      "wheelWidth": 25,
+      "axles": [
+        { "steer": true, "drive": false },
+        { "steer": false, "drive": true, "handbrake": true }
+      ]
+    },
+    "body": { "length": 502, "width": 192, "height": 72, "groundClearance": 16 },
+    "centerOfMass": [13, 0, 50],
+    "seat": {
+      "location": [-20, -40, 74],
+      "steeringWheel": { "location": [26.8, -40, 77], "radius": 19 }
+    }
+  },
+  "derive": {
+    "stability": 1.15,
+    "cameraArmPerLength": 0.63,
+    "cameraHeightPerHeight": 1.1
+  },
+  "defaults": {
+    "mass": 1915,
+    "maxSpeed": 7861,
+    "dragCoefficient": 0.35,
+    "frontalArea": 2.3,
+    "engine": {
+      "sound": "v8",
+      "maxTorque": 644,
+      "maxRPM": 6400,
+      "idleRPM": 700,
+      "torqueCurve": [[0, 0.6], [1000, 0.72], [1500, 0.8], [2500, 0.9], [4200, 1], [6100, 0.879], [6400, 0.82]],
+      "tractionControl": true,
+      "engineBraking": 0.1
+    },
+    "transmission": {
+      "gearRatios": [4.71, 3.14, 2.1, 1.67, 1.29, 1.0, 0.84, 0.67],
+      "reverseRatio": 3.53,
+      "finalDrive": 3.056,
+      "changeUpRPM": 6100,
+      "changeDownRPM": 2000,
+      "shiftTime": 0.3
+    },
+    "suspension": {
+      "maxRaise": 10,
+      "maxDrop": 16,
+      "springRate": 186,
+      "springPreload": 60,
+      "damping": 0.69
+    },
+    "steering": {
+      "maxAngle": 37,
+      "ackermann": true
+    },
+    "brakes": {
+      "brakeTorque": 7200,
+      "handbrakeTorque": 7000,
+      "abs": true,
+      "frontShare": 0.65
+    },
+    "tires": {
+      "friction": 1.68
+    },
+    "camera": {
+      "armLength": 440,
+      "height": 150
+    }
+  },
+  "ranges": {
+    "mass": [1200, 2500],
+    "maxSpeed": [3500, 9000],
+    "dragCoefficient": [0.25, 0.5],
+    "engine/maxTorque": [300, 2000],
+    "engine/maxRPM": [4500, 8000],
+    "engine/idleRPM": [500, 1200],
+    "engine/engineBraking": [0, 0.3],
+    "transmission/shiftTime": [0.05, 1],
+    "suspension/maxRaise": [3, 20],
+    "suspension/maxDrop": [3, 25],
+    "suspension/springRate": [60, 900],
+    "suspension/damping": [0.2, 1.5],
+    "steering/maxAngle": [25, 50],
+    "brakes/brakeTorque": [2000, 10000],
+    "brakes/frontShare": [0.5, 0.8],
+    "tires/friction": [0.8, 5],
+    "wheels/*/radius": [28, 45]
+  }
+}

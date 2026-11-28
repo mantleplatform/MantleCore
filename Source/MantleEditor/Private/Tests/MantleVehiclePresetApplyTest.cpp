@@ -53,6 +53,13 @@ namespace MantleVehiclePresetApplyTestPrivate
 			Test.TestEqual(FString::Printf(TEXT("%s"), *Path), ActualBool, ExpectedBool);
 			return;
 		}
+		// A string (#445: engine/drive) is the same string.
+		if (Expected->Type == EJson::String)
+		{
+			Test.TestTrue(FString::Printf(TEXT("%s is a string in the document"), *Path), Actual->Type == EJson::String);
+			Test.TestEqual(FString::Printf(TEXT("%s"), *Path), Actual->AsString(), Expected->AsString());
+			return;
+		}
 		double ExpectedNumber = 0.0;
 		double ActualNumber = 0.0;
 		if (!Expected->TryGetNumber(ExpectedNumber) || !Actual->TryGetNumber(ActualNumber))
@@ -186,8 +193,8 @@ bool FMantleVehiclePresetApplyLeavesOthersTest::RunTest(const FString& Parameter
 	// The preset carries no center of mass, so the creator's choice (off) stays.
 	TestFalse(TEXT("center of mass override is untouched"), T.bOverrideCenterOfMass);
 	// And the values it does carry did change.
-	TestEqual(TEXT("mass applied"), T.Mass, 1500.f);
-	TestEqual(TEXT("max speed applied"), T.MaxSpeed, 4500.f);
+	TestEqual(TEXT("mass applied"), T.Mass, 1546.f);
+	TestEqual(TEXT("max speed applied"), T.MaxSpeed, 5944.f);
 	return true;
 }
 
@@ -230,6 +237,346 @@ bool FMantleVehiclePresetApplyRejectsUnknownTest::RunTest(const FString& Paramet
 		TArray<FString> Notes;
 		TestFalse(TEXT("a wrong-kind value is rejected"), FMantleVehiclePresets::ApplyDefaults(Wrong, *Source, Notes));
 		TestTrue(TEXT("the note names mass"), FString::Join(Notes, TEXT("\n")).Contains(TEXT("mass")));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehiclePresetDriverAidsTest,
+	"Mantle.Vehicle.Presets.DriverAids",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehiclePresetDriverAidsTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehiclePresetApplyTestPrivate;
+	// Cars step 7 (#376): ABS, traction control, brake balance and engine braking are part of the car. A preset's are read in and written out.
+	FMantleVehiclePreset Preset;
+	FString Error;
+	const TCHAR* Defaults = TEXT("{ \"brakes\": { \"abs\": false, \"frontShare\": 0.55 }, \"engine\": { \"tractionControl\": false, \"engineBraking\": 0.3 }, \"transmission\": { \"shiftTime\": 0.15 } }");
+	if (TestTrue(TEXT("the inline preset parses"), FMantleVehiclePresets::Parse(PresetWithDefaults(Defaults), Preset, Error)))
+	{
+		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		TArray<FString> Notes;
+		TestTrue(TEXT("the driver aids are known keys"), FMantleVehiclePresets::ApplyDefaults(Preset, *Source, Notes));
+		const FMantleVehicleSourceTuning& T = Source->Tuning;
+		TestFalse(TEXT("abs read in"), T.bABS);
+		TestEqual(TEXT("frontShare read in"), T.BrakeFrontShare, 0.55f);
+		TestFalse(TEXT("tractionControl read in"), T.bTractionControl);
+		TestEqual(TEXT("engineBraking read in"), T.EngineBraking, 0.3f);
+		TestEqual(TEXT("shiftTime read in"), T.ShiftTime, 0.15f);
+		const TSharedRef<FJsonObject> Document = FMantleVehicleConverter::MakeDocument(*Source, TMap<FString, FString>());
+		ExpectFragment(*this, TEXT("driver aids"), Preset.Defaults, Document);
+	}
+
+	// Absent: ABS and traction control on, 0.65 on the steered wheels, no engine braking; the document says the first three and leaves engine braking out.
+	UMantleVehicleSource* Fresh = NewObject<UMantleVehicleSource>(GetTransientPackage());
+	const FMantleVehicleSourceTuning& F = Fresh->Tuning;
+	TestTrue(TEXT("absent: ABS on"), F.bABS);
+	TestTrue(TEXT("absent: traction control on"), F.bTractionControl);
+	TestEqual(TEXT("absent: 0.65 on the front"), F.BrakeFrontShare, 0.65f);
+	TestEqual(TEXT("absent: no engine braking"), F.EngineBraking, 0.f);
+	TestEqual(TEXT("absent: a gear change takes 0.5 s"), F.ShiftTime, 0.5f);
+	const TSharedRef<FJsonObject> Plain = FMantleVehicleConverter::MakeDocument(*Fresh, TMap<FString, FString>());
+	const TSharedPtr<FJsonObject>* Brakes = nullptr;
+	const TSharedPtr<FJsonObject>* Engine = nullptr;
+	if (TestTrue(TEXT("the document has brakes and an engine"), Plain->TryGetObjectField(TEXT("brakes"), Brakes) && Brakes && Plain->TryGetObjectField(TEXT("engine"), Engine) && Engine))
+	{
+		bool bABS = false, bTC = false;
+		double Share = 0.0;
+		TestTrue(TEXT("the document says ABS on"), (*Brakes)->TryGetBoolField(TEXT("abs"), bABS) && bABS);
+		TestTrue(TEXT("the document says traction control on"), (*Engine)->TryGetBoolField(TEXT("tractionControl"), bTC) && bTC);
+		TestTrue(TEXT("the document says 0.65 on the front"), (*Brakes)->TryGetNumberField(TEXT("frontShare"), Share) && FMath::IsNearlyEqual(Share, 0.65, 1e-4));
+		TestFalse(TEXT("no engine braking is left out"), (*Engine)->HasField(TEXT("engineBraking")));
+		const TSharedPtr<FJsonObject>* Transmission = nullptr;
+		double Shift = 0.0;
+		TestTrue(TEXT("the document says a gear change takes 0.5 s"), Plain->TryGetObjectField(TEXT("transmission"), Transmission) && Transmission
+			&& (*Transmission)->TryGetNumberField(TEXT("shiftTime"), Shift) && FMath::IsNearlyEqual(Shift, 0.5, 1e-4));
+	}
+
+	// #444: a turbo is read in and written out whole; none leaves all four out; boost settings without an induction, or out of range, are refused.
+	{
+		FMantleVehiclePreset Turbo;
+		const TCHAR* TurboDefaults = TEXT("{ \"engine\": { \"induction\": \"turbo\", \"maxBoost\": 17.4, \"spoolRPM\": 2300, \"spoolTime\": 0.6 } }");
+		if (TestTrue(TEXT("the inline turbo preset parses"), FMantleVehiclePresets::Parse(PresetWithDefaults(TurboDefaults), Turbo, Error)))
+		{
+			UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage());
+			TArray<FString> Notes;
+			TestTrue(TEXT("the induction keys are known"), FMantleVehiclePresets::ApplyDefaults(Turbo, *Source, Notes));
+			TestTrue(TEXT("turbo read in"), Source->Tuning.Induction == EMantleVehicleSourceInduction::Turbo);
+			TestEqual(TEXT("spool rpm read in"), Source->Tuning.SpoolRPM, 2300);
+			const TSharedRef<FJsonObject> Document = FMantleVehicleConverter::MakeDocument(*Source, TMap<FString, FString>());
+			ExpectFragment(*this, TEXT("turbo"), Turbo.Defaults, Document);
+			// A preset without an induction takes it away again, with the boost settings.
+			FMantleVehiclePreset PlainPreset;
+			if (TestTrue(TEXT("the inline plain preset parses"), FMantleVehiclePresets::Parse(PresetWithDefaults(TEXT("{ \"engine\": { \"maxTorque\": 300 } }")), PlainPreset, Error)))
+			{
+				TestTrue(TEXT("the plain preset applies"), FMantleVehiclePresets::ApplyDefaults(PlainPreset, *Source, Notes));
+				TestTrue(TEXT("no induction after a preset without one"), Source->Tuning.Induction == EMantleVehicleSourceInduction::None);
+				TestEqual(TEXT("and the boost back to its default"), Source->Tuning.MaxBoost, 10.f);
+			}
+		}
+		UMantleVehicleSource* Bare = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		const TSharedRef<FJsonObject> NoneDoc = FMantleVehicleConverter::MakeDocument(*Bare, TMap<FString, FString>());
+		const TSharedPtr<FJsonObject>* NoneEngine = nullptr;
+		if (TestTrue(TEXT("a plain car's document has an engine"), NoneDoc->TryGetObjectField(TEXT("engine"), NoneEngine) && NoneEngine))
+		{
+			for (const TCHAR* Key : { TEXT("induction"), TEXT("maxBoost"), TEXT("spoolRPM"), TEXT("spoolTime") })
+			{
+				TestFalse(FString::Printf(TEXT("no induction: %s left out"), Key), (*NoneEngine)->HasField(Key));
+			}
+		}
+		TArray<FMantleValidationIssue> BoostIssues;
+		Bare->Tuning.MaxBoost = 15.f;
+		FMantleVehicleConverter::CheckSource(Bare, FString(), BoostIssues);
+		TestTrue(TEXT("boost settings without an induction are an error"), BoostIssues.ContainsByPredicate([](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(TEXT("no Induction"));
+		}));
+		UMantleVehicleSource* WildTurbo = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		WildTurbo->Tuning.Induction = EMantleVehicleSourceInduction::Turbo;
+		WildTurbo->Tuning.MaxBoost = 45.f;
+		WildTurbo->Tuning.SpoolTime = 5.f;
+		WildTurbo->Tuning.SpoolRPM = WildTurbo->Tuning.IdleRPM;
+		TArray<FMantleValidationIssue> TurboIssues;
+		FMantleVehicleConverter::CheckSource(WildTurbo, FString(), TurboIssues);
+		for (const TCHAR* What : { TEXT("Max Boost"), TEXT("Spool Time") })
+		{
+			TestTrue(FString::Printf(TEXT("%s out of range is an error"), What), TurboIssues.ContainsByPredicate([What](const FMantleValidationIssue& Issue)
+			{
+				return Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(What);
+			}));
+		}
+		TestTrue(TEXT("full boost at idle is an error"), TurboIssues.ContainsByPredicate([](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(TEXT("full boost"));
+		}));
+	}
+
+	// Out of range: the check says so, by name.
+	UMantleVehicleSource* Wild = NewObject<UMantleVehicleSource>(GetTransientPackage());
+	Wild->Tuning.BrakeFrontShare = 1.5f;
+	Wild->Tuning.EngineBraking = 6.f;
+	Wild->Tuning.ShiftTime = 3.f;
+	TArray<FMantleValidationIssue> Issues;
+	FMantleVehicleConverter::CheckSource(Wild, FString(), Issues);
+	for (const TCHAR* What : { TEXT("Brake Front Share"), TEXT("Engine Braking"), TEXT("Shift Time") })
+	{
+		TestTrue(FString::Printf(TEXT("%s out of range is an error"), What), Issues.ContainsByPredicate([What](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(What) && Issue.Problem.Contains(TEXT("outside what a vehicle may have"));
+		}));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehiclePresetPedalTest,
+	"Mantle.Vehicle.Presets.Pedal",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehiclePresetPedalTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehiclePresetApplyTestPrivate;
+	// #447: a pedalled preset's pedal block and rolling resistance are read into the tuning and written back out.
+	FMantleVehiclePreset Preset;
+	FString Error;
+	const TCHAR* Defaults = TEXT(R"({ "pedal": { "riderPower": 250, "sprintPower": 900, "sprintReserve": 15, "maxCadence": 200, "cadence": 85 }, "tires": { "friction": 1.12, "rollingResistance": 0.005 } })");
+	if (TestTrue(TEXT("the inline preset parses"), FMantleVehiclePresets::Parse(PresetWithDefaults(Defaults), Preset, Error)))
+	{
+		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		TArray<FString> Notes;
+		TestTrue(TEXT("the pedal keys are known"), FMantleVehiclePresets::ApplyDefaults(Preset, *Source, Notes));
+		TestTrue(TEXT("pedalled"), Source->Tuning.bPedal);
+		TestEqual(TEXT("250 W"), Source->Tuning.PedalRiderPower, 250.f);
+		TestEqual(TEXT("0.005 rolling"), Source->Tuning.TireRollingResistance, 0.005f);
+		const TSharedRef<FJsonObject> Document = FMantleVehicleConverter::MakeDocument(*Source, TMap<FString, FString>());
+		ExpectFragment(*this, TEXT("pedal"), Preset.Defaults, Document);
+		TArray<FMantleValidationIssue> Issues;
+		FMantleVehicleConverter::CheckSource(Source, FString(), Issues);
+		TestFalse(TEXT("no pedal error on the preset's numbers"), Issues.ContainsByPredicate([](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Severity == EMantleIssueSeverity::Error && (Issue.Problem.Contains(TEXT("Power")) || Issue.Problem.Contains(TEXT("Cadence")));
+		}));
+	}
+
+	// Not pedalled: no pedal block, so every other vehicle's document is what it was.
+	UMantleVehicleSource* Fresh = NewObject<UMantleVehicleSource>(GetTransientPackage());
+	TestFalse(TEXT("a fresh source isn't pedalled"), Fresh->Tuning.bPedal);
+	TestFalse(TEXT("no pedal block"), FMantleVehicleConverter::MakeDocument(*Fresh, TMap<FString, FString>())->HasField(TEXT("pedal")));
+
+	// The two rules: a sprint at least the held power, and the cadence 20 under the max.
+	UMantleVehicleSource* Wrong = NewObject<UMantleVehicleSource>(GetTransientPackage());
+	Wrong->Tuning.bPedal = true;
+	Wrong->Tuning.PedalRiderPower = 400.f;
+	Wrong->Tuning.PedalSprintPower = 300.f;
+	Wrong->Tuning.PedalCadence = 190.f;
+	Wrong->Tuning.PedalMaxCadence = 200.f;
+	TArray<FMantleValidationIssue> Issues;
+	FMantleVehicleConverter::CheckSource(Wrong, FString(), Issues);
+	TestTrue(TEXT("a sprint under the held power is an error"), Issues.ContainsByPredicate([](const FMantleValidationIssue& Issue)
+	{
+		return Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(TEXT("Sprint Power")) && Issue.Problem.Contains(TEXT("under its Rider Power"));
+	}));
+	TestTrue(TEXT("a cadence too near the max is an error"), Issues.ContainsByPredicate([](const FMantleValidationIssue& Issue)
+	{
+		return Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(TEXT("within 20 of its Max Cadence"));
+	}));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehiclePresetRollingResistanceTest,
+	"Mantle.Vehicle.Presets.RollingResistance",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehiclePresetRollingResistanceTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehiclePresetApplyTestPrivate;
+	// tires.rollingResistance (#447, #448): how much every wheel loses to rolling. A preset's is read in and written out.
+	FMantleVehiclePreset Preset;
+	FString Error;
+	if (TestTrue(TEXT("the inline preset parses"), FMantleVehiclePresets::Parse(PresetWithDefaults(TEXT("{ \"tires\": { \"friction\": 1.6, \"rollingResistance\": 0.04 } }")), Preset, Error)))
+	{
+		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		TArray<FString> Notes;
+		TestTrue(TEXT("rollingResistance is a known key"), FMantleVehiclePresets::ApplyDefaults(Preset, *Source, Notes));
+		TestEqual(TEXT("rollingResistance read in"), Source->Tuning.TireRollingResistance, 0.04f);
+		const TSharedRef<FJsonObject> Document = FMantleVehicleConverter::MakeDocument(*Source, TMap<FString, FString>());
+		ExpectFragment(*this, TEXT("rolling resistance"), Preset.Defaults, Document);
+	}
+
+	// The tracked presets carry a track's 0.04, and apply.
+	for (const TCHAR* Id : { TEXT("tank"), TEXT("bulldozer") })
+	{
+		const FMantleVehiclePreset* Tracked = FMantleVehiclePresets::Find(Id);
+		if (!TestNotNull(*FString::Printf(TEXT("the %s preset loads"), Id), Tracked))
+		{
+			continue;
+		}
+		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		TArray<FString> Notes;
+		const bool bApplied = FMantleVehiclePresets::ApplyDefaults(*Tracked, *Source, Notes);
+		TestTrue(*FString::Printf(TEXT("the %s applies (%s)"), Id, *FString::Join(Notes, TEXT(" "))), bApplied);
+		TestEqual(*FString::Printf(TEXT("the %s rolls as a track does"), Id), Source->Tuning.TireRollingResistance, 0.04f);
+	}
+
+	// Absent: a car tire's 0.012, which the document leaves out (its absence means the same), so a car's document is what it was.
+	UMantleVehicleSource* Fresh = NewObject<UMantleVehicleSource>(GetTransientPackage());
+	TestEqual(TEXT("absent: a car tire's 0.012"), Fresh->Tuning.TireRollingResistance, 0.012f);
+	const TSharedRef<FJsonObject> Plain = FMantleVehicleConverter::MakeDocument(*Fresh, TMap<FString, FString>());
+	const TSharedPtr<FJsonObject>* Tires = nullptr;
+	if (TestTrue(TEXT("the document has tires"), Plain->TryGetObjectField(TEXT("tires"), Tires) && Tires))
+	{
+		TestFalse(TEXT("a car tire's rolling resistance is left out"), (*Tires)->HasField(TEXT("rollingResistance")));
+	}
+
+	// Out of range, either way: the check says so, by name.
+	for (const float Value : { 0.2f, 0.001f })
+	{
+		UMantleVehicleSource* Wild = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		Wild->Tuning.TireRollingResistance = Value;
+		TArray<FMantleValidationIssue> Issues;
+		FMantleVehicleConverter::CheckSource(Wild, FString(), Issues);
+		TestTrue(*FString::Printf(TEXT("a rolling resistance of %g is an error"), Value), Issues.ContainsByPredicate([](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(TEXT("Tire Rolling Resistance")) && Issue.Problem.Contains(TEXT("outside what a vehicle may have"));
+		}));
+	}
+	// Positive control: in range is no such error.
+	TArray<FMantleValidationIssue> Fine;
+	FMantleVehicleConverter::CheckSource(Fresh, FString(), Fine);
+	TestFalse(TEXT("0.012 is no rolling-resistance error"), Fine.ContainsByPredicate([](const FMantleValidationIssue& Issue) { return Issue.Problem.Contains(TEXT("Tire Rolling Resistance")); }));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehiclePresetSwitchTypeTest,
+	"Mantle.Vehicle.Presets.SwitchTypeStartsClean",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehiclePresetSwitchTypeTest::RunTest(const FString& Parameters)
+{
+	// Plugin Manager's review of Core #292: switching type kept the old type's settings that the new preset leaves out (a motorcycle's engine
+	// size 599 or a tank's rolling resistance 0.04 on a sedan). A type switched to from another is the same as that type picked on a new vehicle.
+	const FMantleVehiclePreset* Sedan = FMantleVehiclePresets::Find(TEXT("sedan"));
+	if (!TestNotNull(TEXT("the sedan preset loads"), Sedan))
+	{
+		return false;
+	}
+	TArray<FString> Notes;
+	UMantleVehicleSource* Fresh = NewObject<UMantleVehicleSource>(GetTransientPackage());
+	TestTrue(TEXT("the sedan applies to a new vehicle"), FMantleVehiclePresets::ApplyDefaults(*Sedan, *Fresh, Notes));
+	for (const TCHAR* From : { TEXT("motorcycle"), TEXT("tank"), TEXT("electric"), TEXT("atv"), TEXT("bicycle"), TEXT("drift"), TEXT("sports"), TEXT("offroad") })
+	{
+		const FMantleVehiclePreset* Before = FMantleVehiclePresets::Find(From);
+		if (!TestNotNull(*FString::Printf(TEXT("the %s preset loads"), From), Before))
+		{
+			continue;
+		}
+		UMantleVehicleSource* Switched = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		TestTrue(*FString::Printf(TEXT("the %s applies"), From), FMantleVehiclePresets::ApplyDefaults(*Before, *Switched, Notes));
+		TestTrue(*FString::Printf(TEXT("then the sedan applies over the %s"), From), FMantleVehiclePresets::ApplyDefaults(*Sedan, *Switched, Notes));
+		TestTrue(*FString::Printf(TEXT("%s -> sedan is the sedan's own settings, nothing of the %s left"), From, From),
+			FMantleVehicleSourceTuning::StaticStruct()->CompareScriptStruct(&Switched->Tuning, &Fresh->Tuning, PPF_None));
+		const FMantleVehicleSourceTuning& T = Switched->Tuning;
+		TestEqual(*FString::Printf(TEXT("%s -> sedan: no engine size"), From), T.EngineDisplacement, Fresh->Tuning.EngineDisplacement);
+		TestEqual(*FString::Printf(TEXT("%s -> sedan: a car tire's rolling resistance"), From), T.TireRollingResistance, Fresh->Tuning.TireRollingResistance);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleUnusedSettingsNoteTest,
+	"Mantle.Vehicle.Presets.UnusedSettingsNote",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleUnusedSettingsNoteTest::RunTest(const FString& Parameters)
+{
+	// Plugin Manager's review of Core #292: an electric car leaves engine braking, reverse ratio, shift points and shift time out of its document,
+	// and a belt drive its shift points and shift time. Changed by hand, the creator is told (a warning: the vehicle still publishes).
+	auto NoteOf = [](const UMantleVehicleSource* Source)
+	{
+		TArray<FMantleValidationIssue> Issues;
+		FMantleVehicleConverter::CheckSource(Source, FString(), Issues);
+		const FMantleValidationIssue* Note = Issues.FindByPredicate([](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Severity == EMantleIssueSeverity::Warning && Issue.Problem.Contains(TEXT("left out of the published vehicle"));
+		});
+		return Note ? Note->Problem : FString();
+	};
+	TArray<FString> Notes;
+	for (const TCHAR* Id : { TEXT("electric"), TEXT("atv") })
+	{
+		const FMantleVehiclePreset* Preset = FMantleVehiclePresets::Find(Id);
+		if (!TestNotNull(*FString::Printf(TEXT("the %s preset loads"), Id), Preset))
+		{
+			continue;
+		}
+		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		TestTrue(*FString::Printf(TEXT("the %s applies"), Id), FMantleVehiclePresets::ApplyDefaults(*Preset, *Source, Notes));
+		TestEqual(*FString::Printf(TEXT("the %s preset as picked has no note"), Id), NoteOf(Source), FString());
+		Source->Tuning.ShiftTime = 0.2f;
+		Source->Tuning.ChangeUpRPM = 5000;
+		const FString Note = NoteOf(Source);
+		TestTrue(*FString::Printf(TEXT("%s: changed shift settings are noted (%s)"), Id, *Note), Note.Contains(TEXT("Shift Time")) && Note.Contains(TEXT("Change Up RPM")));
+	}
+	if (const FMantleVehiclePreset* Electric = FMantleVehiclePresets::Find(TEXT("electric")))
+	{
+		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		FMantleVehiclePresets::ApplyDefaults(*Electric, *Source, Notes);
+		Source->Tuning.EngineBraking = 0.4f;
+		Source->Tuning.ReverseRatio = 3.5f;
+		const FString Note = NoteOf(Source);
+		TestTrue(*FString::Printf(TEXT("electric: engine braking and reverse ratio are noted (%s)"), *Note), Note.Contains(TEXT("Engine Braking")) && Note.Contains(TEXT("Reverse Ratio")));
+	}
+	// A geared combustion car uses them all: no note.
+	if (const FMantleVehiclePreset* Sedan = FMantleVehiclePresets::Find(TEXT("sedan")))
+	{
+		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage());
+		FMantleVehiclePresets::ApplyDefaults(*Sedan, *Source, Notes);
+		Source->Tuning.ShiftTime = 0.2f;
+		Source->Tuning.EngineBraking = 0.4f;
+		TestEqual(TEXT("a geared car's shift and engine braking settings get no note"), NoteOf(Source), FString());
 	}
 	return true;
 }

@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "id": "bus",
+  "name": "Bus",
+  "description": "A long, heavy city bus on two axles: transit buses, coaches and school buses. Very heavy and slow to pull away, with its engine at the back, a governed top speed, a wide turn and a high chase camera.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format. The real bus is a New Flyer Xcelsior XD40, a 40 ft clean-diesel transit bus (#376 step 9c), from New Flyer's 2021 brochure: 12.24 m over the body, 2.6 m wide, 7.21 m (283.75 in) wheelbase, 305/70R22.5 tires (49.9 cm radius), 27,750 lb (12,587 kg) curb, 40 seats and 43 standees, a 44 ft (13.4 m) turning radius. Its Cummins L9 is set in the middle of the transit ratings (280-380 hp, 900-1100 lb-ft, 2200 rpm governed): 1356 Nm at 1400 rpm and 330 hp at 2000. Its Allison B400R ratios (3.51, 1.91, 1.43, 1.00, 0.74, 0.64; reverse 4.80) are from a secondary source. No instrumented test was found, so it is reported, not judged. Estimates: the 4.88 axle (105 km/h at about 2000 rpm in 5th), the 105 km/h governor, the 35/65 front/rear split (engine at the back), the 210 cm track, the drag and frontal area, the 25 cm underside and a 0.75 g grip. Its fit stops at 1.6 times its size (19.6 m): past that its body and driver's seat are longer than a vehicle document can say. The bus seats a driver and one passenger beside them until vehicles carry more seats. Grip, springs, damping, brakes and engine braking follow steps 4-9's rules: 1.55 friction per g, a 1.2 Hz ride, a 0.27 damping ratio, engine braking for about 0.125 g lifting off. Its brakes are a real city bus's, not its tires' grip (the vehicle lead's call, 2026-11-26): air brakes on a 13 t bus stop it at about 0.55-0.6 g (70 m from 100 km/h, with engine braking and rolling resistance helping), which standing passengers rely on; 30% of it on the front axle, as the weight is, and ABS on. #444: its Cummins L9 turbo diesel has no published boost figure, so maxBoost 30 psi is an estimate (large VGT diesels run about 30); spoolRPM 1400 is its torque peak.",
+  "movementType": "wheeled",
+  "publishable": true,
+  "type": "truck",
+  "seats": {
+    "driver": "car",
+    "passenger": "car"
+  },
+  "fit": {
+    "wheelRadius": 50,
+    "trackWidth": 210,
+    "minScale": 0.5,
+    "maxScale": 1.6
+  },
+  "wheels": {
+    "min": 4,
+    "max": 6
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 721,
+      "track": 210,
+      "wheelRadius": 50,
+      "wheelWidth": 31,
+      "axles": [
+        { "steer": true, "drive": false },
+        { "steer": false, "drive": true, "handbrake": true }
+      ]
+    },
+    "body": { "length": 1224, "width": 259, "height": 135, "groundClearance": 25 },
+    "centerOfMass": [-108, 0, 105],
+    "seat": {
+      "location": [470, -80, 120],
+      "steeringWheel": { "location": [515, -80, 128], "radius": 25 }
+    }
+  },
+  "derive": {
+    "stability": 0.95,
+    "cameraArmPerLength": 0.83,
+    "cameraHeightPerHeight": 1.82
+  },
+  "defaults": {
+    "mass": 12587,
+    "maxSpeed": 2917,
+    "dragCoefficient": 0.65,
+    "frontalArea": 7.5,
+    "engine": {
+      "sound": "diesel",
+      "maxTorque": 1356,
+      "maxRPM": 2200,
+      "idleRPM": 650,
+      "torqueCurve": [[0, 0.6], [800, 0.8], [1400, 1], [2000, 0.866], [2200, 0.75]],
+      "tractionControl": true,
+      "engineBraking": 2.1,
+      "induction": "turbo",
+      "maxBoost": 30,
+      "spoolRPM": 1400,
+      "spoolTime": 1.5
+    },
+    "transmission": {
+      "gearRatios": [3.51, 1.91, 1.43, 1.0, 0.74, 0.64],
+      "reverseRatio": 4.8,
+      "finalDrive": 4.88,
+      "changeUpRPM": 2000,
+      "changeDownRPM": 1100,
+      "shiftTime": 0.5
+    },
+    "suspension": {
+      "maxRaise": 15,
+      "maxDrop": 18,
+      "springRate": 1000,
+      "springPreload": 300,
+      "damping": 3.9
+    },
+    "steering": {
+      "maxAngle": 46,
+      "ackermann": true
+    },
+    "brakes": {
+      "brakeTorque": 7400,
+      "handbrakeTorque": 16000,
+      "abs": true,
+      "frontShare": 0.3
+    },
+    "tires": {
+      "friction": 1.16
+    },
+    "camera": {
+      "armLength": 1235,
+      "height": 310
+    }
+  },
+  "ranges": {
+    "mass": [9000, 20000],
+    "maxSpeed": [1500, 3500],
+    "dragCoefficient": [0.5, 1.1],
+    "engine/maxTorque": [600, 3000],
+    "engine/maxRPM": [1800, 3500],
+    "engine/idleRPM": [400, 900],
+    "engine/engineBraking": [0, 5],
+    "engine/maxBoost": [10, 40],
+    "engine/spoolRPM": [800, 2200],
+    "engine/spoolTime": [0.5, 3],
+    "transmission/shiftTime": [0.05, 2],
+    "suspension/maxRaise": [5, 30],
+    "suspension/maxDrop": [5, 30],
+    "suspension/springRate": [400, 3000],
+    "suspension/damping": [1, 5],
+    "steering/maxAngle": [30, 55],
+    "brakes/brakeTorque": [6000, 20000],
+    "brakes/frontShare": [0.2, 0.7],
+    "tires/friction": [0.8, 5],
+    "wheels/*/radius": [40, 65]
+  }
+}

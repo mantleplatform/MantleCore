@@ -474,6 +474,7 @@ bool FMantleVehicleChassisSkinGroundHandlingTest::RunTest(const FString& Paramet
 	}
 	TestTrue(TEXT("its own corner-named wheels fit the sedan"), FMantleVehicleBuilder::FitsOwnWheels(Body, TEXT("sedan")));
 	TestFalse(TEXT("but not a motorcycle's"), FMantleVehicleBuilder::FitsOwnWheels(Body, TEXT("motorcycle")));
+	TestFalse(TEXT("nor a quad's (#376 step 9d: its rider's grips ride the chassis's handlebar bone)"), FMantleVehicleBuilder::FitsOwnWheels(Body, TEXT("atv")));
 	TestFalse(TEXT("and not a plane's"), FMantleVehicleBuilder::FitsOwnWheels(Body, TEXT("plane")));
 	const FMantleVehicleBuildResult Built = FMantleVehicleBuilder::BuildAny(Body, TEXT("sedan"));
 	for (const FString& Problem : Built.Problems)
@@ -484,8 +485,11 @@ bool FMantleVehicleChassisSkinGroundHandlingTest::RunTest(const FString& Paramet
 	{
 		TestFalse(TEXT("that is the wheel fit, not the skin"), Built.bOnChassis);
 		const FMantleVehicleSourceTuning& Tuning = Built.Source->Tuning;
-		TestEqual(TEXT("the steering eases off with speed over four points"), Tuning.SteeringSpeedCurve.Num(), 4);
-		TestTrue(TEXT("with the full lock at a standstill and less at speed"), Tuning.SteeringSpeedCurve.Num() == 4 && Tuning.SteeringSpeedCurve[0].Y == 1.0 && Tuning.SteeringSpeedCurve[3].Y < 0.5);
+		// The built-in ground curve (#376 step 5: seven points since steering was tuned to the cars' peak grip angles).
+		const TArray<FVector2D> Ground = FMantleVehicleChassisDocument::GroundSteeringSpeedCurve();
+		TestEqual(TEXT("the steering eases off with speed over the ground curve's points"), Tuning.SteeringSpeedCurve.Num(), Ground.Num());
+		TestTrue(TEXT("with the full lock at a standstill and less at speed"), Tuning.SteeringSpeedCurve.Num() == Ground.Num() && Tuning.SteeringSpeedCurve[0].Y == 1.0
+			&& Tuning.SteeringSpeedCurve.Last().Y < 0.5);
 		TestTrue(TEXT("the rear tires grip more than the front"), Tuning.bTireRearFriction && Tuning.TireRearFriction > Tuning.TireFriction);
 		TestEqual(TEXT("it is a car: the wheeled movement type"), static_cast<int32>(Built.Source->MovementType), static_cast<int32>(EMantleVehicleMovementKind::Wheeled));
 	}
@@ -581,6 +585,14 @@ bool FMantleVehicleChassisSkinPanelTest::RunTest(const FString& Parameters)
 	const FMantleVehiclePreset* Hover = FMantleVehiclePresets::Find(TEXT("hovercraft"));
 	TestTrue(*FString::Printf(TEXT("a car body, smaller than a hovercraft's ground, makes a smaller hovercraft (%.2f)"), Access::Size(*Panel)),
 		Hover && Access::Size(*Panel) < 1.0 && Access::Size(*Panel) >= Hover->FitMinScale);
+	// A tank (#448) is a skin over its chassis too, sized to the model within its range, with its 14 road wheels to point out (a car's 4 wheels are not guessed at).
+	Access::PickType(*Panel, TEXT("tank"), TEXT("Tank"));
+	const FMantleVehiclePreset* Tank = FMantleVehiclePresets::Find(TEXT("tank"));
+	TestTrue(TEXT("a car body is worn as a tank's skin"), Access::UsesSkin(*Panel));
+	TestEqual(TEXT("the tank has its 14 road wheels to point out"), Access::NumSlots(*Panel), 14);
+	TestTrue(*FString::Printf(TEXT("a car body, smaller than a tank's ground, makes a smaller tank (%.2f)"), Access::Size(*Panel)),
+		Tank && Access::Size(*Panel) < 1.0 && Access::Size(*Panel) >= Tank->FitMinScale);
+	TestTrue(TEXT("its step builds"), Access::Step(*Panel)->GetType() != NAME_None);
 	Access::PickType(*Panel, TEXT("plane"), TEXT("Plane"));
 	TSharedRef<SWidget> Step = Access::Step(*Panel);
 	TestTrue(TEXT("its step builds with the parts"), Step->GetType() != NAME_None);
@@ -597,6 +609,10 @@ bool FMantleVehicleChassisSkinPanelTest::RunTest(const FString& Parameters)
 	Access::PickType(*Panel, TEXT("motorcycle"), TEXT("Motorcycle"));
 	TestTrue(TEXT("a car body is worn as a motorcycle's skin"), Access::UsesSkin(*Panel));
 	TestEqual(TEXT("the bike has its two wheels and its fork to point out"), Access::NumSlots(*Panel), 3);
+	// A quad (#376 step 9d): worn as a skin, with its four wheels and its handlebar to point out.
+	Access::PickType(*Panel, TEXT("atv"), TEXT("ATV (quad bike)"));
+	TestTrue(TEXT("a car body is worn as a quad's skin"), Access::UsesSkin(*Panel));
+	TestEqual(TEXT("the quad has its four wheels and its handlebar to point out"), Access::NumSlots(*Panel), 5);
 	// No model: no rows, and nothing breaks.
 	Access::SetMesh(*Panel, nullptr);
 	TestFalse(TEXT("clearing the model clears what was read"), Access::HaveModel(*Panel));
@@ -604,6 +620,55 @@ bool FMantleVehicleChassisSkinPanelTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleChassisSkinTrackedTest,
+	"Mantle.Vehicle.ChassisSkin.TrackedRoadWheelSlots",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleChassisSkinTrackedTest::RunTest(const FString& Parameters)
+{
+	// A tracked vehicle's road wheels (#448) are drawn wheels, each a slot a model's wheel can be pointed at, named for its track and its place from the front; a
+	// hovercraft's pads, which are never drawn, are none (positive control for the filter).
+	for (const TCHAR* Id : { TEXT("tank"), TEXT("bulldozer") })
+	{
+		FMantleChassisSpec Spec;
+		FMantleVehicleAsset Gray;
+		FString Error;
+		if (!TestTrue(*FString::Printf(TEXT("the %s chassis is made (%s)"), Id, *Error), FMantleVehicleChassisBuilder::LoadSpec(Id, Spec, Error) && FMantleVehicleChassisBuilder::MakeAsset(Spec, Gray, Error)))
+		{
+			continue;
+		}
+		const TArray<FMantleVehiclePartSlot> Slots = FMantleVehicleChassisSkin::PartSlots(Spec, Gray.Body);
+		TestEqual(*FString::Printf(TEXT("the %s has a slot for every road wheel"), Id), Slots.Num(), Spec.WheelCount());
+		TestTrue(*FString::Printf(TEXT("every %s slot is a wheel"), Id), Slots.Num() > 0 && !Slots.ContainsByPredicate([](const FMantleVehiclePartSlot& Slot) { return Slot.Kind != EMantleVehiclePartKind::Wheel; }));
+		const FMantleVehiclePartSlot* First = Slots.FindByPredicate([](const FMantleVehiclePartSlot& Slot) { return Slot.ChassisBone == FName(TEXT("wheel_a1_l")); });
+		const FMantleVehiclePartSlot* Last = Slots.FindByPredicate([](const FMantleVehiclePartSlot& Slot) { return Slot.ChassisBone == FName(TEXT("wheel_a7_r")); });
+		TestTrue(*FString::Printf(TEXT("the %s's first left road wheel says so (%s)"), Id, First ? *First->Label.ToString() : TEXT("none")),
+			First && First->Label.ToString() == TEXT("Left road wheel 1 (from the front)"));
+		TestTrue(*FString::Printf(TEXT("and its last right one (%s)"), Last ? *Last->Label.ToString() : TEXT("none")), Last && Last->Label.ToString() == TEXT("Right road wheel 7 (from the front)"));
+	}
+	FMantleChassisSpec Hover;
+	FMantleVehicleAsset HoverGray;
+	FString Error;
+	if (TestTrue(TEXT("the hovercraft chassis is made"), FMantleVehicleChassisBuilder::LoadSpec(TEXT("hovercraft"), Hover, Error) && FMantleVehicleChassisBuilder::MakeAsset(Hover, HoverGray, Error)))
+	{
+		TestFalse(TEXT("a hovercraft's pads are no wheel slots"), FMantleVehicleChassisSkin::PartSlots(Hover, HoverGray.Body).ContainsByPredicate([](const FMantleVehiclePartSlot& Slot)
+		{
+			return Slot.Kind == EMantleVehiclePartKind::Wheel;
+		}));
+	}
+	// A truck's third axle keeps its own words.
+	FMantleChassisSpec Six;
+	FMantleVehicleAsset SixGray;
+	if (TestTrue(TEXT("the six-wheeler chassis is made"), FMantleVehicleChassisBuilder::LoadSpec(TEXT("sixwheeler"), Six, Error) && FMantleVehicleChassisBuilder::MakeAsset(Six, SixGray, Error)))
+	{
+		const TArray<FMantleVehiclePartSlot> Slots = FMantleVehicleChassisSkin::PartSlots(Six, SixGray.Body);
+		const FMantleVehiclePartSlot* Third = Slots.FindByPredicate([](const FMantleVehiclePartSlot& Slot) { return Slot.ChassisBone == FName(TEXT("wheel_a3_l")); });
+		TestTrue(TEXT("a six-wheeler's wheel is an axle's, not a road wheel"), Third && Third->Label.ToString() == TEXT("Left wheel, axle 3"));
+	}
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleVehicleChassisSkinTwinTest,

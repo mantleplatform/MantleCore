@@ -5,16 +5,20 @@
 #include "Misc/Optional.h"
 #include "MantleChassisDerive.h"
 #include "MantleVehicleChassisBuilder.h"
+#include "MantleVehicleDifferential.h"
 
 class FJsonObject;
 
 /**
  * What kind of vehicle a preset is (schema/vehicle-preset.schema.json `type`): the family whose derive block it shares. A type selects
- * only that block, the stability target and the two camera constants. The cars are the sedan, sports car, limousine, pickup and van; the
- * trucks the truck and the six-wheeler; a motorcycle has one wheel on each axle, on the centerline, and balances itself; a plane flies on a
+ * only that block, the stability target and the two camera constants. The cars are the sedan, sports car, limousine, pickup, van, compact,
+ * muscle car, drift car, supercar, off-road 4x4 and ATV (a quad, whose rider straddles it); the trucks the truck, the six-wheeler and the bus; a motorcycle has one wheel on each axle, on the centerline, and balances itself; a plane flies on a
  * wing, a tailplane and a fin (chassis.aircraft) and stands on tricycle gear, its nose wheel on the centerline; a helicopter is lifted and steered
  * by its main rotor (chassis.helicopter) and stands on two skids, each a pair of hidden wheels that are always braked; a hovercraft floats on four
- * pads (chassis.hovercraft), suspensions with no wheel at the layout's hidden wheel points, and is pushed by a fan.
+ * pads (chassis.hovercraft), suspensions with no wheel at the layout's hidden wheel points, and is pushed by a fan; a boat and a jet ski float on their
+ * hull's points in a place's water (chassis.boat, #15), their layout's four wheels hidden and unused, and are pushed by a propeller or a jet; a tracked
+ * vehicle (a tank, a bulldozer) runs on two tracks (chassis.tracked), each the row of road wheels on its side, and turns by running them at different
+ * speeds.
  */
 enum class EMantleChassisType : uint8
 {
@@ -24,6 +28,12 @@ enum class EMantleChassisType : uint8
 	Plane,
 	Helicopter,
 	Hovercraft,
+	Boat,
+	JetSki,
+	/** Towed (#446): no engine of its own; its layout's steer and drive flags only satisfy the reader. Its body sits forward of its axles (chassis.body.x)
+	 *  and its coupler (chassis.trailer) at the front. */
+	Trailer,
+	Tracked,
 };
 
 /** One axle of a chassis's layout. */
@@ -65,6 +75,11 @@ struct MANTLERUNTIME_API FMantleChassisSurface
 	double Camber = 0.0;
 	double MaxControlAngle = 0.0;
 	double StallAngle = 20.0;
+	/** The peak lift coefficient (#379, maxLift); 0: the vehicle document leaves it out and the type's is used. */
+	double MaxLift = 0.0;
+
+	/** The surface's aspect ratio, span^2 / planform (a wing's both halves together): what the document's aspectRatio is (#379). 0 without a planform. */
+	double AspectRatio() const { return Span > 0.0 && Chord > 0.0 ? Span / Chord : 0.0; }
 
 	/** Span x chord, cm^2: what the area follows when the surface is resized. */
 	double Planform() const { return Span * Chord; }
@@ -87,6 +102,15 @@ struct MANTLERUNTIME_API FMantleChassisAircraft
 	double EngineThrustNewtons = 0.0;
 	/** Where the engines push from along X: the propeller hubs, or the jets' nozzle exits. */
 	double EngineX = 0.0;
+	/** Each propeller engine's shaft power, kW (#379, engines.power): its push falls off with speed. 0: none (a jet). */
+	double EnginePowerKw = 0.0;
+	/** Each jet's thrust with the afterburner lit, N (#379, engines.afterburnerThrust). 0: none. */
+	double AfterburnerNewtons = 0.0;
+	/** A jet's seconds from idle to full thrust (#379, spoolTime); below 0: the preset gives none (the document leaves it out). */
+	double SpoolTime = -1.0;
+	/** The player's assists (#379, assists): absent on. */
+	bool bStallProtection = true;
+	bool bCoordinatedTurns = true;
 	/** The airframe has a propeller block: its engines turn propellers. Without one they are jets, each pushing from a nozzle behind the fuselage's tail, and nothing spins. */
 	bool bPropeller = false;
 	double PropellerRadius = 0.0;
@@ -191,6 +215,75 @@ struct MANTLERUNTIME_API FMantleChassisHovercraft
 };
 
 /**
+ * What a boat or jet ski preset adds to the chassis (schema/vehicle-preset.schema.json chassis.boat, #15): the hull is the chassis's body box, its keel the
+ * box's bottom (the ground clearance) along its middle; this is how the water holds and drags it, its drive and its optional rudder. Model space, cm; speeds
+ * cm/s. The layout's four wheels are hidden and drive nothing (the document's reader needs a steered and a driven one).
+ */
+struct MANTLERUNTIME_API FMantleChassisBoat
+{
+	/** The preset has a boat block. */
+	bool bSet = false;
+	/** The hull (chassis.boat.hull): how deep a point lifts more, its V, its points along each row, its water drag and its up-and-down damping ratio. */
+	double HullDepth = 0.0;
+	double DeadriseDegrees = 0.0;
+	int32 Points = 6;
+	double DragAlong = 0.0;
+	double DragAcross = 0.0;
+	double HeaveDamping = 0.0;
+	/** Where the hull is fully on plane; 0 never planes. */
+	double PlaningSpeedCmPerSec = 0.0;
+	/** The drive (chassis.boat.drive): a jet or a propeller, its push at rest (the preset's own; a resized boat's is in its handling), where it pushes from
+	 *  on the centerline, and how. */
+	bool bJet = false;
+	double DriveThrustNewtons = 0.0;
+	double ReverseShare = 0.0;
+	double VectorAngle = 0.0;
+	double TopSpeedCmPerSec = 0.0;
+	double PropWalk = 0.0;
+	double DriveX = 0.0;
+	double DriveZ = 0.0;
+	/** The optional rudder (chassis.boat.rudder): where it acts on the centerline, its area (the preset's own; a resized boat's is in its handling), m^2,
+	 *  and how far it turns. */
+	bool bRudder = false;
+	double RudderX = 0.0;
+	double RudderZ = 0.0;
+	double RudderAreaM2 = 0.0;
+	double RudderMaxControlAngle = 0.0;
+	/** The body's angular damping, per second. */
+	double AngularDamping = 0.3;
+};
+
+/**
+ * What a tracked preset adds to the chassis (schema/vehicle-preset.schema.json chassis.tracked): the hull is the chassis's body box and the layout's axles
+ * are its road-wheel pairs; this is its tracks and the drawn blocks on the hull. Model space, cm, cm/s. The tracks and blocks are drawn, never collided
+ * (only the hull is).
+ */
+struct MANTLERUNTIME_API FMantleChassisTracked
+{
+	/** The preset has a tracked block. */
+	bool bSet = false;
+	/** A track's pad width and one pad's length along the belt. */
+	double TrackWidth = 0.0;
+	double PadPitch = 0.0;
+	/** How fast each track runs, opposite ways, in a pivot at full steering: with the gauge, how fast it turns on the spot (2 x this / track). */
+	double PivotTrackSpeed = 0.0;
+	/** The track's sideways resistance over its grip (mu_t / mu). A ratio, so it does not scale. */
+	double LateralShare = 0.0;
+	/** The turret (bTurret): a box on the hull's top, TurretLength long about TurretX, TurretWidth wide, TurretHeight tall. */
+	bool bTurret = false;
+	double TurretX = 0.0;
+	double TurretLength = 0.0;
+	double TurretWidth = 0.0;
+	double TurretHeight = 0.0;
+	/** The blade (bBlade): a box standing on the ground in front, BladeThickness thick about BladeX, BladeWidth wide, BladeHeight tall. */
+	bool bBlade = false;
+	double BladeX = 0.0;
+	double BladeWidth = 0.0;
+	double BladeHeight = 0.0;
+	double BladeThickness = 0.0;
+};
+
+/**
  * A preset's own size: the dimensions its hand-tuned handling belongs to. FMantleChassisDerive multiplies that handling by how a chassis's
  * dimensions differ from these, so a chassis with these dimensions has exactly the preset's handling and a dimension edited on its own moves only
  * the numbers that depend on it. Set when the preset is read; Scaled and any edit of the chassis leave it alone. WheelWidth is kept with the rest
@@ -215,6 +308,8 @@ struct MANTLERUNTIME_API FMantleChassisSize
 	FMantleChassisHelicopter Helicopter;
 	/** The archetype's pads, fan and fin: a hovercraft's spring rate follows how much its pads come down against these, and its rudder its fin's planform. */
 	FMantleChassisHovercraft Hovercraft;
+	/** The archetype's tracks, turret and blade. */
+	FMantleChassisTracked Tracked;
 
 	/** A pair of wheels to an axle, or one for an axle on the centerline (the whole layout's, or the axle's own). */
 	int32 WheelCount() const
@@ -240,10 +335,22 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 {
 	/** How the steering wheel is pitched, degrees: a typical wheel (schema/vehicle.schema.json steeringWheel.rotation). */
 	static constexpr double SteeringWheelPitch = -20.0;
+	/** A jet ski's handlebar column (#15), degrees: its steering wheel's hub pitched so its axis (+X) runs down the column into the hull, 25 degrees off the
+	 *  vertical towards the bow, so the bars turn about the column as a car's wheel turns about its own. */
+	static constexpr double HandlebarColumnPitch = -65.0;
+	/** A jet ski's passenger sits behind its rider on the seat, this far back and this much higher, cm. */
+	static constexpr double PillionBehind = 45.0;
+	static constexpr double PillionRise = 5.0;
 
 	/** The fewest and most axles a layout has. */
 	static constexpr int32 MinAxles = 2;
 	static constexpr int32 MaxAxles = 4;
+	/** A tracked layout's axles are its road-wheel pairs: 3 to 10 (FMantleVehicleLimits' road wheels per side). No other type has more than MaxAxles. */
+	static constexpr int32 MinTrackedAxles = 3;
+	static constexpr int32 MaxTrackedAxles = 10;
+
+	/** How far above a road wheel's top a tracked chassis's drawn track box reaches, cm at scale 1: the belt's thickness over the wheel and its top run. */
+	static constexpr double TrackAboveWheel = 10.0;
 
 	/** The smallest and largest uniform scale a selector (a preset id and a scale) names. Bounds on what a demo may ask a machine to build, not the size envelope. */
 	static constexpr double MinScale = 0.25;
@@ -327,9 +434,16 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	bool bPassenger = false;
 	/** One wheel per axle, on the centerline (layout.centerline): a motorcycle. A plane has only its nose axle so (FMantleChassisAxle::bCenterline). */
 	bool bCenterline = false;
+	/** #447: the preset's defaults have a pedal block (a bicycle): its rider is the engine, and the rider's weight (PedalRiderMassKg) doesn't resize. */
+	bool bPedal = false;
+	/** #447: the rider a pedalled preset's mass includes (the drive probe's standard driver). */
+	static constexpr double PedalRiderMassKg = 75.0;
 	/** The seat has a steering wheel (a rider's has handlebars instead, and a pilot's a stick and a throttle). */
 	bool bSteeringWheel = true;
 	FString DriverSeat = TEXT("car");
+	/** seats.passenger's kind: car, or motorcycle (a jet ski's passenger, astride behind the rider). */
+	FString PassengerSeat = TEXT("car");
+	/** A motorcycle's front fork, or a jet ski's handlebar (FMantleVehicleChassisBuilder::HandlebarBoneName): the bone the rider's grips are on. */
 	FName ForkBone;
 	FMantleVehicleChassisRider Rider;
 	/** Where the body box's middle is along X, cm: 0, the middle of the wheelbase, for everything but a plane or a helicopter, whose fuselage or cabin is not
@@ -341,6 +455,50 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	FMantleChassisHelicopter Helicopter;
 	/** A hovercraft's pads, fan, fin, skirt and damping (chassis.hovercraft); bSet is false for everything else. */
 	FMantleChassisHovercraft Hovercraft;
+	/** A boat's or jet ski's hull, drive and rudder (chassis.boat); bSet is false for everything else. */
+	FMantleChassisBoat Boat;
+
+	/** A towing vehicle's hitch (chassis.hitch, #446): model space, cm. bHitch false: it tows nothing. */
+	bool bHitch = false;
+	FMantleVehicleHitchDesc Hitch;
+	/** A trailer's coupler, landing gear and cargo (chassis.trailer, #446): model space, cm. bTrailer false for everything else. */
+	bool bTrailer = false;
+	FMantleVehicleTrailerDesc Trailer;
+
+	/** How far a fifth-wheel tractor's frame stands below its hitch, cm: what a trailer's floor clears when it is backed over it. */
+	static constexpr double FifthWheelFrameGap = 10.0;
+	/** How far behind the cab's back the fifth wheel sits at least, cm: the cab ends this far ahead of the hitch. */
+	static constexpr double FifthWheelCabGap = 100.0;
+	/** Whether the body is split into a cab and a low frame behind it (a fifth-wheel tractor). */
+	bool HasTractorFrame() const { return bHitch && Hitch.Kind == EMantleVehicleHitchKind::FifthWheel; }
+	/** A fifth-wheel tractor's body: the full-height cab from the front back to FifthWheelCabGap ahead of the hitch, and the frame from there to the rear,
+	 *  its top FifthWheelFrameGap below the hitch, so a trailer's floor clears it as the tractor backs under. */
+	FMantleChassisBlock CabBlock() const;
+	FMantleChassisBlock FrameBlock() const;
+
+	/** engine.engineBraking's scale from the creator's drive choice (ApplyDrive) for a document composed from the defaults: the type's driven wheels over
+	 *  the chosen ones, so the car slows the same lifting off. 1 for the type's own drive; a Derived chassis carries it in its handling instead. */
+	double DriveEngineBrakingScale = 1.0;
+	/** The creator's drive choice ApplyDrive last took (Type until one is); the builder saves it with the vehicle. */
+	EMantleVehicleDrive DriveChoice = EMantleVehicleDrive::Type;
+
+	/**
+	 * Whether a creator may pick the drive (front, rear or all-wheel drive) for this type: a wheeled type with a driven axle (no aircraft, helicopter,
+	 * hovercraft, boat or tracked block, not a trailer: decision 46) of two or more axles with two wheels on each.
+	 */
+	bool IsDriveOffered() const;
+	/** The type's own drive as a creator's choice would name it: Front, Rear or All from its axles' drive flags; Type when it is none of those or the
+	 *  drive isn't offered (IsDriveOffered). */
+	EMantleVehicleDrive DefaultDrive() const;
+	/**
+	 * The creator's drive choice (#376 off-road follow-on): Front, Rear or All rewrites the axles' drive flags (front = the first axle, the frontmost),
+	 * and scales engine braking (engine.engineBraking is per driven wheel) by the type's driven wheels over the chosen ones in the archetype, the
+	 * derived handling when there is one, and DriveEngineBrakingScale. Type changes nothing. False, with Spec unchanged, when the drive isn't offered
+	 * (IsDriveOffered) and Choice isn't Type.
+	 */
+	bool ApplyDrive(EMantleVehicleDrive Choice);
+	/** A tracked vehicle's tracks, turret and blade (chassis.tracked); bSet is false for everything else. */
+	FMantleChassisTracked Tracked;
 
 	/** Whether axle Axle has one wheel, on the centerline: the whole layout's, or the axle's own. */
 	bool AxleIsCenterline(const int32 Axle) const { return bCenterline || Axles[Axle].bCenterline; }
@@ -475,12 +633,47 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	FMantleChassisBlock FanPodBlock() const;
 	FMantleChassisBlock HoverFinBlock() const;
 
-	/** A type's name as a preset spells it ("car", "truck", "motorcycle", "plane", "helicopter", "hovercraft"), and the type a name spells. */
+	/** A boat's keel middle: the body box's bottom, on the centerline, at its middle along X. */
+	FVector BoatHullLocation() const;
+
+	/** Where a boat's drive pushes from, and where its rudder acts: on the centerline. */
+	FVector BoatDriveLocation() const;
+	FVector BoatRudderLocation() const;
+
+	/** A boat's drive as the gray body draws it (no collision): a short pod around where it pushes from. */
+	FMantleChassisBlock BoatDriveBlock() const;
+
+
+	/**
+	 * A tracked vehicle's drawn blocks, the same frame, none of them collided (only the hull is). A track (the left, -Y, or the right) runs along its side's
+	 * road wheels from the rearmost one's back (its X less the wheel radius) to the front one's front, TrackWidth wide about the wheels' Y, from the ground up
+	 * to a wheel's top and TrackAboveWheel more (2 x radius + 10 cm at scale 1). The turret (Tracked.bTurret) stands on the hull's top about TurretX; the
+	 * blade (Tracked.bBlade) stands on the ground about BladeX, centered on Y. Each is empty (zero size) when the chassis has none.
+	 */
+	FMantleChassisBlock TrackBlock(bool bRight) const;
+	FMantleChassisBlock TurretBlock() const;
+	FMantleChassisBlock BladeBlock() const;
+
+	/** A type's name as a preset spells it ("car", "truck", "motorcycle", "plane", "helicopter", "hovercraft", "boat", "jetski", "trailer",
+	 *  "tracked"), and the type a name spells. */
 	static const TCHAR* TypeName(EMantleChassisType Kind);
 	static bool ParseType(const FString& Name, EMantleChassisType& OutType);
 
-	/** Whether Text is a preset id: the name of a preset file, a lowercase letter and then lowercase letters, digits and dashes, so it names nothing outside the presets' directory. */
+	/**
+	 * Whether Text is a preset id: the name of a preset file, a lowercase letter and then lowercase letters, digits and dashes, so it names nothing
+	 * outside the presets' directory; optionally followed by '+' and one of the preset's engines (#378: "motorcycle+600"), lowercase letters, digits and dashes.
+	 */
 	static bool IsPresetId(const FString& Text);
+	/** Splits a preset id into its file's id and its engine ("motorcycle+600" -> "motorcycle", "600"; "sedan" -> "sedan", ""). Pure. */
+	static void SplitPresetId(const FString& Text, FString& OutFileId, FString& OutEngine);
+	/**
+	 * A preset with one of its engines (#378) applied: the preset's `engines` entry whose id is EngineId is merged over the preset itself, its
+	 * defaults, ranges and chassis keys over the preset's (an object into an object, key by key; a null removes the key; anything else replaces it).
+	 * The merged preset keeps its own id and the engine's id in `engine`. False, with the reason, when the preset has no such engine. Pure.
+	 */
+	static bool ApplyEngine(const TSharedPtr<FJsonObject>& InOutPreset, const FString& EngineId, FString& OutError);
+	/** ApplyEngine on a preset's text. */
+	static bool ApplyEngine(const FString& PresetJsonText, const FString& EngineId, FString& OutText, FString& OutError);
 
 	/** Reads a preset's text (schema/vehicle-preset.schema.json) into OutSpec. False, with the reason, when it is not a whole preset. */
 	static bool Parse(const FString& PresetJsonText, FMantleChassisSpec& OutSpec, FString& OutError);
@@ -494,8 +687,9 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	static FString ComposeDocument(const FMantleChassisSpec& Spec, TArray<FString>* OutHeld = nullptr);
 
 	/**
-	 * Spec sized Factor times as large: the layout, body, seat, steering wheel, rider and (for a plane, a helicopter or a hovercraft) airframe, rotors,
-	 * cockpit, pads, fan, fin and skirt geometry scaled by Factor, then the handling
+	 * Spec sized Factor times as large: the layout, body, seat, steering wheel, rider and (for a plane, a helicopter, a hovercraft or a tracked vehicle)
+	 * airframe, rotors, cockpit, pads, fan, fin, skirt, track, turret and blade geometry scaled by Factor (a track's pivot speed too, so it turns on the spot
+	 * as fast: the gauge grows with it; its lateral share is a ratio and stays), then the handling
 	 * re-derived from the new dimensions (FMantleChassisDerive, every feel slider at 0), its center of mass the derived one. A Factor of 1
 	 * returns Spec itself, its hand-tuned handling untouched: a preset keeps its own numbers and only a resized chassis uses derived ones. A
 	 * A Factor that is not a finite number above 0 returns Spec too. The steering wheel's rim radius is held to the document's 10 to 30 cm.
@@ -513,7 +707,8 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	static bool Trim(FMantleChassisSpec& InOutSpec);
 
 	/**
-	 * Splits a selector into a preset id and a scale. A selector is a preset id, or an id then '@' then a scale: "sedan", "sedan@0.7". The
+	 * Splits a selector into a preset id (IsPresetId: an engine rides in it, "motorcycle+600") and a scale. A selector is a preset id, or an id then '@'
+	 * then a scale: "sedan", "sedan@0.7", "motorcycle+125@0.8". The
 	 * scale is plain decimal digits with at most three after the point, MinScale to MaxScale; a selector names exactly one chassis on every
 	 * machine, whatever its locale, and names nothing but a preset the plugin carries. False, with the reason, for anything else.
 	 */

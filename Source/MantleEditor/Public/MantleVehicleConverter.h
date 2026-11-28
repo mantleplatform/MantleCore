@@ -511,6 +511,9 @@ public:
 	 */
 	static FMantleVehicleSourceSeatContacts GuessSeatContacts(const FMantleVehicleSourceTuning& Tuning, bool bPassenger);
 
+	/** #444: the rpm full boost arrives at for a tuning: its Spool RPM, or 40% of its Max RPM when that is 0. */
+	static int32 SpoolRPMFor(const FMantleVehicleSourceTuning& Tuning);
+
 	/**
 	 * The vehicle document for Source: schema/vehicle.schema.json, keys in the schema's order, numbers rounded, only
 	 * what the creator set away from "measure it" (a wheel's radius and width, the seat, the shift points, the

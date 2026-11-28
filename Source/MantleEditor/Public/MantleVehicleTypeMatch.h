@@ -21,6 +21,11 @@ enum class EMantleVehicleModelFamily : uint8
 	Helicopter,
 	/** Nothing wheeled or winged: only a hovercraft's type accepts it without a question. */
 	Hover,
+	/**
+	 * Two tracks (#448): a tank or a bulldozer. Only on real track evidence: parts named like a track (track, tread, belt, sprocket, idler, road wheel), or 4 or
+	 * more wheels on each side packed closer than about a wheel across apart. Two rows of 3 wheels are a six-wheeled truck, a Road vehicle.
+	 */
+	Tracked,
 };
 
 /** What the check decided. */
@@ -34,7 +39,7 @@ enum class EMantleVehicleTypeVerdict : uint8
 	Unsure,
 };
 
-/** How sure the check is of a suggestion. Names and wheel counts are strong; only the model's proportions are weak. */
+/** How sure the check is of a suggestion. Names, wheel counts and wheels packed into a track are strong; only the model's proportions are weak. */
 enum class EMantleVehicleTypeConfidence : uint8 { Strong, Weak };
 
 /** The result of checking a model against the vehicle type the creator picked (#821 flow, step 3). */
@@ -73,6 +78,32 @@ struct MANTLEEDITOR_API FMantleVehicleTypeMatchCheck
 
 	/** The family the model looks like, with what it saw in OutEvidence and how sure it is in OutConfidence. Unknown when it gives no sign. */
 	static EMantleVehicleModelFamily FamilyOfModel(const FMantleVehicleModel& Model, TArray<FString>& OutEvidence, EMantleVehicleTypeConfidence& OutConfidence);
+
+	/**
+	 * Whether a bone's, section's or material's name names a part of a track: a word of it (split at separators, digits and a lower-to-upper case change, any case) is
+	 * track, tread, belt, sprocket, idler or roadwheel, or road then wheel. A whole word only, so a tracker or a soundtrack is not one; nor is a car's seat belt, fan
+	 * belt or timing belt, a motorcycle's belt drive, a tire's tread, or a car's track rod or track bar (steering and suspension parts).
+	 */
+	static bool IsTrackPartName(const FString& Name);
+
+	/** Whether a name names a track's belt itself (IsTrackPartName's track, tread and belt words, with the same exceptions): not a sprocket, an idler or a road wheel. */
+	static bool IsTrackBeltName(const FString& Name);
+
+	/**
+	 * Whether wheel hubs at Positions (model space, the ground at FloorZ) are two tracks' road wheels: 4 or more on each side of the row they make, every one
+	 * closer than MaxGapPerDiameter wheel diameters (a hub's height above the floor is its radius) to the next along it. The rows run along the longer
+	 * side of BodySize (the whole model's size): a short track's road wheels can span less than its gauge.
+	 */
+	static bool WheelsPackedLikeTracks(TConstArrayView<FVector> Positions, double FloorZ, const FVector& BodySize);
+
+	/** How far apart along its side a track's neighboring road wheels may be, in wheel diameters, for WheelsPackedLikeTracks. */
+	static constexpr double MaxGapPerDiameter = 1.2;
+
+	/**
+	 * Packed wheels with no track-named bone read as tracks only from this many a side: every real tank and crawler has 5 or more road wheels a side, and a
+	 * tandem trailer's 2 to 4 axles can sit as close (an 8-tire trailer, 124 cm apart on 105 cm tires, is packed by MaxGapPerDiameter).
+	 */
+	static constexpr int32 MinRoadWheelsPerSideUnnamed = 5;
 
 	/** Reads Asset (a static or skeletal mesh) and checks it. False, with the reason in OutError, when the model cannot be read. */
 	static bool CheckAsset(UObject* Asset, const FString& TypeId, FMantleVehicleTypeMatch& Out, FString& OutError);

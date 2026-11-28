@@ -50,6 +50,12 @@ struct FMantleVehicleChassisRider
 	double RearTireFriction = 0.0;
 	double RearBrakeTorque = 0.0;
 	FMantleVehicleChassisRotationControl RotationControl;
+	/** #447: a bicycle's crank (chassis.rider.crank): its centre on the root bone and the crank's length; bCrank false, the feet stand on the pegs. */
+	bool bCrank = false;
+	FVector CrankCenter = FVector::ZeroVector;
+	double CrankLength = 0.0;
+	/** #447: the seat's RiderSprintPelvisShift (standing on the pedals to sprint). */
+	FVector SprintPelvisShift = FVector::ZeroVector;
 };
 
 /**
@@ -60,7 +66,7 @@ struct FMantleVehicleChassisReference
 {
 	/** Front axle to the rearmost axle. */
 	double Wheelbase = 0.0;
-	/** Each axle front to rear, as a share of the wheelbase behind the front axle (0 is the front axle, 1 the rearmost): two to four. */
+	/** Each axle front to rear, as a share of the wheelbase behind the front axle (0 is the front axle, 1 the rearmost): two to four (a tracked chassis's three to ten). */
 	TArray<double> AxlePositions;
 	double Track = 0.0;
 	double WheelRadius = 0.0;
@@ -84,7 +90,7 @@ struct FMantleVehicleChassisReference
 	FString DriverSeat = TEXT("car");
 	/** A steering wheel is drawn and held; a rider seat has handlebars instead and no steering wheel. */
 	bool bSteeringWheel = true;
-	/** The bone a steered centerline wheel hangs under (yawed by SteerBone); None when no wheel has one. */
+	/** The bone a steered centerline wheel hangs under (yawed by SteerBone), or a quad rider's handlebar (HandlebarBoneName); None otherwise. */
 	FName ForkBone;
 	FMantleVehicleChassisRider Rider;
 
@@ -99,7 +105,7 @@ struct FMantleVehicleChassisReference
  * needs no creator model, so each vehicle type is Mantle's to tune and the creator's model is only a skin on it.
  *
  * MakeAsset builds what a published vehicle's MVH1 read yields (FMantleVehicleAsset): a skeleton of a root bone and one bone per
- * wheel at the layout's positions (two to four axles), a gray body (the body box, plus a cylinder per wheel skinned to its bone), and a Desc made by
+ * wheel at the layout's positions (two to four axles; a tracked chassis's three to ten), a gray body (the body box, plus a cylinder per wheel skinned to its bone), and a Desc made by
  * composing a vehicle document, the preset's `defaults` plus the chassis's wheels, collision box, center of mass and seats, and
  * reading it with FMantleVehicleAssetReader::ParseDocument, so it passes the validation a published document does. UMantleBuiltVehicle::Build
  * and FMantlePlaceVehicleDefinitions::Make then turn it into a drivable definition exactly as they do a published vehicle.
@@ -118,7 +124,10 @@ struct FMantleVehicleChassisReference
  * axles of a pair each (its skids), whose wheels are not drawn: its body is the cabin, a mast, the main rotor's blades on main_rotor, the tail boom, the
  * fin, the tail rotor's blades on tail_rotor and the two skids on their legs and cross-tubes, the document's collision the cabin, boom and fin. A
  * hovercraft has two axles of a pair each too (where its pads lift), whose wheels are not drawn: its body is the hull, the skirt under it, the fan's pod
- * behind it and the fin on its top, all on the root, the document's collision the hull alone.
+ * behind it and the fin on its top, all on the root, the document's collision the hull alone. A tracked chassis has three to ten axles of a pair each, its
+ * road wheels (wheel_a1_l to wheel_a10_r), each drawn as a wheel: its body is the hull, the turret on its top and the blade in front (when it has them)
+ * on the root, and its two tracks, a box along each side's road wheels on the root in a second section (TrackSectionName), the document's collision the
+ * hull alone. Its document says how the tracks drive; the builder refuses a layout that cannot turn on the spot (FMantleVehicleAssetReader::CheckTrackedLayout).
  * No UObjects: any thread.
  */
 struct MANTLERUNTIME_API FMantleVehicleChassisBuilder
@@ -128,6 +137,11 @@ struct MANTLERUNTIME_API FMantleVehicleChassisBuilder
 
 	/** The fork bone of the steered centerline axle of a two-axle chassis (fork_f), the parent of wheel_f. */
 	static FName FrontForkBoneName();
+
+	/** A quad rider's handlebar bone (#376 step 9d), under the root between the grips: its rider's fork bone, from which no wheel hangs. A jet ski's
+	 *  (#15) is the same bone at the seat's steering wheel hub instead, turned about the column by the steering as a car's steering wheel turns (the
+	 *  seat's steeringWheel.bone). No body in the physics asset either way. */
+	static FName HandlebarBoneName();
 
 	/**
 	 * A plane's bones (chassis.aircraft), each a child of the root posed at its surface's hinge, which is where the surface's block turns about: an aileron
@@ -150,6 +164,13 @@ struct MANTLERUNTIME_API FMantleVehicleChassisBuilder
 	 */
 	static FName MainRotorBoneName();
 	static FName TailRotorBoneName();
+
+	/**
+	 * A tracked chassis's two drawn tracks are a body section of their own, named Track (its material name), which the built Desc draws with Mantle's
+	 * built-in track material, ast_mat_track (Desc.Materials, as a creator names ast_mat_rubber): the material the vehicle scrolls along each belt.
+	 */
+	static FName TrackSectionName();
+	static const TCHAR* TrackMaterialId();
 
 	/** The plugin's Resources/VehiclePresets directory (a developer build's presets; empty when the plugin is not found). */
 	static FString PresetDirectory();

@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "id": "lighthelicopter",
+  "name": "Light helicopter",
+  "description": "A small light helicopter on skids, the size and weight of a Robinson R44: lighter and slower than the helicopter, with little lift to spare, so a heavy or high hover is hard; by default it holds its height, stays level and turns steadily when the controls are let go.",
+  "comment": "A vehicle preset (#380): the helicopter preset's format (see helicopter.json for how the rotor, skids, cabin and tail are laid out and how the numbers below are worked out). The real helicopter is the Robinson R44 Raven II (robinsonheli.com): 1,134 kg maximum gross weight, a 33 ft (10.06 m) main rotor turning 400 rpm and a 58 in (1.47 m) tail rotor, cruise up to 109 kt, never-exceed speed 130 kt at 2,200 lb and below, climb over 1,000 fpm, hovering in ground effect up to 8,950 ft at 2,500 lb and out of it up to 7,500 ft at 2,300 lb (1,043 kg). Its mass is the maximum gross weight less a 75 kg pilot (the flight probe adds the pilot back), 1,059 kg. Its rotor's thrust is sized so its out-of-ground-effect hover ceiling is the R44's: 1,043 kg over the air's density at 7,500 ft (0.7983 of sea level's) is 1,307 kg, 1.15 times the maximum gross weight, 12,807 N, so the collective that holds the preset's weight is 1,059 x 9.8 / 12,807 = 0.810, hoverCollective. airSpeedLimit 7,700 cm/s is 1.15 times the never-exceed speed (6,696 cm/s, 130 kt). Its drag area is smaller than the helicopter's: dragCoefficient 0.4 x frontalArea 1.9 m^2 (an estimate from its narrower cabin). The skids: two axles, a pair each, 220 cm apart and 218 cm across (the R44's 7 ft 2 in), on softer springs for the lighter weight. The cabin is 300 x 128 x 150 cm on 55 cm of clearance, its middle 40 cm ahead of the center of mass; the hub stands 300 cm up over the center of mass, 110 cm above the seat; its 10.06 m disc carries 1,059 kg, 13.3 kg/m^2. The tail boom runs 518 cm back from the cabin's rear end, the fin (80 x 55 cm, 0.44 m^2) stands on its end, and the 1.47 m tail rotor turns 600 cm behind the mast, 24 cm clear of the main disc's tip and its own, and about 7 cm off the ground with the helicopter tipped 8 degrees nose-up on its rear skid ends (a real R44's tail rotor sits low too). One pilot seat until passenger seats come with #449 many seats.",
+  "movementType": "helicopter",
+  "publishable": true,
+  "type": "helicopter",
+  "seats": {
+    "driver": "pilot"
+  },
+  "fit": {
+    "wheelRadius": 20,
+    "trackWidth": 218,
+    "minScale": 0.75,
+    "maxScale": 1.3
+  },
+  "wheels": {
+    "min": 4,
+    "max": 4
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 220,
+      "track": 218,
+      "wheelRadius": 20,
+      "wheelWidth": 10,
+      "axles": [
+        { "steer": true, "drive": false, "handbrake": true },
+        { "steer": false, "drive": true, "handbrake": true }
+      ]
+    },
+    "body": { "length": 300, "width": 128, "height": 150, "groundClearance": 55, "x": 40 },
+    "centerOfMass": [0, 0, 110],
+    "seat": {
+      "location": [70, 0, 190]
+    },
+    "helicopter": {
+      "rotor": { "diameter": 1006, "z": 300, "thrust": 12807, "rpm": 400 },
+      "tailBoom": { "length": 518, "width": 30, "height": 35, "z": 150 },
+      "tailRotor": { "diameter": 147, "rpm": 2000 },
+      "fin": { "height": 80, "chord": 55 },
+      "hoverCollective": 0.81,
+      "airSpeedLimit": 7700,
+      "controls": { "collective": [124, -14, 195], "cyclic": [124, 12, 195] }
+    }
+  },
+  "derive": {
+    "stability": 0,
+    "cameraArmPerLength": 1,
+    "cameraHeightPerHeight": 0.2
+  },
+  "defaults": {
+    "mass": 1059,
+    "maxSpeed": 7700,
+    "dragCoefficient": 0.4,
+    "frontalArea": 1.9,
+    "engine": {
+      "sound": "helicopter",
+      "maxTorque": 300,
+      "maxRPM": 3000,
+      "idleRPM": 600,
+      "torqueCurve": [[0, 0.6], [1500, 1], [3000, 0.8]]
+    },
+    "transmission": {
+      "gearRatios": [1.0],
+      "reverseRatio": 1.0,
+      "finalDrive": 1.0,
+      "changeUpRPM": 2500,
+      "changeDownRPM": 1000
+    },
+    "suspension": {
+      "maxRaise": 6,
+      "maxDrop": 6,
+      "springRate": 400,
+      "springPreload": 120,
+      "damping": 0.9
+    },
+    "steering": {
+      "maxAngle": 10,
+      "ackermann": false
+    },
+    "brakes": {
+      "brakeTorque": 3000,
+      "handbrakeTorque": 6000
+    },
+    "tires": {
+      "friction": 1.47
+    },
+    "camera": {
+      "armLength": 1300,
+      "height": 220
+    }
+  },
+  "ranges": {
+    "mass": [600, 3000],
+    "maxSpeed": [3000, 12000],
+    "dragCoefficient": [0.1, 0.8],
+    "engine/maxTorque": [100, 2000],
+    "engine/maxRPM": [2000, 6000],
+    "engine/idleRPM": [400, 1000],
+    "suspension/maxRaise": [3, 20],
+    "suspension/maxDrop": [3, 20],
+    "suspension/springRate": [200, 3000],
+    "suspension/damping": [0.3, 0.95],
+    "steering/maxAngle": [5, 45],
+    "brakes/brakeTorque": [1000, 12000],
+    "tires/friction": [1, 5],
+    "wheels/*/radius": [10, 40]
+  }
+}

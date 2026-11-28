@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleVehicleBuilder.h"
+#include "MantleEngineSounds.h"
 #include "MantleGlbWriter.h"
 #include "MantleVehicleRimFinder.h"
 
@@ -96,7 +97,9 @@ namespace MantleVehicleBuilderPrivate
 	bool ApplyChosenPreset(const FMantleVehiclePreset& Preset, UMantleVehicleSource& Source, FMantleVehicleBuildResult& Out)
 	{
 		const FName ChosenPreset(*Preset.Id);
-		if (Source.Preset == ChosenPreset)
+		// #378: a type's engine is part of the choice: the same type with another engine starts again from that engine's numbers.
+		const FName ChosenEngine = Preset.EngineId.IsEmpty() ? NAME_None : FName(*Preset.EngineId);
+		if (Source.Preset == ChosenPreset && Source.PresetEngine == ChosenEngine)
 		{
 			Out.Notes.Add(FString::Printf(TEXT("Kept your earlier settings for this %s. Pick a different vehicle type to start again from its defaults."), *Preset.Name));
 			return true;
@@ -116,6 +119,7 @@ namespace MantleVehicleBuilderPrivate
 		}
 		Source.Modify();
 		Source.Preset = ChosenPreset;
+		Source.PresetEngine = ChosenEngine;
 		if (bHadOwnSettings)
 		{
 			Out.Notes.Add(FString::Printf(TEXT("This vehicle had its own settings from before; they were replaced by the %s's. Undo (Ctrl+Z) brings them back."), *Preset.Name));
@@ -331,8 +335,10 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::Build(USkeletalMesh* Mesh, cons
 	// Defaults are applied (and the Size proposed) for a new vehicle or a different type; the same type again keeps the creator's, unless the model's
 	// wheels are not the ones it was fitted to (the creator moved, renamed or resized them and pressed Build again): its Size and chassis are then fitted again.
 	const bool bWheelsChanged = Before && WheelsBefore != MantleVehicleBuilderPrivate::WheelSignature(Source->Wheels);
-	const bool bAppliesDefaults = Source->Preset != FName(*Preset->Id) || bWheelsChanged;
-	if (bWheelsChanged && Source->Preset == FName(*Preset->Id))
+	// #378: another engine of the same type (a motorcycle's size) is a different start too.
+	const bool bSameType = Source->Preset == FName(*Preset->Id) && Source->PresetEngine == (Preset->EngineId.IsEmpty() ? NAME_None : FName(*Preset->EngineId));
+	const bool bAppliesDefaults = !bSameType || bWheelsChanged;
+	if (bWheelsChanged && bSameType)
 	{
 		Out.Notes.Add(TEXT("Your model's wheels changed since the last build, so Mantle fitted the chassis and the size to them again."));
 	}
@@ -347,7 +353,7 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::Build(USkeletalMesh* Mesh, cons
 	{
 		FString ChassisText;
 		FString ChassisError;
-		if (!FMantleVehicleChassisBuilder::LoadPresetText(Preset->Id, ChassisText, ChassisError)
+		if (!FMantleVehicleChassisBuilder::LoadPresetText(Preset->SelectorId(), ChassisText, ChassisError)
 			|| !FMantleVehicleChassisBuilder::ReadReference(ChassisText, Chassis, ChassisError))
 		{
 			Out.Problems.Add(FString::Printf(TEXT("The %s chassis could not be read: %s."), *Preset->Name, *ChassisError));
@@ -411,7 +417,7 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::Build(USkeletalMesh* Mesh, cons
 		// and the movement part (a motorcycle's rider fit, stretched with the chassis).
 		FMantleChassisSpec Spec;
 		FString SpecError;
-		if (FMantleVehicleChassisBuilder::LoadSpec(Preset->Id, Spec, SpecError))
+		if (FMantleVehicleChassisBuilder::LoadSpec(Preset->SelectorId(), Spec, SpecError))
 		{
 			if (Spec.Rider.bSet)
 			{
@@ -457,7 +463,7 @@ FVector FMantleVehicleBuilder::DefaultDriverSeat(const USkeletalMesh& Model, con
 	FString Error;
 	FMantleVehicleChassisReference Chassis;
 	TArray<FMantleVehicleFitWheel> Wheels;
-	if (!Source.Preset.IsNone() && FMantleVehicleChassisBuilder::LoadPresetText(Source.Preset.ToString(), Text, Error)
+	if (!Source.Preset.IsNone() && FMantleVehicleChassisBuilder::LoadPresetText(FMantleVehiclePresets::SelectorIdOf(Source.Preset, Source.PresetEngine), Text, Error)
 		&& FMantleVehicleChassisBuilder::ReadReference(Text, Chassis, Error) && FMantleVehicleFitter::WheelsFromMesh(Model, Source, Wheels))
 	{
 		const FMantleChassisLayout Layout = FMantleVehicleChassisFit::LayoutFromWheels(Wheels);
@@ -618,7 +624,7 @@ namespace MantleVehicleBuilderPrivate
 			{
 				FMantleChassisSpec Archetype;
 				FMantleVehicleAsset Gray;
-				if (!FMantleVehicleChassisBuilder::LoadSpec(Preset->Id, Archetype, Error) || !FMantleVehicleChassisBuilder::MakeAsset(Archetype, Gray, Error))
+				if (!FMantleVehicleChassisBuilder::LoadSpec(Preset->SelectorId(), Archetype, Error) || !FMantleVehicleChassisBuilder::MakeAsset(Archetype, Gray, Error))
 				{
 					continue;
 				}
@@ -638,9 +644,9 @@ namespace MantleVehicleBuilderPrivate
 	// Mantle.Vehicle.BuildModel: what the Build a vehicle window's Build button does for a model that is worn as a skin, from the console or a script.
 	FAutoConsoleCommand BuildModelCommand(
 		TEXT("Mantle.Vehicle.BuildModel"),
-		TEXT("Mantle.Vehicle.BuildModel <model object path> <vehicle type id> [yaw=<deg>] [name=<Name>] [folder=</Game/...>] [bone.<chassis bone>=<model bone>] [section.<chassis bone>=<n>] [overwrite=1] [hideriders=1] [paint=<words>] [notpaint=<words>] [secondary=<words>] [wheels=<words>] [interior=<words>] [dashboard=<words>] [secondaryfinish=<finish>] [wheelsfinish=<finish>] [interiorfinish=<finish>] [dashboardfinish=<finish>] "
+		TEXT("Mantle.Vehicle.BuildModel <model object path> <vehicle type id> [yaw=<deg>] [name=<Name>] [folder=</Game/...>] [bone.<chassis bone>=<model bone>] [section.<chassis bone>=<n>] [overwrite=1] [hideriders=1] [drive=front|rear|all] [hitch=own|none|ball|fifthWheel] [enginesound=<id>|none] [paint=<words>] [notpaint=<words>] [secondary=<words>] [wheels=<words>] [interior=<words>] [dashboard=<words>] [secondaryfinish=<finish>] [wheelsfinish=<finish>] [interiorfinish=<finish>] [dashboardfinish=<finish>] "
 			 "-- puts a static or skeletal mesh on the type's chassis (BuildFromModel), saves it under the folder (default /Game/MantleVehicles) and logs MANTLE_VEHICLE_BUILD_MODEL "
-			 "ok=<0|1> with the vehicle's path, its Size and every note. The paint options pick the sections that have those whole words (wheels=rim is not PRIMARY). With no yaw or parts given Mantle chooses them. A name= that a vehicle already has is refused unless overwrite=1."),
+			 "ok=<0|1> with the vehicle's path, its Size and every note. The paint options pick the sections that have those whole words (wheels=rim is not PRIMARY). With no yaw or parts given Mantle chooses them. hitch= is the Towing choice: a ball or fifth wheel goes where Mantle puts it (behind the rear end, or just ahead of the rear axles), own puts the type's back. enginesound= is the Engine Sound pick (v8, bike_vtwin ...; a sound the vehicle can't have is a note). A name= that a vehicle already has is refused unless overwrite=1."),
 		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
 		{
 			if (Args.Num() < 2)
@@ -680,6 +686,25 @@ namespace MantleVehicleBuilderPrivate
 				else if (Key.Equals(TEXT("overwrite"), ESearchCase::IgnoreCase))
 				{
 					Options.bOverwrite = Value == TEXT("1") || Value.Equals(TEXT("true"), ESearchCase::IgnoreCase);
+				}
+				else if (Key.Equals(TEXT("drive"), ESearchCase::IgnoreCase))
+				{
+					// The window's Drive choice (#376 off-road follow-on): front, rear or all.
+					Options.Drive = Value.Equals(TEXT("front"), ESearchCase::IgnoreCase) ? EMantleVehicleDrive::Front
+						: Value.Equals(TEXT("rear"), ESearchCase::IgnoreCase) ? EMantleVehicleDrive::Rear
+						: Value.Equals(TEXT("all"), ESearchCase::IgnoreCase) ? EMantleVehicleDrive::All : EMantleVehicleDrive::Type;
+				}
+				else if (Key.Equals(TEXT("hitch"), ESearchCase::IgnoreCase))
+				{
+					// The window's Towing choice (#446): own (the type's), none, ball or fifthWheel, at the default place.
+					Options.Hitch = Value.Equals(TEXT("none"), ESearchCase::IgnoreCase) ? EMantleVehicleSourceHitch::None
+						: Value.Equals(TEXT("ball"), ESearchCase::IgnoreCase) ? EMantleVehicleSourceHitch::Ball
+						: Value.Equals(TEXT("fifthWheel"), ESearchCase::IgnoreCase) ? EMantleVehicleSourceHitch::FifthWheel : EMantleVehicleSourceHitch::Preset;
+				}
+				else if (Key.Equals(TEXT("enginesound"), ESearchCase::IgnoreCase))
+				{
+					// The window's Engine Sound pick (#258): an engine sound id (v8, bike_vtwin ...), or none for Mantle's default.
+					Options.EngineSound = Value.Equals(TEXT("none"), ESearchCase::IgnoreCase) ? NAME_None : FName(*Value.ToLower());
 				}
 				else if (Key.Equals(TEXT("hideriders"), ESearchCase::IgnoreCase))
 				{
@@ -801,7 +826,11 @@ namespace MantleVehicleBuilderPrivate
 				}
 				Options.PaintedSections = Ticked;
 			}
-			const FMantleVehicleBuildResult Result = FMantleVehicleBuilder::BuildFromModel(Asset, Args[1], Options);
+			FMantleVehicleBuildResult Result = FMantleVehicleBuilder::BuildFromModel(Asset, Args[1], Options);
+			// The creator's hitch (#446): hitch= goes on as the window's Build puts it (BuildAny), so own, none, ball and fifthWheel all take, and own undoes an earlier pick.
+			FMantleVehicleBuilder::ApplyHitch(Result, Options);
+			// The creator's engine sound (#258): enginesound= goes on as the window's Build puts it (BuildAny).
+			FMantleVehicleBuilder::ApplyEngineSound(Result, Options);
 			FString Parts;
 			for (const TPair<FName, FMantleVehicleModelPiece>& Part : Result.ModelMap.Parts)
 			{
@@ -967,9 +996,11 @@ namespace MantleVehicleBuilderPrivate
 // Named, not anonymous: unity builds merge this file with others.
 namespace MantleVehicleBuilderPrivate
 {
-	/** The take-off run a plane or a jet needs, in centimeters (the flight probes' rolls with some to spare: about 130 m for the jet, 340 m for the plane). */
-	constexpr double JetRunCm = 15000.0;
-	constexpr double PlaneRunCm = 35000.0;
+	/** The take-off run a plane or a jet needs, in centimeters: each preset's roll in #379's flight probe (light plane 314 m, warbird 406 m, jet 270 m
+	 *  on its afterburner) times 1.3. */
+	constexpr double JetRunCm = 35000.0;
+	constexpr double PlaneRunCm = 41000.0;
+	constexpr double WarbirdRunCm = 53000.0;
 
 	/** How far ahead of the camera the search for a flat stretch goes, and how often it looks. */
 	constexpr double FlatSearchReachCm = 40000.0;
@@ -991,6 +1022,10 @@ namespace MantleVehicleBuilderPrivate
 		if (Source.Preset == FName(TEXT("plane")))
 		{
 			return PlaneRunCm;
+		}
+		if (Source.Preset == FName(TEXT("warbird")))
+		{
+			return WarbirdRunCm;
 		}
 		return Source.MovementBlocks.Contains(TEXT("spinBones")) ? PlaneRunCm : JetRunCm;
 	}
@@ -1090,7 +1125,11 @@ bool FMantleVehicleBuilder::PlaceInLevel(UMantleVehicleSource& Source, FString& 
 		const double RunCm = MantleVehicleBuilderPrivate::TakeOffRunCm(Source);
 		if (RunCm > 0.0)
 		{
-			const FString Kind = RunCm == MantleVehicleBuilderPrivate::JetRunCm ? TEXT("jet") : TEXT("plane");
+			// The word follows TakeOffRunCm's choice: a preset names itself (#379: the light plane and the warbird are planes), a shaped chassis is a
+			// plane when it has a propeller to spin.
+			const bool bPropellerPreset = Source.Preset == FName(TEXT("plane")) || Source.Preset == FName(TEXT("warbird"));
+			const bool bJet = Source.Preset == FName(TEXT("jet")) || (!bPropellerPreset && !Source.MovementBlocks.Contains(TEXT("spinBones")));
+			const FString Kind = bJet ? TEXT("jet") : TEXT("plane");
 			const FVector Along = Facing.Vector();
 			double BestVariation = TNumericLimits<double>::Max();
 			double BestDistance = -1.0;
@@ -1305,6 +1344,8 @@ namespace MantleVehicleBuilderPrivate
 		}
 		// A shaped chassis's numbers are its own, so they are held to the document's limits and not to a preset's narrower ones.
 		Source->Preset = Spec.Derived.IsSet() ? FName() : FName(*Spec.Id);
+		// The creator's drive choice (#376 off-road follow-on), kept with the vehicle so a rebuild keeps it.
+		Source->Drive = Spec.DriveChoice;
 		Source->FitScale = 1.f;
 		Source->Wheels.Reset();
 		for (int32 Index = 0; Index < Spec.WheelCount(); ++Index)
@@ -1330,7 +1371,7 @@ namespace MantleVehicleBuilderPrivate
 		}
 		// Also the movement part, which ApplyMovement puts in the vehicle's own fields: the type and its block, and the camera's boom.
 		const TCHAR* const Written[] = { TEXT("schemaVersion"), TEXT("wheels"), TEXT("collision"), TEXT("seat"), TEXT("passengerSeat"), TEXT("movementType"), TEXT("flight"),
-			TEXT("helicopter"), TEXT("hover") };
+			TEXT("helicopter"), TEXT("hover"), TEXT("tracked"), TEXT("trailer"), TEXT("hitch") };
 		for (const TCHAR* Key : Written)
 		{
 			Document->RemoveField(Key);
@@ -1417,7 +1458,10 @@ bool FMantleVehicleBuilder::FitsOwnWheels(UObject* Model, const FString& PresetI
 	FString Text;
 	FString Error;
 	FMantleVehicleChassisReference Chassis;
-	if (!FMantleVehicleChassisBuilder::LoadPresetText(PresetId, Text, Error) || !FMantleVehicleChassisBuilder::ReadReference(Text, Chassis, Error) || Chassis.bCenterline)
+	// A rider's chassis (a bike's, or a quad's, #376 step 9d) is always worn as a skin: its grips ride the chassis's fork or handlebar bone, which a model's
+	// own skeleton doesn't have by that name.
+	if (!FMantleVehicleChassisBuilder::LoadPresetText(PresetId, Text, Error) || !FMantleVehicleChassisBuilder::ReadReference(Text, Chassis, Error) || Chassis.bCenterline
+		|| Chassis.Rider.bSet)
 	{
 		return false;
 	}
@@ -1443,6 +1487,15 @@ bool FMantleVehicleBuilder::FitsOwnWheels(UObject* Model, const FString& PresetI
 }
 
 FMantleVehicleBuildResult FMantleVehicleBuilder::BuildAny(UObject* Model, const FString& PresetId, const FMantleVehicleModelOptions& Options)
+{
+	// The creator's hitch (#446) and engine sound (#258) go on whichever way the vehicle was built.
+	FMantleVehicleBuildResult Out = BuildAnyRoute(Model, PresetId, Options);
+	ApplyHitch(Out, Options);
+	ApplyEngineSound(Out, Options);
+	return Out;
+}
+
+FMantleVehicleBuildResult FMantleVehicleBuilder::BuildAnyRoute(UObject* Model, const FString& PresetId, const FMantleVehicleModelOptions& Options)
 {
 	// A vehicle Blueprint is read first: a Chaos vehicle gives its skeletal body and the wheels and parts set up on it, a Blueprint of static pieces gives one merged mesh.
 	if (UBlueprint* Blueprint = Cast<UBlueprint>(Model))
@@ -1475,6 +1528,182 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildAny(UObject* Model, const 
 		return Out;
 	}
 	return BuildFromModel(Model, PresetId, Options);
+}
+
+FVector FMantleVehicleBuilder::DefaultHitchLocation(const UMantleVehicleSource& Source, const EMantleVehicleHitchKind Kind)
+{
+	USkeletalMesh* Model = Source.Body.LoadSynchronous();
+	FMantleVehicleModel Read;
+	FString Error;
+	if (!Model || !FMantleVehicleModel::Read(Model, Read, Error))
+	{
+		return FMantleVehicleChassisDocument::DefaultHitchLocation(Kind, -250.0, -150.0, 0.0);
+	}
+	const FBox Bounds = Read.Bounds();
+	// The rear axles: the middle of the wheels that don't steer (a semi's tandem, a car's rear pair, a tank's road wheels); the rearmost wheel when every one steers.
+	double RearSum = 0.0;
+	int32 RearCount = 0;
+	double Rearmost = TNumericLimits<double>::Max();
+	for (const FMantleVehicleSourceWheel& Wheel : Source.Wheels)
+	{
+		const int32 Bone = Read.Bones.IndexOfByPredicate([&Wheel](const FMantleSkinnedMeshBone& Each) { return Each.Name == Wheel.Bone; });
+		if (!Read.BonePositions.IsValidIndex(Bone))
+		{
+			continue;
+		}
+		const double X = Read.BonePositions[Bone].X;
+		Rearmost = FMath::Min(Rearmost, X);
+		if (!Wheel.bSteering)
+		{
+			RearSum += X;
+			++RearCount;
+		}
+	}
+	const double RearAxleX = RearCount > 0 ? RearSum / RearCount : (Rearmost < TNumericLimits<double>::Max() ? Rearmost : Bounds.Min.X + 0.25 * Bounds.GetSize().X);
+	return FMantleVehicleChassisDocument::DefaultHitchLocation(Kind, Bounds.Min.X, RearAxleX, Bounds.Min.Z);
+}
+
+void FMantleVehicleBuilder::HitchOptions(FMantleVehicleModelOptions& Options, const bool bTypeTows, const EMantleVehicleSourceHitch Choice, const bool bPlaced,
+	const FVector& At)
+{
+	const EMantleVehicleSourceHitch Sent = bTypeTows ? Choice : EMantleVehicleSourceHitch::Preset;
+	Options.Hitch = Sent;
+	Options.HitchLocation.Reset();
+	if (bPlaced && (Sent == EMantleVehicleSourceHitch::Ball || Sent == EMantleVehicleSourceHitch::FifthWheel))
+	{
+		Options.HitchLocation = At;
+	}
+}
+
+void FMantleVehicleBuilder::ApplyHitch(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options)
+{
+	UMantleVehicleSource* Source = Built.Source;
+	if (!Options.Hitch.IsSet() || !Source || !Built.bOk)
+	{
+		return;
+	}
+	const EMantleVehicleSourceHitch Choice = Options.Hitch.GetValue();
+	// The type's own on a vehicle that already has it: nothing to change or save. On one built before with a pick of its own, it puts the type's back.
+	if (Choice == EMantleVehicleSourceHitch::Preset && Source->Tuning.Hitch == EMantleVehicleSourceHitch::Preset)
+	{
+		return;
+	}
+	const bool bPlaced = Choice == EMantleVehicleSourceHitch::Ball || Choice == EMantleVehicleSourceHitch::FifthWheel;
+	if (bPlaced && Source->MovementType != EMantleVehicleMovementKind::Wheeled && Source->MovementType != EMantleVehicleMovementKind::Tracked)
+	{
+		Built.Notes.Add(FString::Printf(TEXT("Hitch: a %s tows nothing, so it has no hitch."), FMantleVehicleChassisDocument::MovementName(Source->MovementType)));
+		return;
+	}
+	Source->Modify();
+	Source->Tuning.Hitch = Choice;
+	if (bPlaced)
+	{
+		const EMantleVehicleHitchKind Kind = Choice == EMantleVehicleSourceHitch::Ball ? EMantleVehicleHitchKind::Ball : EMantleVehicleHitchKind::FifthWheel;
+		Source->Tuning.HitchLocation = Options.HitchLocation.IsSet() ? Options.HitchLocation.GetValue() : DefaultHitchLocation(*Source, Kind);
+		const FVector& At = Source->Tuning.HitchLocation;
+		Built.Notes.Add(FString::Printf(TEXT("Hitch: a %s at X %.0f, Y %.0f, Z %.0f cm%s. Move it under Towing > Hitch Location in the vehicle asset."),
+			Kind == EMantleVehicleHitchKind::Ball ? TEXT("tow ball") : TEXT("fifth wheel"), At.X, At.Y, At.Z,
+			Options.HitchLocation.IsSet() ? TEXT("") : (Kind == EMantleVehicleHitchKind::Ball ? TEXT(", behind the rear end") : TEXT(", just ahead of the rear axles"))));
+	}
+	else if (Choice == EMantleVehicleSourceHitch::None)
+	{
+		Built.Notes.Add(TEXT("Hitch: none, so it tows nothing."));
+	}
+	else
+	{
+		Built.Notes.Add(TEXT("Hitch: back to the type's own."));
+	}
+	if (Built.bSaved)
+	{
+		Built.bSaved = SaveVehicle(*Source, Built.SaveProblem);
+	}
+}
+
+void FMantleVehicleBuilder::ApplyEngineSound(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options)
+{
+	UMantleVehicleSource* Source = Built.Source;
+	if (!Options.EngineSound.IsSet() || !Source || !Built.bOk)
+	{
+		return;
+	}
+	const FName Id = Options.EngineSound.GetValue();
+	if (Source->Tuning.EngineSound == Id)
+	{
+		return;
+	}
+	if (!Id.IsNone() && !Source->CanPickEngineSound())
+	{
+		// The same words as CheckSource's note (an electric motor's sound is its own motor's).
+		Built.Notes.Add(TEXT("Engine sound: a pedalled vehicle, an electric motor or a trailer has none to pick, so it is left out of this one."));
+		return;
+	}
+	const bool bTwoWheeler = FMantleEngineSounds::IsTwoWheeler(Source->MovementType == EMantleVehicleMovementKind::Wheeled, Source->Wheels.Num());
+	if (!Id.IsNone() && !FMantleEngineSounds::Fits(Id, Source->IsFlier(), bTwoWheeler, Source->DriverSeatKind == EMantleVehicleSeatKind::Motorcycle))
+	{
+		Built.Notes.Add(FString::Printf(TEXT("Engine sound: %s doesn't fit this vehicle, so it keeps %s."), *EngineSoundName(Id),
+			*EngineSoundName(Source->Tuning.EngineSound)));
+		return;
+	}
+	Source->Modify();
+	Source->Tuning.EngineSound = Id;
+	Built.Notes.Add(FString::Printf(TEXT("Engine sound: %s."), *EngineSoundName(Id)));
+	if (Built.bSaved)
+	{
+		Built.bSaved = SaveVehicle(*Source, Built.SaveProblem);
+	}
+}
+
+void FMantleVehicleBuilder::EngineSoundOptions(const FMantleVehiclePreset& Type, TArray<FName>& OutIds)
+{
+	OutIds.Reset();
+	const TSharedPtr<FJsonObject>* Engine = nullptr;
+	FString Drive;
+	const bool bElectric = Type.Defaults.IsValid() && Type.Defaults->TryGetObjectField(TEXT("engine"), Engine) && Engine
+		&& (*Engine)->TryGetStringField(TEXT("drive"), Drive) && Drive == TEXT("electric");
+	const bool bPedal = Type.Defaults.IsValid() && Type.Defaults->HasField(TEXT("pedal"));
+	const bool bEngineMovement = Type.MovementType == TEXT("wheeled") || Type.MovementType == TEXT("tracked") || Type.MovementType == TEXT("boat");
+	const bool bFlier = Type.MovementType == TEXT("plane") || Type.MovementType == TEXT("helicopter") || Type.MovementType == TEXT("hover");
+	if (!FMantleEngineSounds::CanPick(bEngineMovement, bFlier, bPedal, bElectric))
+	{
+		return;
+	}
+	FMantleEngineSounds::Options(bFlier, FMantleEngineSounds::IsTwoWheeler(Type.MovementType == TEXT("wheeled"), Type.MaxWheels),
+		Type.DriverSeat == TEXT("motorcycle"), OutIds);
+}
+
+FName FMantleVehicleBuilder::PresetEngineSound(const FMantleVehiclePreset& Type)
+{
+	const TSharedPtr<FJsonObject>* Engine = nullptr;
+	FString Sound;
+	return Type.Defaults.IsValid() && Type.Defaults->TryGetObjectField(TEXT("engine"), Engine) && Engine && (*Engine)->TryGetStringField(TEXT("sound"), Sound)
+		? FName(*Sound) : NAME_None;
+}
+
+FString FMantleVehicleBuilder::EngineSoundName(const FName Id)
+{
+	if (Id.IsNone())
+	{
+		return TEXT("Mantle's default");
+	}
+	// "v8" -> "V8", "inline4" -> "Inline-4", "flat6" -> "Flat-6", "bike_vtwin" -> "Motorcycle V-twin", "bike_highrev" -> "Motorcycle high-rev".
+	static const TMap<FString, FString> Words = { { TEXT("standard"), TEXT("Standard") }, { TEXT("rotary"), TEXT("Rotary") }, { TEXT("diesel"), TEXT("Diesel") },
+		{ TEXT("vtwin"), TEXT("V-twin") }, { TEXT("highrev"), TEXT("high-rev") }, { TEXT("aircraft_airliner"), TEXT("Airliner") },
+		{ TEXT("aircraft_fighter"), TEXT("Fighter jet") }, { TEXT("aircraft_transport"), TEXT("Transport plane") }, { TEXT("helicopter"), TEXT("Helicopter") },
+		{ TEXT("hovercraft"), TEXT("Hovercraft") }, { TEXT("racing"), TEXT("Racing") } };
+	FString Text = Id.ToString().ToLower();
+	const bool bBike = Text.RemoveFromStart(TEXT("bike_"));
+	if (const FString* Word = Words.Find(Text))
+	{
+		Text = *Word;
+	}
+	else
+	{
+		int32 Digit = 0;
+		while (Digit < Text.Len() && !FChar::IsDigit(Text[Digit])) ++Digit;
+		const FString Letters = Text.Left(Digit);
+		Text = Letters.Len() == 1 ? Letters.ToUpper() + Text.Mid(Digit) : Letters.Left(1).ToUpper() + Letters.Mid(1) + TEXT("-") + Text.Mid(Digit);
+	}
+	return bBike ? TEXT("Motorcycle ") + (Text.Len() > 1 && FChar::IsUpper(Text[0]) && FChar::IsLower(Text[1]) ? Text.Left(1).ToLower() + Text.Mid(1) : Text) : Text;
 }
 
 void FMantleVehicleBuilder::LightOwnBody(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options)
@@ -1882,6 +2111,8 @@ bool FMantleVehicleBuilder::PrepareFromModel(UObject* ModelAsset, const FString&
 		Problems.Add(Error);
 		return false;
 	}
+	// What reading it said: a Nanite mesh read from its source or fallback, UVs too large to store made finite (FMantleVehicleModel::CleanNonFinite).
+	Out.Notes.Append(Model.Notes);
 
 	FMantleChassisSpec Archetype;
 	if (!FMantleVehicleChassisBuilder::LoadSpec(PresetId, Archetype, Error))
@@ -1955,6 +2186,13 @@ bool FMantleVehicleBuilder::PrepareFromModel(UObject* ModelAsset, const FString&
 		{
 			Out.Notes.Add(Held.ToString());
 		}
+	}
+
+	// The creator's drive choice (#376 off-road follow-on): front, rear or all-wheel drive on the type's axles, its engine braking held car-wide. A type
+	// whose drive isn't a choice (a bike, an aircraft, a hovercraft) keeps its own.
+	if (Options.Drive.IsSet() && !Spec.ApplyDrive(Options.Drive.GetValue()))
+	{
+		Out.Notes.Add(TEXT("This type of vehicle drives its own way, so the drive choice was left out."));
 	}
 
 	// The chassis's own skeleton at that size, and the model on it.

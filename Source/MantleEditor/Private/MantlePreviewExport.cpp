@@ -111,6 +111,15 @@ namespace MantlePreviewExportPrivate
 		int64 TotalAssetBytes = 0;
 		int32 CookCount = 0;
 
+		/** The cook cache (FMantlePreviewExport::CookCacheKey): its folder and the tool's identity. Either empty: nothing is cached. */
+		FString CookCacheDir;
+		FString CookToolIdentity;
+		/** What the last PreviewRunCook did: read its cook from the cache, or had it refused by the cook (exit 1: the asset, not the tool). */
+		bool bLastCookReused = false;
+		bool bLastCookRefused = false;
+		int32 ReusedCount = 0;
+		int32 CookedCount = 0;
+
 		/** Run's progress dialog (null when none) and whether the creator canceled it. */
 		FScopedSlowTask* Progress = nullptr;
 		bool bCanceled = false;
@@ -514,10 +523,32 @@ namespace MantlePreviewExportPrivate
 		TArray<uint8>& OutCooked, FMantleContentHash& OutHash, TSharedPtr<FJsonObject>& OutInfo, FString& OutError)
 	{
 		const FString& Kind = UploadOptions.Kind;
+		State.bLastCookReused = false;
+		State.bLastCookRefused = false;
 		if (Bytes.Num() == 0)
 		{
 			OutError = FString::Printf(TEXT("'%s' was prepared with no content."), *Name);
 			return false;
+		}
+		// The same cook as one an earlier export did (same tool, kind, options, features and bytes) is read back instead of run again.
+		FString CacheKey;
+		if (!State.CookCacheDir.IsEmpty() && !State.CookToolIdentity.IsEmpty())
+		{
+			CacheKey = FMantlePreviewExport::CookCacheKey(State.CookToolIdentity, Kind, PreviewCookOptionsJson(UploadOptions), State.AllowFeatures, Bytes);
+			TSharedPtr<FJsonObject> Cached;
+			if (FMantlePreviewExport::LoadCookCache(State.CookCacheDir, CacheKey, OutCooked, Cached) && OutCooked.Num() <= MaxAssetFileBytes)
+			{
+				OutHash = FMantleContentHash::OfBytes(OutCooked);
+				OutInfo.Reset();
+				const TSharedPtr<FJsonObject>* CachedInfo = nullptr;
+				if (Cached->TryGetObjectField(TEXT("info"), CachedInfo) && CachedInfo)
+				{
+					OutInfo = *CachedInfo;
+				}
+				State.bLastCookReused = true;
+				++State.ReusedCount;
+				return true;
+			}
 		}
 
 		const FString Stem = State.WorkDir / FString::Printf(TEXT("cook-%d"), ++State.CookCount);
@@ -600,6 +631,7 @@ namespace MantlePreviewExportPrivate
 				Reason = FString::Printf(TEXT("exit code %d"), ExitCode);
 			}
 			// Exit 1 is the cook refusing the asset; anything else is the tool failing to run.
+			State.bLastCookRefused = ExitCode == 1 || ExitCode == 0;
 			OutError = ExitCode == 1 || ExitCode == 0
 				? FString::Printf(TEXT("'%s' was refused by the cook: %s"), *Name, *Reason)
 				: FString::Printf(TEXT("The cook tool could not process '%s' (exit code %d): %s"), *Name, ExitCode, *Reason);
@@ -635,6 +667,17 @@ namespace MantlePreviewExportPrivate
 		if (Result->TryGetObjectField(TEXT("info"), Info) && Info)
 		{
 			OutInfo = *Info;
+		}
+		++State.CookedCount;
+		// Kept for the next export. A cache that can't be written only costs that export the time.
+		if (!CacheKey.IsEmpty())
+		{
+			FString ResultJson;
+			const TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer = TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&ResultJson);
+			if (!FJsonSerializer::Serialize(Result.ToSharedRef(), Writer) || !FMantlePreviewExport::StoreCookCache(State.CookCacheDir, CacheKey, Cooked, ResultJson))
+			{
+				UE_LOG(LogMantle, Warning, TEXT("MANTLE_PREVIEW_EXPORT could not keep the cook of '%s' in %s"), *Name, *State.CookCacheDir);
+			}
 		}
 		return true;
 	}
@@ -693,6 +736,8 @@ namespace MantlePreviewExportPrivate
 		const FString& Kind = Upload.Options.Kind;
 		TArray<uint8> Cooked;
 		FMantleContentHash Hash;
+		State.bLastCookReused = false;
+		State.bLastCookRefused = false;
 		if (Kind == TEXT("lumen"))
 		{
 			// #149: a mesh's Lumen side file is stored as baked (the backend's cook only checks its header), so the local
@@ -1049,6 +1094,10 @@ namespace MantlePreviewExportPrivate
 			Result.Errors.Add(FString::Printf(TEXT("Could not create the working folder %s."), *State.WorkDir));
 			return false;
 		}
+		// The cook cache: what an earlier export cooked from the same bytes, options and tool is read back (PreviewRunCook).
+		State.CookCacheDir = Options.CookCacheDirectory.IsEmpty() ? FMantlePreviewExport::DefaultCookCacheDirectory() : FPaths::ConvertRelativePathToFull(Options.CookCacheDirectory);
+		State.CookToolIdentity = FMantlePreviewExport::CookToolIdentity(State.CookTool);
+		FMantlePreviewExport::PruneCookCache(State.CookCacheDir, FMantlePreviewExport::CookCacheMaxBytes);
 
 		// --- Cook every upload, in Publish's order, recording each provisional id ----------------------
 		// Textures, then materials (their documents name the texture ids), meshes, skeletal meshes, clips, sounds,
@@ -1062,6 +1111,8 @@ namespace MantlePreviewExportPrivate
 		static_assert(UE_ARRAY_COUNT(Stages) == UE_ARRAY_COUNT(StageNames), "one name per cook stage");
 		// A level with Weapon Spawns (#789) is tried on an avatar body, as a single weapon is (below).
 		bool bLevelHasWeapons = false;
+		// Vehicles the cook refused (or whose names don't hold): left out with their spawns, so one car can't cost the whole test.
+		TSet<FString> SkippedVehicleIds;
 		for (int32 StageIndex = 0; StageIndex < UE_ARRAY_COUNT(Stages); ++StageIndex)
 		{
 			const EMantlePlaceUploadStage Stage = Stages[StageIndex];
@@ -1102,12 +1153,17 @@ namespace MantlePreviewExportPrivate
 
 				FBundleAsset Asset;
 				TSharedPtr<FJsonObject> Info;
-				if (!PreviewCookAsset(State, Upload, Asset, Info, Error))
+				const bool bCooked = PreviewCookAsset(State, Upload, Asset, Info, Error);
+				// A vehicle the cook refused, or that names what the bundle lacks, is left out with its spawns (after the export, below); the
+				// rest carries on. A tool failure, a cancel or any other asset still stops the export: other assets would name what is missing.
+				if (Stage == EMantlePlaceUploadStage::Vehicle && ((!bCooked && State.bLastCookRefused) || (bCooked && !PreviewCheckVehicleNames(State, Upload.SourceName, Info, Error))))
 				{
-					Result.Errors.Add(Error);
-					return false;
+					SkippedVehicleIds.Add(FMantlePlaceAssets::ProvisionalId(Upload.Key));
+					UE_LOG(LogMantle, Warning, TEXT("MANTLE_PREVIEW_EXPORT_SKIPPED vehicle '%s': %s"), *Upload.SourceName, *PreviewOneLine(Error));
+					Result.Warnings.Add(FString::Printf(TEXT("%s The preview leaves this vehicle and its spawns out; fix it to drive it."), *Error));
+					continue;
 				}
-				if (Stage == EMantlePlaceUploadStage::Vehicle && !PreviewCheckVehicleNames(State, Upload.SourceName, Info, Error))
+				if (!bCooked)
 				{
 					Result.Errors.Add(Error);
 					return false;
@@ -1115,13 +1171,15 @@ namespace MantlePreviewExportPrivate
 				Asset.Id = FMantlePlaceAssets::ProvisionalId(Upload.Key);
 				Asset.Textures = MoveTemp(MaterialTextures);
 				Asset.Info = Info;
-				UE_LOG(LogMantle, Display, TEXT("MANTLE_PREVIEW_EXPORT cooked %s '%s' -> %s"), *Asset.Kind, *Upload.SourceName, *Asset.Id);
+				UE_LOG(LogMantle, Display, TEXT("MANTLE_PREVIEW_EXPORT %s %s '%s' -> %s"), State.bLastCookReused ? TEXT("reused") : TEXT("cooked"), *Asset.Kind, *Upload.SourceName, *Asset.Id);
 
 				Set.RecordUpload(Upload.Key, Asset.Id, Upload.Hash, Upload.Bytes.Num());
 				State.AssetIndexById.Add(Asset.Id, State.Assets.Num());
 				State.Assets.Add(MoveTemp(Asset));
 			}
 		}
+		UE_LOG(LogMantle, Display, TEXT("MANTLE_PREVIEW_EXPORT_REUSE reused=%d cooked=%d skipped_vehicles=%d cache=%s"), State.ReusedCount, State.CookedCount,
+			SkippedVehicleIds.Num(), *State.CookCacheDir);
 
 		// --- The place, with the provisional ids and src_ ids the exporter writes offline --------------
 		if (PreviewStageCanceled(State, ProgressScripts, TEXT("Writing the place, scripts and UI")))
@@ -1133,7 +1191,7 @@ namespace MantlePreviewExportPrivate
 		ExportOptions.Name = World->GetName();
 		ExportOptions.AuthorId = TEXT("usr_preview");
 		ExportOptions.Assets = &Set;
-		const FMantleExportResult Exported = FMantlePlaceExporter::Export(World, ExportOptions);
+		FMantleExportResult Exported = FMantlePlaceExporter::Export(World, ExportOptions);
 		// The materials it gathered for the cook, recognized, baked or lost, join the report (Export leaves them to whoever gathered).
 		Result.Coverage = Exported.Coverage;
 		FMantleCoverageSurvey::AddMaterials(Dependencies, Result.Coverage);
@@ -1150,6 +1208,18 @@ namespace MantlePreviewExportPrivate
 				Result.Errors.Add(TEXT("The level could not be exported."));
 			}
 			return false;
+		}
+		// The vehicles left out above go with their spawns.
+		if (SkippedVehicleIds.Num() > 0)
+		{
+			FString DropError;
+			const int32 Dropped = FMantlePreviewExport::DropVehicles(Exported.Place, SkippedVehicleIds, DropError);
+			if (Dropped < 0)
+			{
+				Result.Errors.Add(DropError);
+				return false;
+			}
+			Result.Warnings.Add(FString::Printf(TEXT("The preview left out %d vehicle spawn(s) of the %d vehicle(s) above."), Dropped, SkippedVehicleIds.Num()));
 		}
 		// Every uploaded id the place names has to be a file in the bundle, or the client could not build it.
 		for (const FMantleAssetRef& Ref : Exported.Place.Assets)
@@ -1704,6 +1774,156 @@ FString FMantlePreviewExport::WeaponsToJson(const TArray<FMantlePreviewBundleWea
 	Writer->WriteArrayEnd();
 	Writer->Close();
 	return Json;
+}
+
+FString FMantlePreviewExport::DefaultCookCacheDirectory()
+{
+	return FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("Mantle") / TEXT("PreviewCook") / TEXT("Cache"));
+}
+
+FString FMantlePreviewExport::CookCacheKey(const FString& ToolIdentity, const FString& Kind, const FString& OptionsJson, const FString& AllowFeatures,
+	const TConstArrayView<uint8> Input)
+{
+	// One field per line, each a fixed label and its value with its line breaks escaped, so no two different sets of fields read the same.
+	auto Field = [](const TCHAR* Label, const FString& Value)
+	{
+		FString Escaped = Value.Replace(TEXT("\\"), TEXT("\\\\")).Replace(TEXT("\n"), TEXT("\\n"));
+		return FString::Printf(TEXT("%s=%s\n"), Label, *Escaped);
+	};
+	const FString Text = Field(TEXT("format"), TEXT("mantle-preview-cook-cache-1")) + Field(TEXT("tool"), ToolIdentity) + Field(TEXT("kind"), Kind)
+		+ Field(TEXT("options"), OptionsJson) + Field(TEXT("features"), AllowFeatures) + Field(TEXT("input"), FMantleSha256::HexDigest(Input));
+	const FTCHARToUTF8 Utf8(*Text);
+	return FMantleSha256::HexDigest(TConstArrayView<uint8>(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length()));
+}
+
+FString FMantlePreviewExport::CookToolIdentity(const FString& Tool)
+{
+	// The tool's own bytes: a rebuilt tool misses wherever it lives, and the same tool hits wherever it is copied to. Hashed once per export.
+	TArray<uint8> Bytes;
+	if (Tool.IsEmpty() || !FFileHelper::LoadFileToArray(Bytes, *FPaths::ConvertRelativePathToFull(Tool), FILEREAD_Silent) || Bytes.Num() == 0)
+	{
+		return FString();
+	}
+	return FMantleSha256::AssetHash(Bytes);
+}
+
+bool FMantlePreviewExport::StoreCookCache(const FString& Directory, const FString& Key, const TConstArrayView<uint8> Cooked, const FString& ResultJson)
+{
+	if (Directory.IsEmpty() || Key.IsEmpty())
+	{
+		return false;
+	}
+	IFileManager& Files = IFileManager::Get();
+	Files.MakeDirectory(*Directory, true);
+	const FString Base = Directory / Key;
+	const FString Unique = FGuid::NewGuid().ToString(EGuidFormats::Digits);
+	// Each file written aside, then moved into place; the result last, so an entry with a result has its output.
+	const FString BinTemp = Base + TEXT(".bin.") + Unique;
+	const FString JsonTemp = Base + TEXT(".json.") + Unique;
+	const bool bOk = FFileHelper::SaveArrayToFile(Cooked, *BinTemp) && Files.Move(*(Base + TEXT(".bin")), *BinTemp, /*Replace*/ true)
+		&& FFileHelper::SaveStringToFile(ResultJson, *JsonTemp, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM)
+		&& Files.Move(*(Base + TEXT(".json")), *JsonTemp, /*Replace*/ true);
+	Files.Delete(*BinTemp, false, true, true);
+	Files.Delete(*JsonTemp, false, true, true);
+	return bOk;
+}
+
+bool FMantlePreviewExport::LoadCookCache(const FString& Directory, const FString& Key, TArray<uint8>& OutCooked, TSharedPtr<FJsonObject>& OutResult)
+{
+	OutCooked.Reset();
+	OutResult.Reset();
+	if (Directory.IsEmpty() || Key.IsEmpty())
+	{
+		return false;
+	}
+	const FString Base = Directory / Key;
+	const TSharedPtr<FJsonObject> Result = MantlePreviewExportPrivate::PreviewReadJsonFile(Base + TEXT(".json"));
+	bool bOk = false;
+	FString Hash;
+	double Bytes = -1.0;
+	if (!Result.IsValid() || !Result->TryGetBoolField(TEXT("ok"), bOk) || !bOk || !Result->TryGetStringField(TEXT("cookedHash"), Hash)
+		|| !Result->TryGetNumberField(TEXT("cookedBytes"), Bytes) || !FFileHelper::LoadFileToArray(OutCooked, *(Base + TEXT(".bin")), FILEREAD_Silent))
+	{
+		OutCooked.Reset();
+		return false;
+	}
+	if (OutCooked.Num() == 0 || static_cast<int64>(Bytes) != OutCooked.Num() || !Hash.Equals(FMantleContentHash::OfBytes(OutCooked).ToString(), ESearchCase::CaseSensitive))
+	{
+		OutCooked.Reset();
+		return false;
+	}
+	// Just used: the prune keeps it longest.
+	IFileManager::Get().SetTimeStamp(*(Base + TEXT(".json")), FDateTime::UtcNow());
+	OutResult = Result;
+	return true;
+}
+
+void FMantlePreviewExport::PruneCookCache(const FString& Directory, const int64 MaxBytes)
+{
+	if (Directory.IsEmpty() || !IFileManager::Get().DirectoryExists(*Directory))
+	{
+		return;
+	}
+	struct FEntry
+	{
+		FString Base;
+		FDateTime Used;
+		int64 Bytes = 0;
+	};
+	IFileManager& Files = IFileManager::Get();
+	TArray<FString> Results;
+	Files.FindFiles(Results, *(Directory / TEXT("*.json")), /*Files*/ true, /*Directories*/ false);
+	TArray<FEntry> Entries;
+	int64 Total = 0;
+	for (const FString& Result : Results)
+	{
+		FEntry& Entry = Entries.AddDefaulted_GetRef();
+		Entry.Base = Directory / FPaths::GetBaseFilename(Result);
+		Entry.Used = Files.GetTimeStamp(*(Entry.Base + TEXT(".json")));
+		Entry.Bytes = FMath::Max<int64>(Files.FileSize(*(Entry.Base + TEXT(".json"))), 0) + FMath::Max<int64>(Files.FileSize(*(Entry.Base + TEXT(".bin"))), 0);
+		Total += Entry.Bytes;
+	}
+	if (Total <= MaxBytes)
+	{
+		return;
+	}
+	Entries.Sort([](const FEntry& A, const FEntry& B) { return A.Used < B.Used; });
+	for (const FEntry& Entry : Entries)
+	{
+		if (Total <= MaxBytes)
+		{
+			break;
+		}
+		// The result first: an output with no result is never read.
+		Files.Delete(*(Entry.Base + TEXT(".json")), false, true, true);
+		Files.Delete(*(Entry.Base + TEXT(".bin")), false, true, true);
+		Total -= Entry.Bytes;
+	}
+}
+
+int32 FMantlePreviewExport::DropVehicles(FMantlePlace& Place, const TSet<FString>& VehicleIds, FString& OutError)
+{
+	OutError.Reset();
+	TSet<FString> Spawns;
+	for (const FMantleEntity& Entity : Place.Entities)
+	{
+		const FMantleVehicleSpawnProps* Spawn = Entity.Props.TryGet<FMantleVehicleSpawnProps>();
+		if (Spawn && VehicleIds.Contains(Spawn->Vehicle))
+		{
+			Spawns.Add(Entity.Id);
+		}
+	}
+	for (const FMantleEntity& Entity : Place.Entities)
+	{
+		if (!Entity.Parent.IsEmpty() && Spawns.Contains(Entity.Parent) && !Spawns.Contains(Entity.Id))
+		{
+			OutError = FString::Printf(TEXT("'%s' is attached to a spawn of a vehicle the preview had to leave out; detach it, or fix the vehicle."), *Entity.Name);
+			return -1;
+		}
+	}
+	Place.Entities.RemoveAll([&Spawns](const FMantleEntity& Entity) { return Spawns.Contains(Entity.Id); });
+	Place.Assets.RemoveAll([&VehicleIds](const FMantleAssetRef& Ref) { return VehicleIds.Contains(Ref.Id); });
+	return Spawns.Num();
 }
 
 FString FMantlePreviewExport::ReadWeaponMeshName(const FString& DocumentText)

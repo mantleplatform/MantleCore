@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "helicopter",
   "name": "Helicopter",
-  "description": "A single-seat light helicopter on skids: its main rotor lifts it straight up, it leans the way it flies, and it holds its height and stays level when the controls are let go.",
-  "comment": "A vehicle preset (#728, #793): see sedan.json for the format and plane.json for a flier's (the inert engine and transmission, the drive flag the reader wants and the derive block are as there). movementType helicopter is the Helicopter movement type: the main rotor's module (UMantleVehicleSimRotorComponent) lifts the helicopter along its up at the collective, turns it on the cyclic (pitch and roll) and the tail (yaw), and its stability assist levels it and damps its turning. The skids are the layout: two axles, a pair each, 240 cm apart and 220 cm across, small hidden wheels that are always braked (the axles' handbrake), so the helicopter stands, lands and never rolls, while the wheels still tell the crash rules and the throttle when it is on the ground; the gray body draws a skid tube along each pair on two cross-tubes. chassis.body is the cabin, its middle 40 cm ahead of the center of mass, and chassis.helicopter the rest (FMantleChassisHelicopter): the main rotor's hub stands over the center of mass 350 cm up, 107 cm above the seat, on a mast from the cabin's top; its 10.7 m disc carries 2500 kg, 27.8 kg/m^2 (#793: 15 to 50); its thrust is 1.6 times the weight (#793), 39.2 kN, so the collective that holds the weight is 24.5 / 39.2 = 0.625, hoverCollective, which is what the pilot's W and S work about once in the air (validate.py holds it within 0.005 of the weight over the thrust). The tail boom runs 520 cm back from the cabin's rear end, the fin stands on its end, and the 1.6 m tail rotor turns on its left side 655 cm behind the mast, 40 cm clear of the main disc's 615 cm reach, and 59 cm off the ground with the helicopter tipped 8 degrees nose-up on its rear skid ends. The rigid body's linear damping (0.1, MantleChassisDefinitions) is the rotor's own drag: a drift dies away in about ten seconds and the helicopter tops out near 50 m/s leaning its whole way; airSpeedLimit is the hard limit. The derive block is the plane's: no stability target (it flies) and a chase camera that grows with the cabin.",
+  "description": "A single-seat utility helicopter on skids, the size and weight of a Bell 407: its main rotor lifts it, more near the ground and once it is moving, less in thin air; it leans the way it flies, and by default it holds its height, stays level and turns steadily when the controls are let go.",
+  "comment": "A vehicle preset (#728, #793, #380): see sedan.json for the format and plane.json for a flier's (the inert engine and transmission, the drive flag the reader wants and the derive block are as there). movementType helicopter is the Helicopter movement type: the main rotor's module (UMantleVehicleSimRotorComponent, FMantleRotorModel) lifts the helicopter along its up at the collective, times the air's density at its height (FMantleAtmosphere), the ground cushion within one rotor diameter of the ground and translational lift once moving, and turns it on the cyclic (pitch and roll) and the pedals (yaw); its level assist, height hold and yaw assist are the creator's (FMantleVehicleSourceTuning, all on here). The real helicopter is the Bell 407 (#380): 2,268 kg maximum gross weight, a 10.67 m main rotor and a 1.56 m tail rotor (this preset's 10.7 and 1.6 m), 133 kt maximum cruise and a 140 kt never-exceed speed, hovering out of ground effect up to 11,940 ft at maximum gross. Its mass is the maximum gross weight less a 75 kg pilot (the flight probe adds the pilot back), 2,193 kg. Its rotor's thrust is sized so its out-of-ground-effect hover ceiling is the 407's: 2,268 kg over the air's density there (0.6945 of sea level's) is 1.44 times the maximum gross weight, 32,006 N, so the collective that holds the preset's weight is 2,193 x 9.8 / 32,006 = 0.671, hoverCollective (validate.py holds it within 0.005 of the weight over the thrust). airSpeedLimit 8,300 cm/s is 1.15 times the never-exceed speed (7,217 cm/s, 140 kt), a hard cap only a dive reaches; with the level assist the most nose-down the stick asks for narrows with speed to the angle whose drag (dragCoefficient x frontalArea, 1.0 m^2) balances at the never-exceed speed. No body damping (helicopter.linearDamping 0, MantleVehicleChassisDocument): the speed-squared drag is its drag, and the level assist stops a slow drift. The skids are the layout: two axles, a pair each, 240 cm apart and 220 cm across, small hidden wheels that are always braked (the axles' handbrake), so the helicopter stands, lands and never rolls, while the wheels still tell the crash rules and the throttle when it is on the ground; the gray body draws a skid tube along each pair on two cross-tubes. chassis.body is the cabin, its middle 40 cm ahead of the center of mass, and chassis.helicopter the rest (FMantleChassisHelicopter): the main rotor's hub stands over the center of mass 350 cm up, 107 cm above the seat, on a mast from the cabin's top; its 10.7 m disc carries 2,193 kg, 24.4 kg/m^2. The tail boom runs 520 cm back from the cabin's rear end, the fin (0.77 m^2, a rudder that never moves: it turns the nose into the airflow at speed) stands on its end, and the 1.6 m tail rotor turns on its left side 655 cm behind the mast, 40 cm clear of the main disc's 615 cm reach, and 59 cm off the ground with the helicopter tipped 8 degrees nose-up on its rear skid ends. The derive block is the plane's: no stability target (it flies) and a chase camera that grows with the cabin.",
   "movementType": "helicopter",
   "publishable": true,
   "type": "helicopter",
@@ -13,8 +13,8 @@
   "fit": {
     "wheelRadius": 20,
     "trackWidth": 220,
-    "minScale": 0.75,
-    "maxScale": 1.3
+    "minScale": 0.8,
+    "maxScale": 1.35
   },
   "wheels": {
     "min": 4,
@@ -37,12 +37,12 @@
       "location": [130, 0, 243]
     },
     "helicopter": {
-      "rotor": { "diameter": 1070, "z": 350, "thrust": 39200, "rpm": 300 },
+      "rotor": { "diameter": 1070, "z": 350, "thrust": 32006, "rpm": 300 },
       "tailBoom": { "length": 520, "width": 40, "height": 45, "z": 215 },
       "tailRotor": { "diameter": 160, "rpm": 1500 },
       "fin": { "height": 110, "chord": 70 },
-      "hoverCollective": 0.625,
-      "airSpeedLimit": 7000,
+      "hoverCollective": 0.671,
+      "airSpeedLimit": 8300,
       "controls": { "collective": [184, -14, 250], "cyclic": [184, 12, 250] }
     }
   },
@@ -52,11 +52,12 @@
     "cameraHeightPerHeight": 0.2
   },
   "defaults": {
-    "mass": 2500,
-    "maxSpeed": 7000,
+    "mass": 2193,
+    "maxSpeed": 8300,
     "dragCoefficient": 0.4,
     "frontalArea": 2.5,
     "engine": {
+      "sound": "helicopter",
       "maxTorque": 300,
       "maxRPM": 3000,
       "idleRPM": 600,
@@ -85,7 +86,7 @@
       "handbrakeTorque": 6000
     },
     "tires": {
-      "friction": 2
+      "friction": 1.47
     },
     "camera": {
       "armLength": 1600,

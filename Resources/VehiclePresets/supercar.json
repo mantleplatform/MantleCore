@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "id": "supercar",
+  "name": "Supercar",
+  "description": "A low, wide, mid-engined car with all-wheel drive: supercars, exotics and hypercars. Enormous power put down through all four wheels.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format. The real car is a Lamborghini Huracan EVO, all-wheel drive (#376 step 9b): Car and Driver's test (read through a 0-60 aggregator that cites it) 0-60 mph 2.5 s, 70-0 mph 136 ft, 1.10 g; 1553 kg with fluids; 600 Nm at 6500 rpm and 640 PS at 8000; 325 km/h, drag-limited; Cd 0.39. Mantle splits the torque evenly over the driven wheels, a quarter to each, where the real car sends most of it to the rear. The 7-speed dual-clutch's ratios and final drive weren't found: an estimated spread with the final drive set so 325 km/h comes at about 8250 rpm in 7th. Its grip was 1.58, set between the skidpad and the stop (raised 20% to 1.9 for turning at speed, Joshua 2026-11-27): Mantle's tires brake about 1.3 times harder than they corner, where the real car brakes 1.1 times harder, so 1.7 matched the 1.10 g skidpad but stopped from 70 in 36 m against 41.5. The 43/57 split, the low end of the torque curve and the 8500 rpm limit are estimates.",
+  "movementType": "wheeled",
+  "publishable": true,
+  "type": "car",
+  "seats": {
+    "driver": "car",
+    "passenger": "car"
+  },
+  "fit": {
+    "wheelRadius": 34,
+    "trackWidth": 166,
+    "minScale": 0.5,
+    "maxScale": 2
+  },
+  "wheels": {
+    "min": 4,
+    "max": 6
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 262,
+      "track": 166,
+      "wheelRadius": 34,
+      "wheelWidth": 30,
+      "axles": [
+        { "steer": true, "drive": true },
+        { "steer": false, "drive": true, "handbrake": true }
+      ]
+    },
+    "body": { "length": 452, "width": 193, "height": 52, "groundClearance": 11 },
+    "centerOfMass": [-18, 0, 38],
+    "seat": {
+      "location": [-10, -38, 50],
+      "steeringWheel": { "location": [36.8, -38, 53], "radius": 17 }
+    }
+  },
+  "derive": {
+    "stability": 1.15,
+    "cameraArmPerLength": 0.63,
+    "cameraHeightPerHeight": 1.1
+  },
+  "defaults": {
+    "mass": 1553,
+    "maxSpeed": 9028,
+    "dragCoefficient": 0.39,
+    "frontalArea": 1.9,
+    "engine": {
+      "sound": "v10",
+      "maxTorque": 600,
+      "maxRPM": 8500,
+      "idleRPM": 1000,
+      "torqueCurve": [[0, 0.5], [1000, 0.6], [3000, 0.8], [6500, 1], [8000, 0.937], [8500, 0.85]],
+      "tractionControl": true,
+      "engineBraking": 0.021
+    },
+    "transmission": {
+      "gearRatios": [3.13, 2.43, 1.88, 1.5, 1.21, 0.98, 0.79],
+      "reverseRatio": 2.9,
+      "finalDrive": 4.11,
+      "changeUpRPM": 8000,
+      "changeDownRPM": 3000,
+      "shiftTime": 0.1
+    },
+    "suspension": {
+      "maxRaise": 8,
+      "maxDrop": 10,
+      "springRate": 289,
+      "springPreload": 80,
+      "damping": 0.63
+    },
+    "steering": {
+      "maxAngle": 35,
+      "ackermann": true
+    },
+    "brakes": {
+      "brakeTorque": 7100,
+      "handbrakeTorque": 7000,
+      "abs": true,
+      "frontShare": 0.65
+    },
+    "tires": {
+      "friction": 1.9
+    },
+    "camera": {
+      "armLength": 400,
+      "height": 130
+    }
+  },
+  "ranges": {
+    "mass": [1100, 2200],
+    "maxSpeed": [4000, 10000],
+    "dragCoefficient": [0.25, 0.5],
+    "engine/maxTorque": [300, 2500],
+    "engine/maxRPM": [6000, 10000],
+    "engine/idleRPM": [700, 1400],
+    "engine/engineBraking": [0, 0.3],
+    "transmission/shiftTime": [0.05, 1],
+    "suspension/maxRaise": [3, 15],
+    "suspension/maxDrop": [3, 15],
+    "suspension/springRate": [100, 1000],
+    "suspension/damping": [0.3, 0.9],
+    "steering/maxAngle": [25, 45],
+    "brakes/brakeTorque": [2000, 10000],
+    "brakes/frontShare": [0.5, 0.8],
+    "tires/friction": [1, 5],
+    "wheels/*/radius": [28, 42]
+  }
+}

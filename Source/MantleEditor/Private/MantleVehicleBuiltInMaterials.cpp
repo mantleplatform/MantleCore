@@ -9,6 +9,7 @@
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleLightFinder.h"
 #include "MantleVehicleSource.h"
+#include "MantleVehicleTypeMatch.h"
 
 #define LOCTEXT_NAMESPACE "MantleVehicleBuiltInMaterials"
 
@@ -29,7 +30,7 @@ namespace MantleVehicleBuiltInMaterialsPrivate
 
 TArray<FString> FMantleVehicleBuiltInMaterials::All()
 {
-	return { Rubber(), Glass(), Chrome(), LightLens(), Carbon() };
+	return { Rubber(), Glass(), Chrome(), LightLens(), Carbon(), Track() };
 }
 
 bool FMantleVehicleBuiltInMaterials::IsBuiltIn(const FString& Id)
@@ -172,6 +173,12 @@ FString FMantleVehicleBuiltInMaterials::ForSection(const UMantleVehicleSource& S
 		// A printed part that glows with its light (Lights > Own Material) publishes its own material: the game glows its own picture.
 		return FString();
 	}
+	// A tracked vehicle's belt (#448) draws with Mantle's track material, whose pads scroll as the track runs; a car has no belt to scroll.
+	if (!bLight && Source.MovementType == EMantleVehicleMovementKind::Tracked
+		&& (FMantleVehicleTypeMatchCheck::IsTrackBeltName(SectionName) || (Material && FMantleVehicleTypeMatchCheck::IsTrackBeltName(Material->GetName()))))
+	{
+		return Track();
+	}
 	return Detect(Material, SectionName, bLight);
 }
 
@@ -248,6 +255,10 @@ FText FMantleVehicleBuiltInMaterials::Label(const FString& Id)
 	if (Id == Carbon())
 	{
 		return LOCTEXT("Carbon", "Carbon fiber");
+	}
+	if (Id == Track())
+	{
+		return LOCTEXT("Track", "Track belt (scrolls with the track)");
 	}
 	return FText::FromString(Id);
 }

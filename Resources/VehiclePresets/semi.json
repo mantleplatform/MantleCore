@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "id": "semi",
+  "name": "Semi truck",
+  "description": "A semi-truck tractor that tows a semi-trailer on its fifth wheel: a day cab on three axles, the two rear ones driven. Heavy, slow to pull away and long-geared, with a high chase camera.",
+  "comment": "A vehicle preset (#446); see sedan.json for the format. A 2026 Freightliner Cascadia 126 day cab, 6x4, Detroit DD15 and DT12 automated gearbox. Mass 8200 kg and the 442.5 cm wheelbase (steer axle to the tandem's middle) are Freightliner Australia's Cascadia 126 day cab 6x4 spec sheet; the 56/44 front/rear split is its Cascadia 116 day cab 6x4 (the 126's was not found). The layout's wheelbase runs to the rearmost axle, 508.5 cm, with the middle axle at 0.7404 of it, so the tandem is 132 cm apart (52 in, a common US spread, estimate) and its middle 442.5 cm behind the steer axle; the centre of mass at x 59.5 puts 56 percent on the steer axle. 295/75R22.5 tyres, radius 50.7 cm; duals are one wide wheel, as the six-wheeler's are. DD15: 1650 lb-ft = 2237 Nm (a 2027 Cascadia 126 day cab listing), its curve a diesel plateau from 1100 to 1400 rpm (shape estimate), idle 600 and governed 2000 rpm (estimate). The DT12 is 14.93 to 1.00 over 12 gears with a 16.39 reverse (Detroit's spec sheet) and the axle 2.28 (Freightliner's 2016 Cascadia overview). The document holds 8 gears of at most 10:1 (limits.json), so it takes 8 of the 12, skip-shifting the low range (14.93, 9.13, 5.59, 3.42, 2.09, 1.64, 1.28, 1.00), and every gear and the reverse are halved with the final drive doubled to 4.56: the same overall ratios, so 105 km/h in top is 1252 rpm. maxSpeed is a common 105 km/h fleet governor (estimate). Steer lock 45 degrees (class 8 wheel cut 45-50, estimate). Springs and damping are the six-wheeler's per kg of mass on a wheel (step 9: the same 1.25 Hz ride and 0.24 damping ratio), brakes the truck's per kg and per cm of wheel radius (the derive's mass x radius / wheel count, so the same stopping power), grip the truck's. chassis.hitch is the fifth wheel: 30 cm ahead of the tandem's middle at 119 cm, the height a 53 ft trailer's coupler plate sits (semitrailer.json). Body 620 x 250 x 240 cm (the cab and the frame behind it, estimate), its middle 44 cm ahead of the wheelbase's so its front is 100 cm ahead of the steer axle. #444: the DD15 is a turbo diesel with no published boost figure, so maxBoost 35 psi is an estimate (heavy-truck turbos run about 30-40); spoolRPM 1100 is the start of its torque plateau.",
+  "movementType": "wheeled",
+  "publishable": true,
+  "type": "truck",
+  "seats": {
+    "driver": "car",
+    "passenger": "car"
+  },
+  "fit": {
+    "wheelRadius": 50.7,
+    "trackWidth": 205,
+    "minScale": 0.5,
+    "maxScale": 2
+  },
+  "wheels": {
+    "min": 6,
+    "max": 8
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 508.5,
+      "track": 205,
+      "wheelRadius": 50.7,
+      "wheelWidth": 30,
+      "axles": [
+        { "steer": true, "drive": false },
+        { "steer": false, "drive": true, "handbrake": true, "position": 0.7404 },
+        { "steer": false, "drive": true, "handbrake": true }
+      ]
+    },
+    "body": { "length": 620, "width": 250, "height": 240, "groundClearance": 60, "x": 44 },
+    "centerOfMass": [59.5, 0, 100],
+    "seat": {
+      "location": [210, -55, 190],
+      "steeringWheel": { "location": [256.8, -55, 193], "radius": 25 }
+    },
+    "hitch": { "type": "fifthWheel", "location": [-158.25, 0, 119] }
+  },
+  "derive": {
+    "stability": 0.95,
+    "cameraArmPerLength": 0.83,
+    "cameraHeightPerHeight": 1.82
+  },
+  "defaults": {
+    "mass": 8200,
+    "maxSpeed": 2917,
+    "dragCoefficient": 0.6,
+    "frontalArea": 10,
+    "engine": {
+      "sound": "diesel",
+      "maxTorque": 2237,
+      "maxRPM": 2000,
+      "idleRPM": 600,
+      "torqueCurve": [[0, 0.7], [600, 0.7], [1000, 0.95], [1100, 1], [1400, 1], [1625, 0.89], [2000, 0.6]],
+      "tractionControl": true,
+      "engineBraking": 0.5,
+      "induction": "turbo",
+      "maxBoost": 35,
+      "spoolRPM": 1100,
+      "spoolTime": 1.5
+    },
+    "transmission": {
+      "gearRatios": [7.465, 4.565, 2.795, 1.71, 1.045, 0.82, 0.64, 0.5],
+      "reverseRatio": 8.195,
+      "finalDrive": 4.56,
+      "changeUpRPM": 1800,
+      "changeDownRPM": 1000,
+      "shiftTime": 0.5
+    },
+    "suspension": {
+      "maxRaise": 15,
+      "maxDrop": 22,
+      "springRate": 449,
+      "springPreload": 260,
+      "damping": 1.47
+    },
+    "steering": {
+      "maxAngle": 45,
+      "ackermann": true
+    },
+    "brakes": {
+      "brakeTorque": 14200,
+      "handbrakeTorque": 13200,
+      "abs": true,
+      "frontShare": 0.45
+    },
+    "tires": {
+      "friction": 1.15
+    },
+    "camera": {
+      "armLength": 900,
+      "height": 380
+    }
+  },
+  "ranges": {
+    "mass": [6000, 12000],
+    "maxSpeed": [1500, 3500],
+    "dragCoefficient": [0.4, 1.1],
+    "engine/maxTorque": [1000, 3500],
+    "engine/maxRPM": [1600, 3000],
+    "engine/idleRPM": [400, 900],
+    "engine/engineBraking": [0, 2],
+    "engine/maxBoost": [10, 40],
+    "engine/spoolRPM": [700, 2000],
+    "engine/spoolTime": [0.5, 3],
+    "transmission/shiftTime": [0.05, 2],
+    "suspension/maxRaise": [5, 40],
+    "suspension/maxDrop": [5, 40],
+    "suspension/springRate": [150, 2000],
+    "suspension/damping": [0.3, 3],
+    "steering/maxAngle": [25, 50],
+    "brakes/brakeTorque": [7000, 20000],
+    "brakes/frontShare": [0.3, 0.7],
+    "tires/friction": [0.8, 5],
+    "wheels/*/radius": [40, 65]
+  }
+}

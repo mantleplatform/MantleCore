@@ -68,6 +68,10 @@ FMantleAssetLibrary::FMantleAssetLibrary()
 		// The "carbon" paint finish as a material (cell 0 of the pattern atlas under a clear coat), so a carbon part and a carbon-painted layer look alike. It reads Mantle's atlas, never a creator's texture.
 		Add(TEXT("ast_mat_carbon"), EMantleAssetKind::Material,
 			TEXT("/Game/Mantle/Materials/MI_MantleVehicle_Carbon.MI_MantleVehicle_Carbon"));
+		// A tracked vehicle's belt (#448, tools/materials/create_track_material.py): its pad pattern scrolls with each track's speed. The chassis builder draws
+		// its gray tracks with it.
+		Add(TEXT("ast_mat_track"), EMantleAssetKind::Material,
+			TEXT("/Game/Mantle/Materials/MI_MantleVehicle_Track.MI_MantleVehicle_Track"));
 
 	// No sounds: Mantle ships no preset audio, ever. Creators upload their own with their
 	// place, and LoadSound answers those uploaded ids from the live place asset set.

@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "id": "utilitytrailer",
+  "name": "Utility trailer",
+  "description": "A small open trailer on two axles that a pickup, SUV or truck tows on a ball hitch: a flat deck with a tongue at the front and a jockey stand it rests on while uncoupled. It has no engine or seat; scripts load its cargo.",
+  "comment": "A vehicle preset (#446); see sedan.json for the format, and semitrailer.json for what movementType trailer builds and why the document still carries an engine, a gearbox, steer and drive flags and a seat. A 7 x 14 ft tandem-axle utility trailer on a 2 in ball (two 3500 lb axles, 7000 lb GVWR): a single-axle trailer can't be made, since the layout needs two axles. Empty 900 kg, cargo.maxLoad 2250 kg (7000 lb less the trailer), the axles 89 cm (35 in) apart, 225/75R15 trailer tyres (radius 35 cm) on a 180 cm track, the deck 427 x 213 cm and 60 cm deep on a 50 cm floor (estimates from dealer listings). Model space keeps its origin under the middle of the wheelbase, the axles' middle, so the deck's middle is 40 cm ahead of it (body.x) and the ball's socket, at the end of a 120 cm tongue, at x 373.5 and 48 cm up. The empty centre of mass at x 60 puts 16 percent on the ball; a load centred on the deck puts 40 / 373.5 = 10.7 percent of its own weight there, and the loaded trailer 12 percent, inside the usual 10-15. The jockey stand is a small box under the tongue whose bottom is on the ground. Brakes: about 1 g on the loaded trailer's 2770 kg on its wheels, 2765 x 9.8 x 0.35 m / 4 = 2400 Nm a wheel, the parking brake the same, ABS on as the semi-trailer's. Springs are sized for the rating, as a real one's leaf springs are (the lead's call after probe window 5, where springs sized for the empty trailer took 600 kg onto its 10 cm bump stops): window 5 measured at least 11 cm of drop for the 5240 N that 600 kg puts on the axles at springRate 62, at most 7.7 N/cm of the axles' stiffness per unit of springRate, so springRate 400 holds the full 2250 kg (19.7 kN on the axles, 89 percent of it) to about 6.4 cm of its 10 cm travel, 600 kg to about 1.7 cm and the empty trailer to about 2.4 cm. Damping is the old 0.203 x sqrt(400 / 62) = 0.52, the same damping ratio on the empty trailer (no hopping); empty it rides stiff, about 3.2 Hz against the old 1.25, as an empty leaf-sprung trailer does. Its ranges reach the doubled size's springs (x 4) and damping. Grip is the semi's. The camera and the seat are the document's and nobody uses them.",
+  "movementType": "trailer",
+  "publishable": true,
+  "type": "trailer",
+  "seats": {
+    "driver": "car"
+  },
+  "fit": {
+    "wheelRadius": 35,
+    "trackWidth": 180,
+    "minScale": 0.5,
+    "maxScale": 2
+  },
+  "wheels": {
+    "min": 4,
+    "max": 4
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 89,
+      "track": 180,
+      "wheelRadius": 35,
+      "wheelWidth": 20,
+      "axles": [
+        { "steer": true, "drive": false, "handbrake": true },
+        { "steer": false, "drive": true, "handbrake": true }
+      ]
+    },
+    "body": { "length": 427, "width": 213, "height": 60, "groundClearance": 50, "x": 40 },
+    "centerOfMass": [60, 0, 60],
+    "seat": {
+      "location": [100, -42, 120],
+      "steeringWheel": { "location": [146.8, -42, 123], "radius": 18 }
+    },
+    "trailer": {
+      "coupler": { "type": "ball", "location": [373.5, 0, 48] },
+      "landingGear": { "center": [340, 0, 24], "extent": [8, 8, 24] },
+      "cargo": { "maxLoad": 2250, "location": [40, 0, 90] }
+    }
+  },
+  "derive": {
+    "stability": 0.55,
+    "cameraArmPerLength": 0.83,
+    "cameraHeightPerHeight": 1.82
+  },
+  "defaults": {
+    "mass": 900,
+    "maxSpeed": 2917,
+    "dragCoefficient": 0.4,
+    "frontalArea": 1.5,
+    "engine": {
+      "maxTorque": 576,
+      "maxRPM": 5000,
+      "idleRPM": 600,
+      "torqueCurve": [[0, 0.6], [1000, 0.75], [2500, 0.9], [3800, 1], [4500, 0.962], [5000, 0.85]]
+    },
+    "transmission": {
+      "gearRatios": [4.027, 2.364, 1.532, 1.152, 0.852, 0.667],
+      "reverseRatio": 3.064,
+      "finalDrive": 4.459,
+      "changeUpRPM": 4500,
+      "changeDownRPM": 1200
+    },
+    "suspension": {
+      "maxRaise": 10,
+      "maxDrop": 22,
+      "springRate": 400,
+      "springPreload": 30,
+      "damping": 0.52
+    },
+    "steering": {
+      "maxAngle": 35,
+      "ackermann": true
+    },
+    "brakes": {
+      "brakeTorque": 2400,
+      "handbrakeTorque": 2400,
+      "abs": true,
+      "frontShare": 0.5
+    },
+    "tires": {
+      "friction": 1.15
+    },
+    "camera": {
+      "armLength": 600,
+      "height": 250
+    }
+  },
+  "ranges": {
+    "mass": [400, 2500],
+    "maxSpeed": [1500, 3500],
+    "dragCoefficient": [0.1, 1],
+    "suspension/maxRaise": [5, 40],
+    "suspension/maxDrop": [5, 40],
+    "suspension/springRate": [20, 1600],
+    "suspension/damping": [0.05, 2],
+    "brakes/brakeTorque": [500, 6000],
+    "brakes/handbrakeTorque": [500, 6000],
+    "tires/friction": [0.8, 5],
+    "wheels/*/radius": [25, 45],
+    "trailer/cargo/maxLoad": [0, 5000]
+  }
+}
